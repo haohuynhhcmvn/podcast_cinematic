@@ -3,21 +3,22 @@ name: 🎙️ Podcast Generator - Full Pipeline
 # 1. Cấu hình lịch chạy (Scheduling)
 on:
   schedule:
-    # Chạy vào phút thứ 0 của mỗi giờ (ví dụ: 1:00, 2:00, 3:00, v.v.)
     - cron: '0 * * * *' 
-  # Cho phép chạy thủ công từ giao diện GitHub
   workflow_dispatch: 
 
 jobs:
   build_and_upload_podcast:
-    runs-on: ubuntu-latest # Sử dụng môi trường Linux (Ubuntu)
+    runs-on: ubuntu-latest
 
     # 2. Thiết lập Biến Môi Trường (Secrets)
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      # SỬ DỤNG TÊN SECRET MỚI CHO NỘI DUNG JSON
+      
+      # SỬ DỤNG NỘI DUNG JSON THÔ (Theo yêu cầu của bạn)
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
+      
+      # SỬ DỤNG BASE64 CHO YOUTUBE (Quan trọng để tránh lỗi nhị phân)
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
@@ -39,23 +40,20 @@ jobs:
       - name: 📦 Cài đặt các thư viện Python
         run: pip install -r requirements.txt
 
-      - name: 🔑 Giải mã Khóa Xác thực và tạo .env
+      - name: 🔑 Thiết lập Khóa Xác thực và tạo .env
         run: |
-          # 1. Ghi nội dung JSON Service Account trực tiếp vào file
-          # Sử dụng biến môi trường SERVICE_ACCOUNT_CONTENT đã được định nghĩa ở trên
+          # 1. Ghi nội dung JSON Service Account (Nội dung thô)
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
           
-          # 2. Giải mã YouTube client_secrets.json (OAuth)
+          # 2. Giải mã YouTube client_secrets.json (DÙNG BASE64)
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
           
-          # 3. Giải mã YouTube token.pickle (Session)
+          # 3. Giải mã YouTube token.pickle (DÙNG BASE64)
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
           # TẠO FILE .ENV CỤC BỘ
-          # Các script Python sẽ đọc các giá trị này qua load_dotenv()
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
-          # Quan trọng: Trỏ đến tên file JSON đã được tạo
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
 
