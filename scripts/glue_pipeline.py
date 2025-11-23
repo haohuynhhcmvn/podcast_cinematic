@@ -1,8 +1,15 @@
+import sys
 import os
 import logging
 from dotenv import load_dotenv
 import gspread # Cần import gspread để cập nhật trạng thái cuối cùng
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Thay đổi: Đảm bảo import file script con hoạt động
+from create_video import create_video
+from upload_youtube import upload_video
+from google_sheets_manager import GoogleSheetsManager
 # Import TẤT CẢ các hàm
 from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
