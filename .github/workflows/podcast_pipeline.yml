@@ -1,4 +1,4 @@
-name: 🎙️ Podcast Generator - Full Pipeline (V. Final)
+name: 🎙️ Podcast Generator - Full Pipeline (Sửa Lỗi Cuối Cùng)
 
 on:
   schedule:
@@ -14,10 +14,8 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       
-      # Secret chứa nội dung JSON thô (Thay thế nếu bạn đang dùng cách này)
+      # Secrets Xác thực (Dùng Base64 cho YouTube)
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
-      
-      # Secret chứa nội dung Base64 (Dùng cho YouTube)
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
@@ -27,12 +25,12 @@ jobs:
         uses: actions/checkout@v4
 
       # --- Cài môi trường (Python + FFmpeg) ---
-      - name: 🐍 Thiết lập môi trường Python (Dùng V3.10)
+      - name: 🐍 Thiết lập môi trường Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: ⚙️ Cài đặt FFmpeg (Đã chứng minh là thành công)
+      - name: ⚙️ Cài đặt FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install ffmpeg -y
@@ -41,7 +39,7 @@ jobs:
         run: pip install -r requirements.txt
 
       # 🔑 --- Giải mã Khóa Xác thực và tạo file cục bộ ---
-      - name: 🔑 Thiết lập Khóa Xác thực và tạo file cục bộ
+      - name: 🔑 Giải mã Khóa Xác thực và tạo file cục bộ
         run: |
           # 1. Ghi nội dung JSON Service Account (Nội dung thô)
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
@@ -52,7 +50,7 @@ jobs:
           # 3. Giải mã YouTube token.pickle (DÙNG BASE64)
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
-          # 4. Tạo file .env cục bộ (hoặc export ENV)
+          # 4. Tạo file .env cục bộ
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
@@ -60,7 +58,7 @@ jobs:
 
       # 🚀 --- Chạy Pipeline ---
       - name: 🚀 Chạy Podcast Generator Pipeline
-        # Sử dụng python scripts/glue_pipeline.py
+        # Lệnh này sẽ chạy thành công sau khi sửa lỗi import trong file Python
         run: python scripts/glue_pipeline.py
 
       # 💾 --- Tùy chọn: Lưu trữ các file Output ---
