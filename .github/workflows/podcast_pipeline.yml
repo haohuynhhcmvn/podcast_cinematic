@@ -52,11 +52,10 @@ jobs:
         run: python scripts/glue_pipeline.py
 
       # 💾 --- Lưu trữ Output (Artifact) ---
-      - name: 💾 Lưu trữ Output (Bao gồm MP3, TXT, SRT)
+      - name: 💾 Lưu trữ TOÀN BỘ Output (Artifacts)
         uses: actions/upload-artifact@v4
         if: always() # Đảm bảo chạy ngay cả khi Pipeline thất bại
         with:
-          name: podcast-outputs-${{ github.sha }}
-          path: |
-            outputs/             # Bao gồm outputs/audio/*.mp3 và outputs/subtitle/*.srt
-            data/episodes/       # Bao gồm data/episodes/*_script.txt
+          name: episode-output-artifacts # Đặt tên chung hơn
+          path: outputs/ # LƯU TOÀN BỘ THƯ MỤC OUTPUTS
+          retention-days: 7 # Lưu trữ trong 7 ngày
