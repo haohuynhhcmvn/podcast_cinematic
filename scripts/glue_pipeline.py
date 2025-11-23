@@ -1,16 +1,18 @@
-# scripts/glue_pipeline.py (ĐÃ DỌN DẸP IMPORT VÀ SỬA LỖI NameError)
+# scripts/glue_pipeline.py
 import sys 
 import os
 import logging
 from dotenv import load_dotenv
-import gspread 
 
-# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Thiết lập đường dẫn import TRƯỚC KHI import các module nội bộ
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
-# Import các script con (Chỉ import mỗi script một lần duy nhất)
+# Import Modules
+# Lưu ý: Hàm upload_video phải tồn tại trong upload_youtube.py
 from create_video import create_video
-from upload_youtube import upload_video
+from upload_youtube import upload_video 
 from google_sheets_manager import GoogleSheetsManager
 from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
@@ -23,7 +25,6 @@ from utils import setup_environment
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_status_completed(row_index: int):
-    # ... (Giữ nguyên logic hàm) ...
     try:
         gc = authenticate_google_sheet()
         sheet_id = os.getenv('GOOGLE_SHEET_ID')
@@ -31,63 +32,66 @@ def update_status_completed(row_index: int):
 
         sh = gc.open_by_key(sheet_id)
         worksheet = sh.get_worksheet(0)
-        
+        # Update cột F (cột 6)
         worksheet.update_cell(row_index, 6, 'COMPLETED') 
-        logging.info(f"Đã cập nhật trạng thái hàng {row_index} thành 'COMPLETED'.")
+        logging.info(f"Đã cập nhật hàng {row_index}: COMPLETED")
         return True
     except Exception as e:
-        logging.error(f"Lỗi khi cập nhật trạng thái COMPLETED: {e}")
+        logging.error(f"Lỗi update sheet: {e}")
         return False
 
-
 def main_pipeline():
-    logging.info("--- BẮT ĐẦU QUY TRÌNH TẠO PODCAST TỰ ĐỘNG ---")
-
+    logging.info("=== BẮT ĐẦU PIPELINE ===")
     load_dotenv()
     setup_environment() 
-    episode_data = None
     
     try:
         episode_data = fetch_content()
         if not episode_data:
-            logging.info("Không có tập mới nào trong Google Sheet để xử lý. Kết thúc.")
+            logging.info("Không có dữ liệu mới.")
             return
 
         episode_id = episode_data['ID']
+        logging.info(f"Đang xử lý Episode ID: {episode_id}")
         
-        # Thực hiện các bước
-        script_path = generate_script(episode_data); 
-        if not script_path: raise Exception("Failed at generate_script")
+        # 1. Generate Script
+        script_path = generate_script(episode_data)
+        if not script_path: raise Exception("Lỗi generate_script")
 
-        raw_audio_path = create_tts(script_path, episode_id); 
-        if not raw_audio_path: raise Exception("Failed at create_tts")
+        # 2. TTS
+        raw_audio_path = create_tts(script_path, episode_id)
+        if not raw_audio_path: raise Exception("Lỗi create_tts")
 
-        final_audio_path = auto_music_sfx(raw_audio_path, episode_id); 
-        if not final_audio_path: raise Exception("Failed at auto_music_sfx")
+        # 3. Audio Mixing
+        final_audio_path = auto_music_sfx(raw_audio_path, episode_id)
+        if not final_audio_path: raise Exception("Lỗi auto_music_sfx")
 
-        subtitle_path = create_subtitle(final_audio_path, script_path, episode_id); 
-        if not subtitle_path: raise Exception("Failed at create_subtitle")
+        # 4. Subtitles
+        subtitle_path = create_subtitle(final_audio_path, script_path, episode_id)
+        if not subtitle_path: raise Exception("Lỗi create_subtitle")
 
-        video_169_path = create_video(final_audio_path, subtitle_path, episode_id);
-        if not video_169_path: raise Exception("Failed at create_video")
+        # 5. Create Video 16:9
+        video_169_path = create_video(final_audio_path, subtitle_path, episode_id)
+        if not video_169_path: raise Exception("Lỗi create_video")
 
-        video_916_path = create_shorts(final_audio_path, subtitle_path, episode_id);
-        if not video_916_path: raise Exception("Failed at create_shorts")
+        # 6. Create Shorts (Optional)
+        try:
+            create_shorts(final_audio_path, subtitle_path, episode_id)
+        except Exception as e:
+            logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
 
+        # 7. Upload YouTube
+        logging.info("Bắt đầu upload...")
         upload_status = upload_video(video_169_path, episode_data)
-        logging.info(f"Trạng thái Upload lên YouTube: {upload_status}")
+        logging.info(f"Kết quả Upload: {upload_status}")
         
+        # 8. Update Status
         if episode_data.get('Status_Row'):
             update_status_completed(episode_data['Status_Row'])
 
-
     except Exception as e:
-        logging.error(f"QUY TRÌNH GẶP LỖI: {e}", exc_info=True)
-        if episode_data and episode_data.get('Status_Row'):
-             pass
-    finally:
-        logging.info("--- KẾT THÚC QUY TRÌNH TẠO PODCAST TỰ ĐỘNG ---")
-
+        logging.error(f"PIPELINE FAILED: {e}", exc_info=True)
+        sys.exit(1) # Báo lỗi cho GitHub Actions biết để đánh dấu X đỏ
 
 if __name__ == '__main__':
     main_pipeline()
