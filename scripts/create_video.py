@@ -53,7 +53,10 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
              subtitle_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         else:
              # Truyền danh sách phụ đề đã được lọc sạch None
-            subtitle_clip = SubtitlesClip(subtitles_data, generator)
+                        # Filter out None values from subtitles_data
+                        subtitles_data_filtered = [item for item in subtitles_data if item is not None]
+            
+            subtitle_clip = SubtitlesClip(subtitles_data_filtered, generator)
             
         subtitle_clip = subtitle_clip.set_pos(('center', 'bottom')).margin(bottom=50)
 
