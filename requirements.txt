@@ -2,6 +2,7 @@ openai
 gspread
 oauth2client
 moviepy
+pydub
 requests
-pyyaml
 google-api-python-client
+numpy
