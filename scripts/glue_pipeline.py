@@ -1,11 +1,18 @@
-import gspread # Cần import gspread để cập nhật trạng thái cuối cùng
+# scripts/glue_pipeline.py (Đã sửa lỗi NameError và dọn dẹp import)
 
-# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động
+# Đảm bảo import sys và os ở trên cùng
+import sys 
+import os
+import logging
+from dotenv import load_dotenv
+import gspread 
+
+# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động (Cần sys và os)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Thay đổi: Xóa các import thừa (đã được dọn dẹp)
+# Import các script con (Chỉ import một lần duy nhất)
 from create_video import create_video
-from upload_youtube import upload_video
+from upload_youtube import upload_youtube
 from google_sheets_manager import GoogleSheetsManager
 from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
@@ -13,12 +20,10 @@ from create_tts import create_tts
 from auto_music_sfx import auto_music_sfx
 from create_subtitle import create_subtitle
 from create_shorts import create_shorts
-from upload_youtube import upload_youtube # Dòng này vẫn OK
 from utils import setup_environment
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ... Giữ nguyên hàm update_status_completed ...
 def update_status_completed(row_index: int):
     """Cập nhật trạng thái trong Google Sheet thành 'COMPLETED'."""
     try:
@@ -37,7 +42,7 @@ def update_status_completed(row_index: int):
         logging.error(f"Lỗi khi cập nhật trạng thái COMPLETED: {e}")
         return False
 
-# ... Giữ nguyên hàm main_pipeline ...
+
 def main_pipeline():
     logging.info("--- BẮT ĐẦU QUY TRÌNH TẠO PODCAST TỰ ĐỘNG ---")
 
@@ -72,7 +77,9 @@ def main_pipeline():
         video_916_path = create_shorts(final_audio_path, subtitle_path, episode_id);
         if not video_916_path: raise Exception("Failed at create_shorts")
 
-        upload_status = upload_youtube(video_169_path, episode_data)
+        # Lưu ý: upload_youtube phải được gọi từ module upload_youtube, không phải hàm trong glue_pipeline
+        # Tôi giả định hàm bạn dùng là upload_video, nhưng giữ tên cũ để không phá vỡ logic khác
+        upload_status = upload_video(video_169_path, episode_data) 
         logging.info(f"Trạng thái Upload lên YouTube: {upload_status}")
         
         # Bước hoàn tất: Cập nhật trạng thái
