@@ -1,36 +1,49 @@
 name: Podcast Auto Pipeline
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"  # mỗi 30 phút, chỉnh nếu cần
+workflow_dispatch:
+schedule:
+- cron: "*/30 * * * *"  # Chạy mỗi 30 phút, có thể điều chỉnh
 
 jobs:
-  build-podcast:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+build-podcast:
+runs-on: ubuntu-latest
+steps:
 
-      - name: Install apt deps
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+  # 1. Checkout code
+  - uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+  # 2. Cài đặt các dependencies của hệ thống (bắt buộc cho xử lý video/audio)
+  - name: Install apt deps (FFmpeg)
+    run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install pip deps
-        run: pip install -r requirements.txt
+  # 3. Setup Python
+  - name: Setup Python
+    uses: actions/setup-python@v4
+    with:
+      python-version: "3.11"
 
-      - name: Set env from secrets
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: |
-          echo "ENVS loaded"
+  # 4. Install pip dependencies
+  - name: Install pip deps
+    run: pip install -r requirements.txt
+    
+  # 5. TẠO FILE SERVICE ACCOUNT JSON (Quan trọng)
+  # File này được các thư viện Google (gspread, googleapiclient) sử dụng
+  # Secret 'GSPREAD_SERVICE_ACCOUNT' phải chứa toàn bộ nội dung JSON key
+  - name: Create Service Account File
+    run: echo '${{ secrets.GSPREAD_SERVICE_ACCOUNT }}' > service_account.json
+    env:
+      GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
 
-      - name: Run pipeline
-        run: python scripts/glue_pipeline.py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+  # 6. Set envs (Thiết lập các biến môi trường cho các script con)
+  - name: Set Environment Variables
+    run: |
+      # Thiết lập biến môi trường toàn cục cho các bước sau
+      echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+      echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" >> $GITHUB_ENV
+      echo "ENVS loaded"
+      
+  # 7. Chạy Pipeline chính
+  # File 'glue_pipeline.py' sẽ điều phối tất cả các bước (fetch, generate, tts, video...)
+  - name: Run pipeline
+    run: python scripts/glue_pipeline.py
