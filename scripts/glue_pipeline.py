@@ -1,14 +1,9 @@
-# scripts/glue_pipeline.py (Đã dọn dẹp các import thừa)
-import sys
-import os
-import logging
-from dotenv import load_dotenv
 import gspread # Cần import gspread để cập nhật trạng thái cuối cùng
 
 # Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Thay đổi: Giữ lại các import hàm chính, xóa các import lặp lại
+# Thay đổi: Xóa các import thừa (đã được dọn dẹp)
 from create_video import create_video
 from upload_youtube import upload_video
 from google_sheets_manager import GoogleSheetsManager
@@ -18,6 +13,7 @@ from create_tts import create_tts
 from auto_music_sfx import auto_music_sfx
 from create_subtitle import create_subtitle
 from create_shorts import create_shorts
+from upload_youtube import upload_youtube # Dòng này vẫn OK
 from utils import setup_environment
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
