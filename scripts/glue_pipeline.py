@@ -36,7 +36,7 @@ def update_status_completed(row_index: int):
         logging.info(f"Đã cập nhật hàng {row_index}: COMPLETED")
         return True
     except Exception as e:
-        logging.error(f"Lỗi khi cập nhật trạng thái Google Sheet: {e}")
+        logging.error(f"Lỗi update sheet: {e}")
         return False
 
 def main_pipeline():
@@ -47,16 +47,14 @@ def main_pipeline():
     try:
         # 1. Lấy dữ liệu
         episode_data = fetch_content()
-        
         if not episode_data:
             logging.info("Không có dữ liệu mới.")
             return
 
         episode_id = episode_data['ID']
         logging.info(f"Đang xử lý Episode ID: {episode_id}")
-
-        # KHÔNG CÓ BƯỚC TẢI ẢNH: Đã đơn giản hóa.
-        logging.info("Bỏ qua bước tải ảnh từ Google Drive. Đảm bảo file ảnh nền và micro đã có sẵn trong assets/images/")
+        
+        logging.info("Sử dụng ảnh nền và micro tĩnh từ assets/images/") # Thông báo về logic mới
              
         # 2. Generate Script
         script_path = generate_script(episode_data)
@@ -79,9 +77,8 @@ def main_pipeline():
         if not video_169_path: raise Exception("Lỗi create_video")
 
         # 7. Create Shorts
-        shorts_path = None
         try:
-            shorts_path = create_shorts(final_audio_path, subtitle_path, episode_id)
+            create_shorts(final_audio_path, subtitle_path, episode_id)
         except Exception as e:
             logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
 
@@ -95,7 +92,9 @@ def main_pipeline():
             update_status_completed(episode_data['Status_Row'])
 
     except Exception as e:
-        logging.error(f"LỖI NGHIÊM TRỌNG TRONG PIPELINE: {e}", exc_info=True)
+        logging.error(f"PIPELINE FAILED: {e}", exc_info=True)
+        sys.exit(1)
+
     finally:
         logging.info("=== KẾT THÚC QUY TRÌNH ===")
 
