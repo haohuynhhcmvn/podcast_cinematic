@@ -30,33 +30,29 @@ podcast-nhan-vat-huyen-thoai/
 
 ## Hướng Dẫn Sử Dụng
 
-### Tạo Episode Mới
+# Podcast Generator — Full Pipeline
 
-1. Tạo file markdown trong thư mục `episodes/` với tên `YYYY-MM-DD-ten-episode.md`
-2. Sử dụng template từ `assets/episode-templates/show-notes-template.md`
-3. Commit và push lên GitHub
+Auto pipeline tạo podcast cinematic:
+- đọc yêu cầu từ Google Sheet
+- tải ảnh từ Google Drive folder
+- tạo script cinematic bằng OpenAI
+- tạo TTS (OpenAI TTS) giọng nam trầm
+- tạo subtitle (.srt)
+- dựng video 16:9 + Shorts 9:16 (waveform + micro icon + logo)
+- ghép nhạc / SFX
+- upload lên YouTube (tùy chọn)
 
-### Chuẩn Bị Kịch Bản
+## Cài đặt nhanh
+1. Tạo `service_account.json` (Google Cloud) & share Google Sheet + Drive folders với email service account.
+2. Thêm secrets vào GitHub: `OPENAI_API_KEY`, `YOUTUBE_API_KEY`.
+3. Tạo Google Sheet theo định dạng:
+   - columns: id,title,character,core_theme,img_folder,status,hash
+   - `status` = `pending` cho dòng mới
+4. Đặt assets: `intro_outro/intro.mp4`, `intro_outro/outro.mp4`, `logos/logo.png`, `inputs/images/` (nếu muốn)
+5. Push repo → chạy workflow (manual dispatch hoặc theo schedule)
 
-- Tham khảo `assets/episode-templates/script-template.md`
-- Chuẩn bị nội dung trước khi ghi âm
-
-### Xử Lý Audio
-
-- File thô lưu trong `audio/raw/`
-- File master (MP3/OGG) lưu trong `audio/final/`
-
-### Build RSS Feed
-
+## Chạy local
 ```bash
-python scripts/build_rss.py
-```
-
-### Triển Khai lên GitHub Pages
-
-- Push lên branch `main`
-- GitHub Actions sẽ tự động build RSS và deploy lên `gh-pages`
-
-## Liên Hệ
-
-Email: contact@vietlegends.vn
+pip install -r requirements.txt
+export OPENAI_API_KEY="sk-..."
+python scripts/glue_pipeline.py
