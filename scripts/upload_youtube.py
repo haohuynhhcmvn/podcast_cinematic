@@ -1,24 +1,24 @@
-# Placeholder fofrom googleapiclient.discovery import build
 import os
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-api_key = os.environ.get('YOUTUBE_API_KEY')
-youtube = build('youtube','v3',developerKey=api_key)
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+VIDEO_FOLDER = "outputs/video"
 
-hash_text = "example_episode"
-video_file = f"outputs/videos/{hash_text}_16_9_final.mp4"
-
-request = youtube.videos().insert(
-    part="snippet,status",
-    body={
-        "snippet": {
-            "title": f"Podcast {hash_text}",
-            "description": "Podcast cinematic tự động",
-            "tags": ["podcast","storytelling"]
-        },
+def upload_video_simple(video_path, title, description, tags=["podcast","storytelling"]):
+    youtube = build("youtube","v3", developerKey=YOUTUBE_API_KEY)
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+    body = {
+        "snippet": {"title": title, "description": description, "tags": tags, "categoryId": "22"},
         "status": {"privacyStatus": "public"}
-    },
-    media_body=video_file
-)
-response = request.execute()
-print(response)
-r upload_youtube.py
+    }
+    req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    res = req.execute()
+    print("Uploaded:", res.get("id"))
+    return res
+
+if __name__ == "__main__":
+    # demo: upload last video
+    vids = sorted([os.path.join(VIDEO_FOLDER,f) for f in os.listdir(VIDEO_FOLDER) if f.endswith(".mp4")])
+    if vids:
+        upload_video_simple(vids[-1], "Demo Podcast", "Auto upload demo")
