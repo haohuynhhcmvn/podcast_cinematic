@@ -1,23 +1,56 @@
 import os
-from moviepy.editor import VideoFileClip
-from utils import ensure_dir
+import logging
+from moviepy.editor import *
+from moviepy.video.tools.subtitles import SubtitlesClip
 
-SHORTS_OUT = "outputs/shorts"
-ensure_dir(SHORTS_OUT)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def create_short_from_video(video_path, start_sec=0, duration=60, out_path=None):
-    clip = VideoFileClip(video_path).subclip(start_sec, min(start_sec+duration, VideoFileClip(video_path).duration))
-    if out_path is None:
-        base = os.path.basename(video_path)
-        out_path = os.path.join(SHORTS_OUT, f"short_{base}")
-    clip.write_videofile(out_path, fps=24, codec="libx264", audio_codec="aac")
-    print("Short created:", out_path)
-    return out_path
+SHORTS_WIDTH = 1080
+SHORTS_HEIGHT = 1920
+COLOR_BACKGROUND = (30, 30, 30) 
 
-if __name__ == "__main__":
-    # find latest full video
-    folder = "outputs/video"
-    vids = sorted([os.path.join(folder,f) for f in os.listdir(folder) if f.endswith(".mp4")])
-    if vids:
-        create_short_from_video(vids[-1], start_sec=30, duration=60)
-# Placeholder for create_shorts.py
+def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
+    try:
+        audio_clip = AudioFileClip(final_audio_path)
+        duration = audio_clip.duration
+        
+        # Generator cho Subtitle (font lớn cho 9:16)
+        generator = lambda txt: TextClip(txt, fontsize=70, color='white', font='Arial-Bold', 
+                                         stroke_color='black', stroke_width=3, method='caption', 
+                                         align='center', size=(SHORTS_WIDTH * 0.9, None))
+        subtitle_clip = SubtitlesClip(subtitle_path, generator)
+        subtitle_clip = subtitle_clip.set_pos(('center', SHORTS_HEIGHT * 0.8)).margin(bottom=50) 
+
+        # Nền
+        background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
+        
+        # Tiêu đề
+        title_text = TextClip(f"PODCAST: {episode_id}", fontsize=80, color='yellow', font='Arial-Bold', 
+                              size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
+        title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
+
+        # Sóng âm & Micro Placeholder
+        wave_text = TextClip("Sóng Âm Shorts...", fontsize=40, color='white', size=(SHORTS_WIDTH * 0.8, None))
+        wave_text = wave_text.set_duration(duration).set_pos(("center", SHORTS_HEIGHT * 0.45))
+        
+        # Ghép các thành phần
+        final_clip = CompositeVideoClip([
+            background_clip, title_text, wave_text, subtitle_clip.set_duration(duration)
+        ], size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
+
+        # Xuất Video
+        output_dir = os.path.join('outputs', 'shorts')
+        video_filename = f"{episode_id}_shorts_916.mp4"
+        video_path = os.path.join(output_dir, video_filename)
+        
+        logging.info(f"Bắt đầu xuất Video Shorts 9:16...")
+        final_clip.write_videofile(
+            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar'
+        )
+        
+        logging.info(f"Video Shorts 9:16 đã tạo thành công và lưu tại: {video_path}")
+        return video_path
+        
+    except Exception as e:
+        logging.error(f"Lỗi khi tạo video Shorts 9:16: {e}")
+        return None
