@@ -25,7 +25,7 @@ def generate_script(episode_data):
 
         QUY TẮC:
         1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
-        2. **Thời lượng:** Kịch bản nên có độ dài khoảng 1000 - 1500 từ.
+        2. **Thời lượng:** Kịch bản nên có độ dài khoảng 10 - 15 từ.
         3. **Định dạng Output:** Phải là nội dung kịch bản thuần túy, không có lời dẫn (ví dụ: [GIỌNG NAM TRẦM ĐỌC:]). Chỉ bao gồm văn bản cần được đọc.
 
         CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{core_theme}"
