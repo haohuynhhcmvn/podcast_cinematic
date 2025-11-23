@@ -33,24 +33,26 @@ jobs:
           python-version: '3.10'
 
       - name: ⚙️ Cài đặt FFmpeg
+        # FFmpeg là dependency bắt buộc cho moviepy
         run: |
           sudo apt-get update
           sudo apt-get install ffmpeg -y
 
       - name: 📦 Cài đặt các thư viện Python
+        # Bước này sẽ cài đặt 'moviepy' sau khi bạn thêm vào requirements.txt
         run: pip install -r requirements.txt
 
-      # 🔑 BƯỚC THIẾT LẬP KHÓA XÁC THỰC (Đã được chia nhỏ để cô lập lỗi Base64)
+      # 🔑 BƯỚC THIẾT LẬP KHÓA XÁC THỰC (Đã chia nhỏ và sửa lỗi Base64)
 
-      # 1. Ghi nội dung JSON Service Account (Nội dung thô - Không dùng Base64)
+      # 1. Ghi nội dung JSON Service Account (Nội dung thô)
       - name: 🔑 1/4 Ghi Service Account JSON
         run: echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
 
-      # 2. Giải mã YouTube client_secrets.json (Dùng Base64 - Nếu lỗi sẽ dừng tại đây)
+      # 2. Giải mã YouTube client_secrets.json (Dùng Base64)
       - name: 🔑 2/4 Giải mã YouTube Client Secret
         run: echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
 
-      # 3. Giải mã YouTube token.pickle (Dùng Base64 - Nếu lỗi sẽ dừng tại đây)
+      # 3. Giải mã YouTube token.pickle (Dùng Base64)
       - name: 🔑 3/4 Giải mã YouTube Token Pickle
         run: echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
@@ -65,6 +67,7 @@ jobs:
       # 3. Chạy Pipeline
       - name: 🚀 Chạy Podcast Generator Pipeline
         id: run_pipeline
+        # Nếu moviepy đã được cài đặt, script sẽ tiếp tục xử lý tập Nikola Tesla
         run: python scripts/glue_pipeline.py
 
       # 4. Tùy chọn: Lưu trữ các file Output (Video/Audio)
