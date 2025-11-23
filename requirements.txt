@@ -4,10 +4,10 @@ oauth2client
 python-dotenv
 pydub
 numpy
-# Sửa lỗi: Ghim phiên bản cũ để dùng được moviepy.editor
+# Ghim moviepy về bản cũ ổn định 1.0.3 để dùng được module 'editor'
 moviepy==1.0.3
-decorator==4.4.2
-imageio==2.4.1
+# XÓA imageio và decorator đi, để moviepy tự cài bản nó thích (>=2.5)
+
 # YouTube API
 google-api-python-client
 google-auth-oauthlib
