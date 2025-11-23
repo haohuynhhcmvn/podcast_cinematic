@@ -2,29 +2,35 @@ name: Podcast Auto Pipeline
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"  # mỗi 30 phút, chỉnh nếu cần
 
 jobs:
   build-podcast:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install apt deps
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-      - name: Install dependencies
+
+      - name: Install pip deps
         run: pip install -r requirements.txt
-      - name: Read Google Sheet
-        run: python scripts/read_sheet.py
-      - name: Generate Podcast Script
-        run: python scripts/generate_script.py
-      - name: Create TTS Audio
-        run: python scripts/create_tts.py
-      - name: Create Subtitle
-        run: python scripts/create_subtitle.py
-      - name: Create Video 16:9 + Shorts
-        run: python scripts/create_video.py
-      - name: Add Music & SFX
-        run: python scripts/auto_music_sfx.py
-      - name: Upload to YouTube
-        run: python scripts/upload_youtube.py
+
+      - name: Set env from secrets
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          echo "ENVS loaded"
+
+      - name: Run pipeline
+        run: python scripts/glue_pipeline.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
