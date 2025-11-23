@@ -1,18 +1,16 @@
-# scripts/glue_pipeline.py (Đã sửa lỗi NameError và dọn dẹp import)
-
-# Đảm bảo import sys và os ở trên cùng
+# scripts/glue_pipeline.py (ĐÃ DỌN DẸP IMPORT VÀ SỬA LỖI NameError)
 import sys 
 import os
 import logging
 from dotenv import load_dotenv
 import gspread 
 
-# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động (Cần sys và os)
+# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import các script con (Chỉ import một lần duy nhất)
+# Import các script con (Chỉ import mỗi script một lần duy nhất)
 from create_video import create_video
-from upload_youtube import upload_youtube
+from upload_youtube import upload_video
 from google_sheets_manager import GoogleSheetsManager
 from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
@@ -25,7 +23,7 @@ from utils import setup_environment
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_status_completed(row_index: int):
-    """Cập nhật trạng thái trong Google Sheet thành 'COMPLETED'."""
+    # ... (Giữ nguyên logic hàm) ...
     try:
         gc = authenticate_google_sheet()
         sheet_id = os.getenv('GOOGLE_SHEET_ID')
@@ -34,7 +32,6 @@ def update_status_completed(row_index: int):
         sh = gc.open_by_key(sheet_id)
         worksheet = sh.get_worksheet(0)
         
-        # Giả định cột Status là cột thứ 6 (F)
         worksheet.update_cell(row_index, 6, 'COMPLETED') 
         logging.info(f"Đã cập nhật trạng thái hàng {row_index} thành 'COMPLETED'.")
         return True
@@ -58,7 +55,7 @@ def main_pipeline():
 
         episode_id = episode_data['ID']
         
-        # Thực hiện các bước (tôi lược bớt log để giữ ngắn gọn)
+        # Thực hiện các bước
         script_path = generate_script(episode_data); 
         if not script_path: raise Exception("Failed at generate_script")
 
@@ -77,21 +74,16 @@ def main_pipeline():
         video_916_path = create_shorts(final_audio_path, subtitle_path, episode_id);
         if not video_916_path: raise Exception("Failed at create_shorts")
 
-        # Lưu ý: upload_youtube phải được gọi từ module upload_youtube, không phải hàm trong glue_pipeline
-        # Tôi giả định hàm bạn dùng là upload_video, nhưng giữ tên cũ để không phá vỡ logic khác
-        upload_status = upload_video(video_169_path, episode_data) 
+        upload_status = upload_video(video_169_path, episode_data)
         logging.info(f"Trạng thái Upload lên YouTube: {upload_status}")
         
-        # Bước hoàn tất: Cập nhật trạng thái
         if episode_data.get('Status_Row'):
             update_status_completed(episode_data['Status_Row'])
 
 
     except Exception as e:
         logging.error(f"QUY TRÌNH GẶP LỖI: {e}", exc_info=True)
-        # Bổ sung: Cập nhật trạng thái lỗi nếu cần thiết
         if episode_data and episode_data.get('Status_Row'):
-             # Tùy chọn: update_status_error(episode_data['Status_Row']) 
              pass
     finally:
         logging.info("--- KẾT THÚC QUY TRÌNH TẠO PODCAST TỰ ĐỘNG ---")
