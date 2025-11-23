@@ -1,45 +1,62 @@
-name: Podcast Auto Pipeline
+name: 🎙️ Podcast Generator - Full Pipeline
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"  # Chạy mỗi 30 phút
+    - cron: '0 * * * *' 
+  workflow_dispatch: 
 
 jobs:
-  build-podcast:
+  build_and_upload_podcast:
     runs-on: ubuntu-latest
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_B64 }}
+      YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
+      YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
+
     steps:
-      # 1. Checkout code
-      - uses: actions/checkout@v3
+      - name: ⬇️ Checkout mã nguồn
+        uses: actions/checkout@v4
 
-      # 2. Cài đặt FFmpeg (Bắt buộc cho xử lý video/audio)
-      - name: Install apt deps (FFmpeg)
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      # 3. Cài đặt Python 3.11
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: 🐍 Thiết lập môi trường Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.10'
 
-      # 4. Cài đặt các thư viện Python
-      - name: Install pip deps
-        run: pip install -r requirements.txt
-        
-      # 5. TẠO FILE SERVICE ACCOUNT JSON TỪ SECRET
-      # Bước này lấy nội dung JSON từ Secret GSPREAD_SERVICE_ACCOUNT và tạo file thật
-      - name: Create Service Account File
-        run: echo '${{ secrets.GSPREAD_SERVICE_ACCOUNT }}' > service_account.json
-        env:
-          GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
-
-      # 6. Thiết lập biến môi trường (API Keys)
-      - name: Set Environment Variables
+      - name: ⚙️ Cài đặt FFmpeg
         run: |
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
-          echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" >> $GITHUB_ENV
-          echo "ENVS loaded"
+          sudo apt-get update
+          sudo apt-get install ffmpeg -y
+
+      - name: 📦 Cài đặt các thư viện Python
+        run: pip install -r requirements.txt
+
+      - name: 🔑 Giải mã Khóa Xác thực
+        run: |
+          # 1. Google Service Account
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_B64 }}" | base64 --decode > service-account.json
           
-      # 7. Chạy Pipeline chính
-      - name: Run pipeline
+          # 2. YouTube client_secrets & token
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
+          
+          # Tạo file .env cục bộ
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
+          echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
+          echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
+
+
+      - name: 🚀 Chạy Podcast Generator Pipeline
+        id: run_pipeline
         run: python scripts/glue_pipeline.py
+
+      - name: 💾 Lưu trữ Output
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: podcast-outputs-${{ github.sha }}
+          path: |
+            outputs/
+            data/episodes/
