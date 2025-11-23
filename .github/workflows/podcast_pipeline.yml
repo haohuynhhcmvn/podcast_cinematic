@@ -1,10 +1,9 @@
 name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
- # schedule:
-  #  - cron: '0 * * * *' 
- 
- workflow_dispatch: 
+  schedule:
+    - cron: '0 * * * *' 
+  workflow_dispatch: 
 
 jobs:
   build_and_upload_podcast:
@@ -52,11 +51,12 @@ jobs:
       - name: 🚀 Chạy Podcast Generator Pipeline
         run: python scripts/glue_pipeline.py
 
-      - name: 💾 Lưu trữ Output
+      # 💾 --- Lưu trữ Output (Artifact) ---
+      - name: 💾 Lưu trữ Output (Bao gồm MP3, TXT, SRT)
         uses: actions/upload-artifact@v4
-        if: always() # <--- ĐÃ SỬA: Luôn lưu trữ output, ngay cả khi job thất bại
+        if: always() # Đảm bảo chạy ngay cả khi Pipeline thất bại
         with:
           name: podcast-outputs-${{ github.sha }}
           path: |
-            outputs/
-            data/episodes/
+            outputs/             # Bao gồm outputs/audio/*.mp3 và outputs/subtitle/*.srt
+            data/episodes/       # Bao gồm data/episodes/*_script.txt
