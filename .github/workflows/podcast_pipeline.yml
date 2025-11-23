@@ -14,8 +14,10 @@ jobs:
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      
       # Secret chứa nội dung JSON thô
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
+      
       # Secret chứa nội dung Base64
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
@@ -38,19 +40,23 @@ jobs:
       - name: 📦 Cài đặt các thư viện Python
         run: pip install -r requirements.txt
 
-      - name: 🔑 Thiết lập Khóa Xác thực và tạo .env
+      # 🔑 BƯỚC THIẾT LẬP KHÓA XÁC THỰC (Đã được chia nhỏ để cô lập lỗi Base64)
+
+      # 1. Ghi nội dung JSON Service Account (Nội dung thô - Không dùng Base64)
+      - name: 🔑 1/4 Ghi Service Account JSON
+        run: echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
+
+      # 2. Giải mã YouTube client_secrets.json (Dùng Base64 - Nếu lỗi sẽ dừng tại đây)
+      - name: 🔑 2/4 Giải mã YouTube Client Secret
+        run: echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
+
+      # 3. Giải mã YouTube token.pickle (Dùng Base64 - Nếu lỗi sẽ dừng tại đây)
+      - name: 🔑 3/4 Giải mã YouTube Token Pickle
+        run: echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
+          
+      # 4. Tạo file .env cục bộ
+      - name: 🔑 4/4 Tạo file .env cục bộ
         run: |
-          # 1. Ghi nội dung JSON Service Account (SỬA LỖI BASE64)
-          # CHỈ DÙNG ECHO để ghi nội dung thô từ Secret
-          echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-          
-          # 2. Giải mã YouTube client_secrets.json (DÙNG BASE64)
-          echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
-          
-          # 3. Giải mã YouTube token.pickle (DÙNG BASE64)
-          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
-          
-          # TẠO FILE .ENV CỤC BỘ
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
