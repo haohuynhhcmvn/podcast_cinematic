@@ -10,28 +10,28 @@ SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
 COLOR_BACKGROUND = (30, 30, 30) 
 
-# Đường dẫn đã tải về (Kiểm tra cả .jpg và .png)
-BACKGROUND_IMAGE_PATHS = ['data/images/background.jpg', 'data/images/background.png']
-MICRO_IMAGE_PATHS = ['data/images/microphone.png', 'data/images/microphone.jpg'] 
+# Đường dẫn TĨNH đến file ảnh trong thư mục assets/images
+ASSET_DIR = 'assets/images'
+BACKGROUND_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'background.jpg'), os.path.join(ASSET_DIR, 'background.png')]
+MICRO_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'microphone.png'), os.path.join(ASSET_DIR, 'microphone.jpg')] 
 
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
         audio_clip = AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
-        # --- BỎ QUA PHỤ ĐỀ: LOGIC ĐẢM BẢO HOÀN THÀNH (Giữ nguyên) ---
+        # --- BỎ QUA PHỤ ĐỀ: LOGIC ĐẢM BẢO HOÀN THÀNH ---
         logging.warning("BỎ QUA PHỤ ĐỀ cho video Shorts để hoàn thành pipeline.")
         subtitle_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         # --- END LOGIC BỎ QUA ---
 
-        # Nền - KÍCH HOẠT IMAGECLIP
+        # Nền - KÍCH HOẠT IMAGECLIP (Sử dụng ảnh đã lưu tại assets/images)
         background_path = next((p for p in BACKGROUND_IMAGE_PATHS if os.path.exists(p)), None)
         if background_path:
              logging.info(f"Sử dụng ảnh nền Shorts từ: {background_path}")
-             # Resize ảnh để vừa vặn với kích thước Shorts
              background_clip = ImageClip(background_path, duration=duration).resize(newsize=(SHORTS_WIDTH, SHORTS_HEIGHT))
         else:
-             logging.warning("Không tìm thấy ảnh nền Shorts. Sử dụng nền đen.")
+             logging.warning("LỖI: Không tìm thấy ảnh nền trong assets/images/. Sử dụng nền đen.")
              background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
         
         # Tiêu đề
@@ -43,10 +43,9 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         micro_path = next((p for p in MICRO_IMAGE_PATHS if os.path.exists(p)), None)
         if micro_path:
              logging.info(f"Sử dụng ảnh micro từ: {micro_path}")
-             # Đặt micro ở vị trí hợp lý cho shorts (ví dụ: gần dưới cùng)
              micro_clip = ImageClip(micro_path, duration=duration).set_pos(('center', SHORTS_HEIGHT * 0.8)).resize(height=SHORTS_HEIGHT * 0.10)
         else:
-             logging.warning("Không tìm thấy ảnh Micro. Sử dụng Placeholder Text.")
+             logging.warning("LỖI: Không tìm thấy ảnh Micro trong assets/images/. Sử dụng Placeholder Text.")
              micro_clip = TextClip("Micro", fontsize=40, color='red').set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.8))
 
         # Sóng âm (Vẫn là Placeholder cho đến khi logic vẽ sóng được thêm)
@@ -58,7 +57,7 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
             background_clip, 
             title_text, 
             wave_text, 
-            micro_clip, # THÊM MICRO CLIP
+            micro_clip, 
             subtitle_clip.set_duration(duration)
         ], size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
 
