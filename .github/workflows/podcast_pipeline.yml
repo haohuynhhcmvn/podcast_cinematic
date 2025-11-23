@@ -1,6 +1,5 @@
-name: 🎙️ Podcast Generator - Full Pipeline
+name: 🎙️ Podcast Generator - Full Pipeline (V. Final)
 
-# 1. Cấu hình lịch chạy (Scheduling)
 on:
   schedule:
     - cron: '0 * * * *' 
@@ -10,15 +9,15 @@ jobs:
   build_and_upload_podcast:
     runs-on: ubuntu-latest
 
-    # 2. Thiết lập Biến Môi Trường (Secrets)
     env:
+      # Secrets Google Sheet/OpenAI
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       
-      # Secret chứa nội dung JSON thô
+      # Secret chứa nội dung JSON thô (Thay thế nếu bạn đang dùng cách này)
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
       
-      # Secret chứa nội dung Base64
+      # Secret chứa nội dung Base64 (Dùng cho YouTube)
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
@@ -27,50 +26,44 @@ jobs:
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      - name: 🐍 Thiết lập môi trường Python
+      # --- Cài môi trường (Python + FFmpeg) ---
+      - name: 🐍 Thiết lập môi trường Python (Dùng V3.10)
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: ⚙️ Cài đặt FFmpeg
-        # FFmpeg là dependency bắt buộc cho moviepy
+      - name: ⚙️ Cài đặt FFmpeg (Đã chứng minh là thành công)
         run: |
           sudo apt-get update
           sudo apt-get install ffmpeg -y
 
       - name: 📦 Cài đặt các thư viện Python
-        # Bước này sẽ cài đặt 'moviepy' sau khi bạn thêm vào requirements.txt
         run: pip install -r requirements.txt
 
-      # 🔑 BƯỚC THIẾT LẬP KHÓA XÁC THỰC (Đã chia nhỏ và sửa lỗi Base64)
-
-      # 1. Ghi nội dung JSON Service Account (Nội dung thô)
-      - name: 🔑 1/4 Ghi Service Account JSON
-        run: echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-
-      # 2. Giải mã YouTube client_secrets.json (Dùng Base64)
-      - name: 🔑 2/4 Giải mã YouTube Client Secret
-        run: echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
-
-      # 3. Giải mã YouTube token.pickle (Dùng Base64)
-      - name: 🔑 3/4 Giải mã YouTube Token Pickle
-        run: echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
-          
-      # 4. Tạo file .env cục bộ
-      - name: 🔑 4/4 Tạo file .env cục bộ
+      # 🔑 --- Giải mã Khóa Xác thực và tạo file cục bộ ---
+      - name: 🔑 Thiết lập Khóa Xác thực và tạo file cục bộ
         run: |
+          # 1. Ghi nội dung JSON Service Account (Nội dung thô)
+          echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
+          
+          # 2. Giải mã YouTube client_secrets.json (DÙNG BASE64)
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
+          
+          # 3. Giải mã YouTube token.pickle (DÙNG BASE64)
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
+          
+          # 4. Tạo file .env cục bộ (hoặc export ENV)
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
 
-      # 3. Chạy Pipeline
+      # 🚀 --- Chạy Pipeline ---
       - name: 🚀 Chạy Podcast Generator Pipeline
-        id: run_pipeline
-        # Nếu moviepy đã được cài đặt, script sẽ tiếp tục xử lý tập Nikola Tesla
+        # Sử dụng python scripts/glue_pipeline.py
         run: python scripts/glue_pipeline.py
 
-      # 4. Tùy chọn: Lưu trữ các file Output (Video/Audio)
+      # 💾 --- Tùy chọn: Lưu trữ các file Output ---
       - name: 💾 Lưu trữ Output (Nếu thành công)
         uses: actions/upload-artifact@v4
         if: success()
