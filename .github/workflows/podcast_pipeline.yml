@@ -10,11 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Secrets Google Sheet/OpenAI
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      
-      # Secrets Xác thực (Dùng Base64 cho YouTube)
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
@@ -39,30 +36,24 @@ jobs:
       - name: 📦 Cài đặt các thư viện Python
         run: pip install -r requirements.txt
         
-      # 🔑 --- Giải mã Khóa Xác thực và tạo file cục bộ (ĐÃ SỬA LỖI) ---
+      # --- Giải mã Khóa ---
       - name: 🔑 Giải mã Khóa Xác thực
         run: |
-          # SỬA LỖI: Dùng printf thay vì echo để đảm bảo nội dung JSON được ghi chính xác
-          printf "%s" "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-          
-          # Giải mã Secrets Base64
+          echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
-          # Tạo file .env cục bộ
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
-          
-          echo "Đã thiết lập xong các file xác thực."
 
-      # 🚀 --- Chạy Pipeline ---
+      # --- Chạy Pipeline ---
       - name: 🚀 Chạy Podcast Generator Pipeline
         run: python scripts/glue_pipeline.py
 
       - name: 💾 Lưu trữ Output
         uses: actions/upload-artifact@v4
-        if: success()
+        if: always() # <--- ĐÃ SỬA: Luôn lưu trữ output, ngay cả khi job thất bại
         with:
           name: podcast-outputs-${{ github.sha }}
           path: |
