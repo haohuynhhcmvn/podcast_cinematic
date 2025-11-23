@@ -1,61 +1,37 @@
-import re
 import os
-import subprocess
-from datetime import timedelta
+import logging
+from openai import OpenAI
+from dotenv import load_dotenv
 
-def get_audio_duration(audio_path):
-    result = subprocess.run(
-        ["ffprobe","-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1", audio_path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def create_subtitle(audio_path: str, script_path: str, episode_id: int):
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: return None
+
     try:
-        return float(result.stdout.strip())
-    except:
-        return 0.0
+        client = OpenAI(api_key=api_key)
+        logging.info("Bắt đầu phiên âm audio và tạo phụ đề bằng Whisper...")
 
-def split_sentences(text):
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-    return [s for s in sentences if s]
+        with open(audio_path, "rb") as audio_file:
+            # Gọi API phiên âm với response format là SRT để có timestamp
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=audio_file, 
+                response_format="srt"
+            )
+        
+        output_dir = os.path.join('outputs', 'subtitle')
+        subtitle_filename = f"{episode_id}_subtitle.srt"
+        subtitle_path = os.path.join(output_dir, subtitle_filename)
+        
+        with open(subtitle_path, 'w', encoding='utf-8') as f:
+            f.write(transcript)
+        
+        logging.info(f"Phụ đề SRT đã tạo thành công và lưu tại: {subtitle_path}")
+        return subtitle_path
 
-def format_timestamp(seconds: float):
-    td = timedelta(seconds=seconds)
-    total_seconds = td.total_seconds()
-    h = int(total_seconds // 3600)
-    m = int((total_seconds % 3600) // 60)
-    s = int(total_seconds % 60)
-    ms = int((total_seconds - int(total_seconds)) * 1000)
-    return f"{h:02}:{m:02}:{s:02},{ms:03}"
-
-def generate_srt_from_text(text, audio_duration, words_per_second=2.5):
-    sentences = split_sentences(text)
-    total_words = sum(len(s.split()) for s in sentences)
-    estimated = total_words / words_per_second if words_per_second>0 else 1
-    scale = (audio_duration / estimated) if estimated>0 else 1.0
-
-    srt_blocks = []
-    current_time = 0.0
-    idx = 1
-    for s in sentences:
-        words = len(s.split())
-        dur = (words / words_per_second) * scale
-        start = current_time
-        end = start + dur
-        srt_blocks.append(f"{idx}\n{format_timestamp(start)} --> {format_timestamp(end)}\n{s}\n")
-        current_time = end + 0.25
-        idx += 1
-    return "\n".join(srt_blocks)
-
-def create_subtitle_for(hash_text:str, audio_path:str, episode_md_path:str, out_dir="outputs/subtitle"):
-    os.makedirs(out_dir, exist_ok=True)
-    with open(episode_md_path, "r", encoding="utf-8") as f:
-        text = f.read()
-    duration = get_audio_duration(audio_path)
-    srt_text = generate_srt_from_text(text, duration)
-    out_path = os.path.join(out_dir, f"{hash_text}.srt")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(srt_text)
-    print("Subtitle created at", out_path)
-    return out_path
-
-if __name__ == "__main__":
-    # quick demo usage (adjust names)
-    pass
+    except Exception as e:
+        logging.error(f"Lỗi khi gọi API Whisper để tạo phụ đề: {e}")
+        return None
