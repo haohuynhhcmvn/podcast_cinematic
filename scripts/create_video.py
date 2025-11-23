@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ KÍCH HOẠT HÌNH ẢNH NỀN VÀ MICRO)
+# scripts/create_video.py (ĐÃ KÍCH HOẠT HÌNH ẢNH NỀN VÀ MICRO VÀ SỬ DỤNG assets/images)
 import os
 import logging
 import moviepy.editor as mp
@@ -10,12 +10,12 @@ VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 COLOR_BACKGROUND = (30, 30, 30)
 
-# Đường dẫn đã tải về (Kiểm tra cả .jpg và .png)
-BACKGROUND_IMAGE_PATHS = ['data/images/background.jpg', 'data/images/background.png']
-MICRO_IMAGE_PATHS = ['data/images/microphone.png', 'data/images/microphone.jpg']
+# Đường dẫn TĨNH đến file ảnh trong thư mục assets/images
+ASSET_DIR = 'assets/images'
+BACKGROUND_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'background.jpg'), os.path.join(ASSET_DIR, 'background.png')]
+MICRO_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'microphone.png'), os.path.join(ASSET_DIR, 'microphone.jpg')]
 
-# ... (Hàm file_to_subtitles_safe và generator giữ nguyên) ...
-
+# Bạn cần tự định nghĩa hàm này nếu nó chưa có trong file của bạn
 def file_to_subtitles_safe(filename):
     """
     HÀM BỎ QUA TẠM THỜI: Luôn trả về list rỗng để bỏ qua phụ đề trong CompositeVideoClip.
@@ -23,12 +23,17 @@ def file_to_subtitles_safe(filename):
     logging.warning(f"Bỏ qua phụ đề cho video 16:9 để hoàn thành pipeline.")
     return []
 
+# Bạn cần tự định nghĩa hàm này nếu nó chưa có trong file của bạn
+# (Giả định hàm này được import từ file khác, nếu không hãy bỏ qua)
+# def file_to_subtitles(filename):
+#     return SubtitlesClip(filename)
+
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
         audio_clip = mp.AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
-        # ... (Phần Subtitle Placeholder giữ nguyên) ...
+        # Generator cho Subtitle (vẫn cần được định nghĩa)
         generator = lambda txt: mp.TextClip(txt, fontsize=50, color='white', font='Arial-Bold',
                                          stroke_color='black', stroke_width=2)
         
@@ -36,6 +41,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         subtitle_clip_to_use = None
         
         if not subtitles_data:
+             # Tạo clip trong suốt nếu không có phụ đề
              subtitle_clip_to_use = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         else:
              subtitle_clip = SubtitlesClip(subtitles_data, generator)
@@ -75,7 +81,6 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         ], size=(VIDEO_WIDTH, VIDEO_HEIGHT)).set_audio(audio_clip)
 
         # Xuất Video
-        # ... (Phần xuất video giữ nguyên) ...
         output_dir = os.path.join('outputs', 'video')
         video_filename = f"{episode_id}_full_podcast_169.mp4"
         video_path = os.path.join(output_dir, video_filename)
