@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ KÍCH HOẠT HÌNH ẢNH NỀN VÀ MICRO VÀ SỬ DỤNG assets/images)
+# scripts/create_video.py (ĐÃ KÍCH HOẠT HÌNH ẢNH NỀN VÀ MICRO)
 import os
 import logging
 import moviepy.editor as mp
@@ -15,18 +15,12 @@ ASSET_DIR = 'assets/images'
 BACKGROUND_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'background.jpg'), os.path.join(ASSET_DIR, 'background.png')]
 MICRO_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'microphone.png'), os.path.join(ASSET_DIR, 'microphone.jpg')]
 
-# Bạn cần tự định nghĩa hàm này nếu nó chưa có trong file của bạn
 def file_to_subtitles_safe(filename):
     """
     HÀM BỎ QUA TẠM THỜI: Luôn trả về list rỗng để bỏ qua phụ đề trong CompositeVideoClip.
     """
     logging.warning(f"Bỏ qua phụ đề cho video 16:9 để hoàn thành pipeline.")
     return []
-
-# Bạn cần tự định nghĩa hàm này nếu nó chưa có trong file của bạn
-# (Giả định hàm này được import từ file khác, nếu không hãy bỏ qua)
-# def file_to_subtitles(filename):
-#     return SubtitlesClip(filename)
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
@@ -40,8 +34,9 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         subtitles_data = file_to_subtitles_safe(subtitle_path)
         subtitle_clip_to_use = None
         
+        # Vì subtitles_data là rỗng, ta tạo một clip trong suốt để placeholder
         if not subtitles_data:
-             # Tạo clip trong suốt nếu không có phụ đề
+             logging.info("Tạo placeholder trong suốt thay cho SubtitlesClip.")
              subtitle_clip_to_use = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         else:
              subtitle_clip = SubtitlesClip(subtitles_data, generator)
@@ -69,7 +64,6 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
              
         # Sóng Âm (Vẫn là Placeholder Text)
         waveform_placeholder = mp.TextClip("SÓNG ÂM THANH CHƯA TÍCH HỢP", fontsize=40, color='white', size=(VIDEO_WIDTH * 0.8, None))
-        # Vị trí đặt sóng âm: (center, nằm trên micro một chút)
         waveform_clip = waveform_placeholder.set_duration(duration).set_pos(("center", VIDEO_HEIGHT * 0.7)) 
         
         # Ghép các thành phần
@@ -82,6 +76,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
 
         # Xuất Video
         output_dir = os.path.join('outputs', 'video')
+        os.makedirs(output_dir, exist_ok=True) # Đảm bảo thư mục tồn tại
         video_filename = f"{episode_id}_full_podcast_169.mp4"
         video_path = os.path.join(output_dir, video_filename)
         
