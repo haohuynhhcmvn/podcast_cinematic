@@ -19,8 +19,6 @@ from auto_music_sfx import auto_music_sfx
 from create_subtitle import create_subtitle
 from create_shorts import create_shorts
 from utils import setup_environment
-# BƯỚC KHẮC PHỤC LỖI VIDEO NỀN ĐEN: Thêm module tải ảnh
-from download_drive import download_episode_images 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -33,7 +31,7 @@ def update_status_completed(row_index: int):
 
         sh = gc.open_by_key(sheet_id)
         worksheet = sh.get_worksheet(0)
-        # Update cột F (cột 6) thành COMPLETED (dựa trên fetch_content.py)
+        # Update cột F (cột 6) thành COMPLETED
         worksheet.update_cell(row_index, 6, 'COMPLETED') 
         logging.info(f"Đã cập nhật hàng {row_index}: COMPLETED")
         return True
@@ -57,13 +55,8 @@ def main_pipeline():
         episode_id = episode_data['ID']
         logging.info(f"Đang xử lý Episode ID: {episode_id}")
 
-        # 1.5. Tải Hình ảnh từ Google Drive (BƯỚC BỔ SUNG)
-        image_folder_id = episode_data.get('ImageFolder')
-        if image_folder_id:
-             logging.info("Bắt đầu tải ảnh nền và micro từ Google Drive...")
-             download_episode_images(image_folder_id, episode_id)
-        else:
-             logging.warning("Không có ImageFolder ID trong Google Sheet. Video sẽ dùng nền đen và placeholder micro.")
+        # KHÔNG CÓ BƯỚC TẢI ẢNH: Đã đơn giản hóa.
+        logging.info("Bỏ qua bước tải ảnh từ Google Drive. Đảm bảo file ảnh nền và micro đã có sẵn trong assets/images/")
              
         # 2. Generate Script
         script_path = generate_script(episode_data)
@@ -93,7 +86,6 @@ def main_pipeline():
             logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
 
         # 8. Upload YouTube
-        # Sử dụng video 16:9 để upload (giả định đây là video chính)
         logging.info("Bắt đầu upload...")
         upload_status = upload_video(video_169_path, episode_data)
         logging.info(f"Kết quả Upload: {upload_status}")
