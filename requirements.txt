@@ -1,13 +1,13 @@
 openai
 gspread
 oauth2client
-google-api-python-client
-google-auth
-google-auth-httplib2
-google-auth-oauthlib
-moviepy
-pydub
-requests
-numpy
 python-dotenv
-tqdm
+# Xử lý âm thanh
+pydub
+numpy
+# Xử lý video
+moviepy
+# YouTube API
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
