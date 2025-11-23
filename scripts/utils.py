@@ -1,24 +1,22 @@
-
----
-
-### `scripts/utils.py`
-```python
-import hashlib
 import os
-import re
-import io
-from pathlib import Path
-import logging
 
-logging.basicConfig(level=logging.INFO)
+def setup_environment():
+    """Kiểm tra và tạo các thư mục cần thiết cho dự án."""
+    required_dirs = [
+        'data/episodes', 'inputs/images', 'outputs/audio', 'outputs/subtitle',
+        'outputs/video', 'outputs/shorts', 'assets/intro_outro', 'assets/background_music'
+    ]
+    
+    for dir_path in required_dirs:
+        os.makedirs(dir_path, exist_ok=True)
+    
+    print("Môi trường và cấu trúc thư mục đã được thiết lập.")
 
-def generate_hash(text: str) -> str:
-    return hashlib.sha1(text.encode("utf-8")).hexdigest()
-
-def ensure_dir(path: str):
-    os.makedirs(path, exist_ok=True)
-
-def sanitize_filename(name: str) -> str:
-    # safe filename
-    name = re.sub(r'[^0-9A-Za-zÀ-ỹ\-\_\. ]+', '', name)
-    return name.strip().replace(' ', '_')[:200]
+def load_template_file(filepath):
+    """Tải nội dung từ một file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"Lỗi: Không tìm thấy file template tại {filepath}")
+        return None
