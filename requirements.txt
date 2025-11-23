@@ -1,8 +1,13 @@
 openai
 gspread
 oauth2client
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
 moviepy
 pydub
 requests
-google-api-python-client
 numpy
+python-dotenv
+tqdm
