@@ -1,62 +1,20 @@
-name: 🎙️ Podcast Generator - Full Pipeline
-
-on:
-  schedule:
-    - cron: '0 * * * *' 
-  workflow_dispatch: 
-
-jobs:
-  build_and_upload_podcast:
-    runs-on: ubuntu-latest
-
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      GOOGLE_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_B64 }}
-      YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
-      YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
-
-    steps:
-      - name: ⬇️ Checkout mã nguồn
-        uses: actions/checkout@v4
-
-      - name: 🐍 Thiết lập môi trường Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: ⚙️ Cài đặt FFmpeg
+- name: 🔑 Giải mã Khóa Xác thực và tạo .env
         run: |
-          sudo apt-get update
-          sudo apt-get install ffmpeg -y
-
-      - name: 📦 Cài đặt các thư viện Python
-        run: pip install -r requirements.txt
-
-      - name: 🔑 Giải mã Khóa Xác thực
-        run: |
-          # 1. Google Service Account
+          # 1. Giải mã Google Service Account JSON
+          # File service-account.json sẽ được tạo ở thư mục gốc
           echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_B64 }}" | base64 --decode > service-account.json
           
-          # 2. YouTube client_secrets & token
+          # 2. Giải mã YouTube client_secrets.json (OAuth)
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
+          
+          # 3. Giải mã YouTube token.pickle (Session)
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
-          # Tạo file .env cục bộ
+          # TẠO FILE .ENV CỤC BỘ
+          # Các khóa API và ID đơn giản:
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
+          
+          # Quan trọng: Trỏ đến tên file JSON đã được giải mã, 
+          # giúp hàm gspread.service_account() trong fetch_content.py tìm thấy file
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
-
-
-      - name: 🚀 Chạy Podcast Generator Pipeline
-        id: run_pipeline
-        run: python scripts/glue_pipeline.py
-
-      - name: 💾 Lưu trữ Output
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: podcast-outputs-${{ github.sha }}
-          path: |
-            outputs/
-            data/episodes/
