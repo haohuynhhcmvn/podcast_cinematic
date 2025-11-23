@@ -1,24 +1,8 @@
-# scripts/create_video.py (Đã sửa lỗi gọi hàm MoviePy)
+# scripts/create_video.py (Đã sửa lỗi gọi hàm MoviePy bằng tiền tố mp.)
 import os
 import logging
-import moviepy.editor as mp # Dòng này vẫn OK
-
-# SỬA: Phải import các hàm từ moviepy.editor MÀ KHÔNG DÙNG mp.
-# Nếu bạn dùng `from moviepy.editor import *` cũ, các hàm này sẽ hoạt động
-# Vì bạn dùng `import moviepy.editor as mp`, bạn phải gọi chúng qua `mp.`
-# Chúng ta sẽ import trực tiếp những gì không cần gọi qua mp.
-
-# Bổ sung: Tự động import các hàm cần thiết từ thư viện đã được import là 'mp'
-from moviepy.video.tools.subtitles import SubtitlesClip
-# CHÚ Ý: BẠN CẦN THAY THẾ TOÀN BỘ CÁC HÀM CŨ BẰNG HÀM CÓ TIỀN TỐ MP.
-# Dưới đây là giả định các hàm bạn dùng (từ snippet): AudioFileClip, TextClip, ColorClip, CompositeVideoClip
-
-# ĐỊNH NGHĨA LẠI CÁC HÀM DÙNG MP.
-AudioFileClip = mp.AudioFileClip
-TextClip = mp.TextClip
-ColorClip = mp.ColorClip
-CompositeVideoClip = mp.CompositeVideoClip
-# --- KẾT THÚC CÁC SỬA ĐỔI ---
+import moviepy.editor as mp # Giữ nguyên cú pháp này
+from moviepy.video.tools.subtitles import SubtitlesClip # Dòng này vẫn OK
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -28,26 +12,26 @@ COLOR_BACKGROUND = (30, 30, 30)
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
-        # SỬA LỖI Ở ĐÂY: Dùng AudioFileClip (đã được định nghĩa lại ở trên)
-        audio_clip = AudioFileClip(final_audio_path)
+        # SỬA LỖI: Gọi tất cả các hàm moviepy bằng tiền tố mp.
+        audio_clip = mp.AudioFileClip(final_audio_path) # ĐÃ SỬA
         duration = audio_clip.duration
         
         # Generator cho Subtitle (font cho 16:9)
-        generator = lambda txt: TextClip(txt, fontsize=50, color='white', font='Arial-Bold', 
+        generator = lambda txt: mp.TextClip(txt, fontsize=50, color='white', font='Arial-Bold', # ĐÃ SỬA
                                          stroke_color='black', stroke_width=2)
         subtitle_clip = SubtitlesClip(subtitle_path, generator)
         subtitle_clip = subtitle_clip.set_pos(('center', 'bottom')).margin(bottom=50)
 
         # Nền (Background)
-        background_clip = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
+        background_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration) # ĐÃ SỬA
         
         # Sóng âm & Micro (Dùng Placeholder đơn giản để tránh dependency phức tạp)
-        wave_text = TextClip("Sóng Âm Đang Chạy...", fontsize=40, color='white', 
+        wave_text = mp.TextClip("Sóng Âm Đang Chạy...", fontsize=40, color='white', # ĐÃ SỬA
                              size=(VIDEO_WIDTH * 0.8, None), bg_color='black')
         waveform_clip = wave_text.set_duration(duration).set_pos(("center", VIDEO_HEIGHT // 2 - 50))
         
         # Ghép các thành phần
-        final_clip = CompositeVideoClip([
+        final_clip = mp.CompositeVideoClip([ # ĐÃ SỬA
             background_clip, waveform_clip, subtitle_clip.set_duration(duration)
         ], size=(VIDEO_WIDTH, VIDEO_HEIGHT)).set_audio(audio_clip)
 
