@@ -1,8 +1,8 @@
-# scripts/create_video.py (Đã sửa lỗi gọi hàm MoviePy bằng tiền tố mp.)
+# scripts/create_video.py (ĐÃ SỬA LỖI GỌI HÀM)
 import os
 import logging
 import moviepy.editor as mp
-from moviepy.video.tools.subtitles import SubtitlesClip # Dòng này vẫn OK
+from moviepy.video.tools.subtitles import SubtitlesClip
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -12,26 +12,26 @@ COLOR_BACKGROUND = (30, 30, 30)
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
-        # SỬA LỖI: Tất cả các hàm MoviePy đều được gọi bằng tiền tố mp.
-        audio_clip = mp.AudioFileClip(final_audio_path)
+        # SỬA LỖI: Gọi các hàm bằng tiền tố mp.
+        audio_clip = mp.AudioFileClip(final_audio_path) # ĐÃ SỬA
         duration = audio_clip.duration
         
         # Generator cho Subtitle (font cho 16:9)
-        generator = lambda txt: mp.TextClip(txt, fontsize=50, color='white', font='Arial-Bold', 
+        generator = lambda txt: mp.TextClip(txt, fontsize=50, color='white', font='Arial-Bold', # ĐÃ SỬA
                                          stroke_color='black', stroke_width=2)
         subtitle_clip = SubtitlesClip(subtitle_path, generator)
         subtitle_clip = subtitle_clip.set_pos(('center', 'bottom')).margin(bottom=50)
 
         # Nền (Background)
-        background_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
+        background_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration) # ĐÃ SỬA
         
         # Sóng âm & Micro (Dùng Placeholder đơn giản để tránh dependency phức tạp)
-        wave_text = mp.TextClip("Sóng Âm Đang Chạy...", fontsize=40, color='white', 
+        wave_text = mp.TextClip("Sóng Âm Đang Chạy...", fontsize=40, color='white', # ĐÃ SỬA
                              size=(VIDEO_WIDTH * 0.8, None), bg_color='black')
         waveform_clip = wave_text.set_duration(duration).set_pos(("center", VIDEO_HEIGHT // 2 - 50))
         
         # Ghép các thành phần
-        final_clip = mp.CompositeVideoClip([
+        final_clip = mp.CompositeVideoClip([ # ĐÃ SỬA
             background_clip, waveform_clip, subtitle_clip.set_duration(duration)
         ], size=(VIDEO_WIDTH, VIDEO_HEIGHT)).set_audio(audio_clip)
 
