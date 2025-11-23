@@ -1,28 +1,28 @@
+# scripts/glue_pipeline.py (Đã dọn dẹp các import thừa)
 import sys
 import os
 import logging
 from dotenv import load_dotenv
 import gspread # Cần import gspread để cập nhật trạng thái cuối cùng
 
+# Thêm thư mục 'scripts' vào đường dẫn hệ thống để import nội bộ hoạt động
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Thay đổi: Đảm bảo import file script con hoạt động
+# Thay đổi: Giữ lại các import hàm chính, xóa các import lặp lại
 from create_video import create_video
 from upload_youtube import upload_video
 from google_sheets_manager import GoogleSheetsManager
-# Import TẤT CẢ các hàm
 from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
 from create_tts import create_tts
 from auto_music_sfx import auto_music_sfx
 from create_subtitle import create_subtitle
-from create_video import create_video
 from create_shorts import create_shorts
-from upload_youtube import upload_youtube
 from utils import setup_environment
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# ... Giữ nguyên hàm update_status_completed ...
 def update_status_completed(row_index: int):
     """Cập nhật trạng thái trong Google Sheet thành 'COMPLETED'."""
     try:
@@ -41,7 +41,7 @@ def update_status_completed(row_index: int):
         logging.error(f"Lỗi khi cập nhật trạng thái COMPLETED: {e}")
         return False
 
-
+# ... Giữ nguyên hàm main_pipeline ...
 def main_pipeline():
     logging.info("--- BẮT ĐẦU QUY TRÌNH TẠO PODCAST TỰ ĐỘNG ---")
 
