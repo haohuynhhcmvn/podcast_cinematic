@@ -1,43 +1,57 @@
 import os
-import openai
-from utils import ensure_dir, generate_hash, sanitize_filename
+import logging
+from openai import OpenAI
+from dotenv import load_dotenv
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-EPISODES_DIR = "data/episodes"
-ensure_dir(EPISODES_DIR)
+def generate_script(episode_data):
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: 
+        logging.error("Thiếu OPENAI_API_KEY."); return None
 
-# For simplicity, process a single pending item from Google Sheet cached file or manual run
-# glue_pipeline will pass parameters; here we provide a helper function.
+    try:
+        client = OpenAI(api_key=api_key)
+        
+        episode_id = episode_data['ID']
+        title = episode_data['Name']
+        core_theme = episode_data['Core Theme']
+        raw_content = episode_data['Content/Input']
+        
+        system_prompt = f"""
+        Bạn là **Master Storyteller** (Người kể chuyện bậc thầy) với giọng văn **Nam Trầm, lôi cuốn, có chiều sâu và truyền cảm hứng**. 
+        Nhiệm vụ của bạn là biến nội dung thô dưới đây thành một kịch bản audio cinematic, phù hợp cho podcast chất lượng cao.
 
-TEMPLATE_SYSTEM = """Bạn là Master Storyteller & Audio Documentary Director.
-Viết kịch bản podcast cinematic (dài khoảng 20-25 phút) theo cấu trúc:
-Event -> Context/Psychology -> Philosophical Insight.
-Tránh liệt kê sự kiện theo Wikipedia; tập trung vào CHỦ ĐỀ CỐT LÕI.
-FORMAT: Strict Markdown. Bao gồm SFX/Music cues [SFX: xxx.wav], [Music: epic.mp3] và voice directions [Giọng trầm], [Nhạc nổi lên] cho mỗi đoạn.
-Ngôn ngữ: Tiếng Việt, cảm xúc mạnh mẽ, gợi hình."""
+        QUY TẮC:
+        1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
+        2. **Thời lượng:** Kịch bản nên có độ dài khoảng 1000 - 1500 từ.
+        3. **Định dạng Output:** Phải là nội dung kịch bản thuần túy, không có lời dẫn (ví dụ: [GIỌNG NAM TRẦM ĐỌC:]). Chỉ bao gồm văn bản cần được đọc.
 
-def generate_script_for(episode_title: str, character: str, core_theme: str, hash_text: str):
-    prompt = f"TÊN: {episode_title}\nNHÂN VẬT: {character}\nCHỦ ĐỀ: {core_theme}\n\nHãy viết kịch bản theo yêu cầu ở trên."
-    print("Requesting OpenAI to generate script...")
-    resp = openai.ChatCompletion.create(
-        model="gpt-4o",
-        messages=[
-            {"role":"system", "content": TEMPLATE_SYSTEM},
-            {"role":"user", "content": prompt}
-        ],
-        temperature=0.8,
-        max_tokens=4500
-    )
-    text = resp["choices"][0]["message"]["content"]
-    ensure_dir(EPISODES_DIR)
-    path = os.path.join(EPISODES_DIR, f"{hash_text}.md")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-    print("Script saved to", path)
-    return path
+        CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{core_theme}"
+        TÊN NHÂN VẬT/TIÊU ĐỀ: "{title}"
+        """
 
-# Example local test:
-if __name__ == "__main__":
-    h = generate_hash("Steve Jobs|Steve Jobs|Sáng tạo")
-    generate_script_for("Steve Jobs – Nỗi ám ảnh hoàn hảo", "Steve Jobs", "Sáng tạo vượt giới hạn", h)
+        user_prompt = f"""NỘI DUNG THÔ CẦN XỬ LÝ:\n---\n{raw_content}\n---\nHãy bắt đầu tạo kịch bản ngay bây giờ."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            temperature=0.7
+        )
+        
+        script_content = response.choices[0].message.content
+        
+        output_dir = os.path.join('data', 'episodes')
+        script_filename = f"{episode_id}_script.txt"
+        script_path = os.path.join(output_dir, script_filename)
+        
+        with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(script_content)
+        
+        logging.info(f"Đã tạo kịch bản thành công và lưu tại: {script_path}")
+        return script_path
+
+    except Exception as e:
+        logging.error(f"Lỗi khi gọi API OpenAI để tạo kịch bản: {e}")
+        return None
