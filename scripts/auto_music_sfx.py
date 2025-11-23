@@ -1,0 +1,1 @@
+# Placeholder for auto_music_sfx.py
