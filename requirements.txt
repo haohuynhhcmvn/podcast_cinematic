@@ -1,0 +1,7 @@
+openai
+gspread
+oauth2client
+moviepy
+requests
+pyyaml
+google-api-python-client

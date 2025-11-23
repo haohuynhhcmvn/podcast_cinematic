@@ -1,2 +1,2 @@
-# podcast_cinematic
-podcast_cinematic
+# Podcast Cinematic Demo
+Dự án demo tạo podcast cinematic tự động.
