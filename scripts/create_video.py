@@ -1,7 +1,24 @@
+# scripts/create_video.py (Đã sửa lỗi gọi hàm MoviePy)
 import os
 import logging
-import moviepy.editor as mp
+import moviepy.editor as mp # Dòng này vẫn OK
+
+# SỬA: Phải import các hàm từ moviepy.editor MÀ KHÔNG DÙNG mp.
+# Nếu bạn dùng `from moviepy.editor import *` cũ, các hàm này sẽ hoạt động
+# Vì bạn dùng `import moviepy.editor as mp`, bạn phải gọi chúng qua `mp.`
+# Chúng ta sẽ import trực tiếp những gì không cần gọi qua mp.
+
+# Bổ sung: Tự động import các hàm cần thiết từ thư viện đã được import là 'mp'
 from moviepy.video.tools.subtitles import SubtitlesClip
+# CHÚ Ý: BẠN CẦN THAY THẾ TOÀN BỘ CÁC HÀM CŨ BẰNG HÀM CÓ TIỀN TỐ MP.
+# Dưới đây là giả định các hàm bạn dùng (từ snippet): AudioFileClip, TextClip, ColorClip, CompositeVideoClip
+
+# ĐỊNH NGHĨA LẠI CÁC HÀM DÙNG MP.
+AudioFileClip = mp.AudioFileClip
+TextClip = mp.TextClip
+ColorClip = mp.ColorClip
+CompositeVideoClip = mp.CompositeVideoClip
+# --- KẾT THÚC CÁC SỬA ĐỔI ---
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -11,6 +28,7 @@ COLOR_BACKGROUND = (30, 30, 30)
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
+        # SỬA LỖI Ở ĐÂY: Dùng AudioFileClip (đã được định nghĩa lại ở trên)
         audio_clip = AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
