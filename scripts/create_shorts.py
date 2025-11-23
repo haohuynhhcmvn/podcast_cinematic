@@ -1,4 +1,4 @@
-# scripts/create_shorts.py
+# scripts/create_shorts.py (ĐÃ KÍCH HOẠT HÌNH ẢNH NỀN VÀ MICRO)
 import os
 import logging
 from moviepy.editor import *
@@ -13,7 +13,7 @@ COLOR_BACKGROUND = (30, 30, 30)
 # Đường dẫn TĨNH đến file ảnh trong thư mục assets/images
 ASSET_DIR = 'assets/images'
 BACKGROUND_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'background.jpg'), os.path.join(ASSET_DIR, 'background.png')]
-MICRO_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'microphone.png'), os.path.join(ASSET_DIR, 'microphone.jpg')] 
+MICRO_IMAGE_PATHS = [os.path.join(ASSET_DIR, 'microphone.png'), os.path.join(ASSET_DIR, 'microphone.jpg')]
 
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
@@ -63,6 +63,7 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
 
         # Xuất Video
         output_dir = os.path.join('outputs', 'shorts')
+        os.makedirs(output_dir, exist_ok=True) # Đảm bảo thư mục tồn tại
         video_filename = f"{episode_id}_shorts_916.mp4"
         video_path = os.path.join(output_dir, video_filename)
         
