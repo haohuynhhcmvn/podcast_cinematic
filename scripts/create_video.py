@@ -1,6 +1,6 @@
 import os
 import logging
-from moviepy.editor import *
+import moviepy.editor as mp
 from moviepy.video.tools.subtitles import SubtitlesClip
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
