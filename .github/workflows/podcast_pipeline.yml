@@ -1,4 +1,4 @@
-name: 🎙️ Podcast Generator - Full Pipeline (Sửa Lỗi Cuối Cùng)
+name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
   schedule:
@@ -10,59 +10,48 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Secrets Google Sheet/OpenAI
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      
-      # Secrets Xác thực (Dùng Base64 cho YouTube)
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
       YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
-
 
     steps:
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      # --- Cài môi trường (Python + FFmpeg) ---
       - name: 🐍 Thiết lập môi trường Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: ⚙️ Cài đặt FFmpeg
+      # --- Cài đặt System Dependencies (FFmpeg + ImageMagick) ---
+      - name: ⚙️ Cài đặt FFmpeg & ImageMagick
         run: |
           sudo apt-get update
-          sudo apt-get install ffmpeg -y
+          sudo apt-get install -y ffmpeg imagemagick
+          # SỬA LỖI Policy của ImageMagick (Cho phép xử lý text)
+          sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
-      - name: 📦 Cài đặt các thư viện Python
+      - name: 📦 Cài đặt thư viện Python
         run: pip install -r requirements.txt
 
-      # 🔑 --- Giải mã Khóa Xác thực và tạo file cục bộ ---
-      - name: 🔑 Giải mã Khóa Xác thực và tạo file cục bộ
+      # --- Giải mã Khóa ---
+      - name: 🔑 Giải mã Khóa Xác thực
         run: |
-          # 1. Ghi nội dung JSON Service Account (Nội dung thô)
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-          
-          # 2. Giải mã YouTube client_secrets.json (DÙNG BASE64)
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
-          
-          # 3. Giải mã YouTube token.pickle (DÙNG BASE64)
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
-          # 4. Tạo file .env cục bộ
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
-
-      # 🚀 --- Chạy Pipeline ---
+      # --- Chạy Pipeline ---
       - name: 🚀 Chạy Podcast Generator Pipeline
-        # Lệnh này sẽ chạy thành công sau khi sửa lỗi import trong file Python
         run: python scripts/glue_pipeline.py
 
-      # 💾 --- Tùy chọn: Lưu trữ các file Output ---
-      - name: 💾 Lưu trữ Output (Nếu thành công)
+      - name: 💾 Lưu trữ Output
         uses: actions/upload-artifact@v4
         if: success()
         with:
