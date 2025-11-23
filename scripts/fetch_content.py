@@ -132,8 +132,9 @@ def fetch_and_download():
         
         folder_id = get_folder_id_from_url(folder_link)
         if not folder_id:
-             print(f"LỖI: Không trích xuất được Folder ID hợp lệ từ link: {folder_link}")
-             continue
+            # Sửa lỗi thụt lề: Đảm bảo print và continue thụt lề 4 space
+            print(f"LỖI: Không trích xuất được Folder ID hợp lệ từ link: {folder_link}")
+            continue
              
         try:
             files = list_files_in_folder(drive, folder_id)
