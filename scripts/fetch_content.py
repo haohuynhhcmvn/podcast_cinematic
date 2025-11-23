@@ -8,11 +8,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def authenticate_google_sheet():
     load_dotenv()
-    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+    # Đường dẫn file JSON được đọc từ .env (tên file: service-account.json)
+    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') 
+    
+    # Kiểm tra file đã được giải mã/tạo chưa
     if not service_account_file or not os.path.exists(service_account_file):
         logging.error(f"File Service Account JSON không tồn tại tại: {service_account_file}")
         return None
+        
     try:
+        # gspread sẽ sử dụng file này để xác thực
         gc = gspread.service_account(filename=service_account_file)
         return gc
     except Exception as e:
@@ -37,23 +42,25 @@ def fetch_content():
         if episode_to_process:
             episode_id = episode_to_process.get('ID')
             episode_name = episode_to_process.get('Name')
-            logging.info(f"Tìm thấy tập mới: ID={episode_id}, Title={episode_name}")
             
-            # CẬP NHẬT TRẠNG THÁI: Tìm 'pending' và cập nhật thành 'PROCESSING'
-            # Giả định cột Status là cột F (cột 6)
-            cell = worksheet.find('pending', in_column=6) 
+            # Lấy số hàng để cập nhật trạng thái sau này
+            cell = worksheet.find('pending', in_column=6) # Giả định cột Status là cột F (cột 6)
+            
+            # CẬP NHẬT TRẠNG THÁI: 'pending' -> 'PROCESSING'
             if cell:
-                worksheet.update_cell(cell.row, cell.col, 'PROCESSING')
+                row_to_update = cell.row
+                worksheet.update_cell(row_to_update, cell.col, 'PROCESSING')
                 logging.info(f"Đã cập nhật trạng thái của tập {episode_id} thành 'PROCESSING'.")
+            else:
+                row_to_update = None
 
-            # CHUẨN HÓA DỮ LIỆU TRẢ VỀ (KHỚP VỚI CẤU TRÚC SHEET)
             processed_data = {
                 'ID': episode_id,
                 'Name': episode_name,
                 'Core Theme': episode_to_process.get('Core Theme', ''),
                 'Content/Input': episode_to_process.get('Content/Input', ''),
                 'ImageFolder': episode_to_process.get('ImageFolder', ''),
-                'Status_Row': cell.row if cell else None
+                'Status_Row': row_to_update # Lưu lại hàng cần cập nhật
             }
             return processed_data
         else:
@@ -63,5 +70,3 @@ def fetch_content():
     except Exception as e:
         logging.error(f"Lỗi trong quá trình lấy nội dung từ Sheet: {e}")
         return None
-
-# (Không cần if __name__ main, được gọi bởi glue_pipeline)
