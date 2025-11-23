@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ SỬA LỖI CUỐI CÙNG: SRT Parsing)
+# scripts/create_video.py (ĐÃ SỬA LỖI LỌC NONE)
 import os
 import logging
 import moviepy.editor as mp
@@ -13,25 +13,29 @@ COLOR_BACKGROUND = (30, 30, 30)
 
 def file_to_subtitles_safe(filename):
     """
-    Hàm an toàn để đọc file SRT. Tránh lỗi TypeError: cannot unpack non-iterable NoneType object 
-    bằng cách đảm bảo luôn trả về list [] thay vì None khi parsing thất bại.
+    Hàm an toàn để đọc file SRT. Chú trọng LỌC BỎ các phần tử None trong danh sách phụ đề 
+    mà moviepy có thể chèn vào khi parsing thất bại một khối.
     """
     try:
         # Sử dụng hàm chuẩn của moviepy để phân tích cú pháp
-        subtitles = file_to_subtitles(filename)
-        # Nếu moviepy trả về None (nguyên nhân gây crash), hoặc list rỗng
-        if not subtitles:
-            logging.warning(f"File SRT rỗng hoặc không có dữ liệu tại {filename}. Trả về list rỗng.")
+        # Kết quả raw_subtitles CÓ THỂ là một list chứa các phần tử None
+        raw_subtitles = file_to_subtitles(filename)
+        
+        # 💡 SỬA LỖI CHỦ YẾU: Lọc bỏ tất cả các phần tử None.
+        subtitles_filtered = [sub for sub in raw_subtitles if sub is not None]
+        
+        if not subtitles_filtered:
+            logging.warning(f"File SRT rỗng hoặc không có dữ liệu hợp lệ tại {filename}. Trả về list rỗng.")
             return []
-        return subtitles
+        
+        return subtitles_filtered
     except Exception as e:
-        # Bắt các lỗi cú pháp và trả về list rỗng
+        # Bắt các lỗi cú pháp tổng thể
         logging.error(f"Lỗi phân tích cú pháp file SRT ({filename}): {e}. Trả về list rỗng.", exc_info=True)
         return []
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
-        # Đảm bảo tất cả các hàm MoviePy đều được gọi bằng tiền tố mp.
         audio_clip = mp.AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
@@ -42,14 +46,13 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         # Lấy dữ liệu phụ đề đã được xử lý an toàn
         subtitles_data = file_to_subtitles_safe(subtitle_path)
         
-        # Dòng 48 của bạn là nơi lỗi xảy ra trong lần chạy vừa rồi.
-        
+        # Dòng 53 (SubtitlesClip) trong log của bạn.
         if not subtitles_data:
              logging.warning("Phụ đề rỗng hoặc bị lỗi. Tạo clip video không phụ đề.")
-             # Tạo một clip trong suốt có kích thước và thời lượng đầy đủ để tránh lỗi CompositeVideoClip
+             # Tạo một clip trong suốt để tránh lỗi CompositeVideoClip
              subtitle_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         else:
-             # Truyền trực tiếp dữ liệu phụ đề đã parse (list of tuples) vào SubtitlesClip
+             # Truyền danh sách phụ đề đã được lọc sạch None
             subtitle_clip = SubtitlesClip(subtitles_data, generator)
             
         subtitle_clip = subtitle_clip.set_pos(('center', 'bottom')).margin(bottom=50)
