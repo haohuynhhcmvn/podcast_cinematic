@@ -6,7 +6,7 @@ pydub
 numpy
 # Ghim moviepy về bản cũ ổn định 1.0.3 để dùng được module 'editor'
 moviepy==1.0.3
-Pillow==9.0.0
+Pillow==9.0.0  # <--- Đã thêm dòng này để khắc phục lỗi ANTIALIAS
 # XÓA imageio và decorator đi, để moviepy tự cài bản nó thích (>=2.5)
 
 # YouTube API
