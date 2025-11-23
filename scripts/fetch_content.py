@@ -10,12 +10,22 @@ from utils import generate_hash, ensure_dir, sanitize_filename
 
 # CONFIG
 SERVICE_ACCOUNT_FILE = "service_account.json"
-SHEET_NAME = "podcast_requests"   # đổi theo sheet bạn dùng
+SHEET_ID = "1qSbdDEEP6pGvWGBiYdCFroSfjtWbNskwCmEe0vjkQdI"
 INPUT_IMAGES_ROOT = "inputs/images"
+
+# Cấu hình tên cột trong Google Sheet của bạn
+COLUMN_MAP = {
+    "title_key": "Name",          # Cột B: Dùng cho tiêu đề/tên tập
+    "character_key": "Name",      # Cột B: Dùng cho Tên nhân vật (vì bạn không có cột Character)
+    "core_theme_key": "CoreTheme",# Cột C: Dùng cho Chủ đề cốt lõi
+    "img_folder_key": "ImageFolder", # Cột E: Dùng cho Link thư mục ảnh
+    "status_key": "Status",       # Cột F: Dùng để kiểm tra trạng thái
+    "hash_column_index": 7        # Cột G: Vị trí cột HASH (Bắt đầu từ 1. Cột G là 7)
+}
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
+    "https://www.googleapis.com/auth/spreadsheets" # Quyền ĐỌC VÀ GHI
 ]
 
 def get_service():
@@ -57,26 +67,45 @@ def get_folder_id_from_url(url: str):
 def fetch_and_download():
     drive, creds = get_service()
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_FILE)
-    sh = gc.open(SHEET_NAME)
+    sh = gc.open_by_key(SHEET_ID)
+    
+    # Giả định dữ liệu nằm ở Sheet đầu tiên (sheet1)
     sheet = sh.sheet1
+    
+    # get_all_records() trả về dictionary sử dụng tiêu đề cột làm key
     rows = sheet.get_all_records()
+    
+    # gspread bắt đầu đếm hàng từ 1. get_all_records() bỏ qua hàng 1 (tiêu đề).
+    # Hàng 1 trong Python (idx=0) tương ứng với Hàng 2 trong Sheet.
     for idx, r in enumerate(rows, start=2):
-        if str(r.get("status","")).strip().lower() != "pending":
+        # Sử dụng COLUMN_MAP để lấy tên cột từ Sheet của bạn
+        status = str(r.get(COLUMN_MAP["status_key"],"")).strip().lower()
+        if status != "pending":
             continue
-        title = r.get("title") or r.get("character") or f"episode_{idx}"
-        core_theme = r.get("core_theme","")
-        character = r.get("character","")
-        folder_link = r.get("img_folder","")
+
+        title = r.get(COLUMN_MAP["title_key"]) or f"episode_{idx}"
+        character = r.get(COLUMN_MAP["character_key"], "")
+        core_theme = r.get(COLUMN_MAP["core_theme_key"], "")
+        folder_link = r.get(COLUMN_MAP["img_folder_key"], "")
+        
+        # Tạo hash từ dữ liệu
         text_hash = generate_hash(f"{title}|{character}|{core_theme}")
-        # write back hash to sheet
-        sheet.update_cell(idx, 7, text_hash)  # assuming G column is hash
+        
+        # Ghi lại hash vào Sheet (Cột G)
+        hash_col = COLUMN_MAP["hash_column_index"]
+        sheet.update_cell(idx, hash_col, text_hash)
+        
         target_dir = os.path.join(INPUT_IMAGES_ROOT, text_hash)
         ensure_dir(target_dir)
+        
         if not folder_link:
+            print(f"Bỏ qua '{title}': Không có link ImageFolder.")
             continue
+        
         folder_id = get_folder_id_from_url(folder_link)
         files = list_files_in_folder(drive, folder_id)
-        # download image files only
+        
+        # Tải file ảnh
         for f in files:
             name = sanitize_filename(f.get("name","unnamed"))
             mime = f.get("mimeType","")
