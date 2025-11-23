@@ -1,15 +1,47 @@
-- name: 🔑 Thiết lập Khóa Xác thực và tạo .env
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          # Biến môi trường để sử dụng nội dung JSON thô
-          SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
-          YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
-          YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
+name: 🎙️ Podcast Generator - Full Pipeline
 
+# 1. Cấu hình lịch chạy (Scheduling)
+on:
+  schedule:
+    - cron: '0 * * * *' 
+  workflow_dispatch: 
+
+jobs:
+  build_and_upload_podcast:
+    runs-on: ubuntu-latest
+
+    # 2. Thiết lập Biến Môi Trường (Secrets)
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      # Secret chứa nội dung JSON thô
+      SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
+      # Secret chứa nội dung Base64
+      YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
+      YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
+
+
+    steps:
+      - name: ⬇️ Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 🐍 Thiết lập môi trường Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: ⚙️ Cài đặt FFmpeg
         run: |
-          # 1. Ghi nội dung JSON Service Account (Nội dung thô)
-          # CHỈ SỬ DỤNG LỆNH ECHO ĐỂ GHI NỘI DUNG THÔ
+          sudo apt-get update
+          sudo apt-get install ffmpeg -y
+
+      - name: 📦 Cài đặt các thư viện Python
+        run: pip install -r requirements.txt
+
+      - name: 🔑 Thiết lập Khóa Xác thực và tạo .env
+        run: |
+          # 1. Ghi nội dung JSON Service Account (SỬA LỖI BASE64)
+          # CHỈ DÙNG ECHO để ghi nội dung thô từ Secret
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
           
           # 2. Giải mã YouTube client_secrets.json (DÙNG BASE64)
@@ -22,3 +54,19 @@
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
+
+
+      # 3. Chạy Pipeline
+      - name: 🚀 Chạy Podcast Generator Pipeline
+        id: run_pipeline
+        run: python scripts/glue_pipeline.py
+
+      # 4. Tùy chọn: Lưu trữ các file Output (Video/Audio)
+      - name: 💾 Lưu trữ Output (Nếu thành công)
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: podcast-outputs-${{ github.sha }}
+          path: |
+            outputs/
+            data/episodes/
