@@ -1,4 +1,4 @@
-# scripts/glue_pipeline.py
+# scripts/glue_pipeline.py (ĐÃ SỬA: Bỏ qua Subtitle và Upload Shorts)
 import sys 
 import os
 import logging
@@ -16,7 +16,7 @@ from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
 from create_tts import create_tts
 from auto_music_sfx import auto_music_sfx
-from create_subtitle import create_subtitle # Vẫn giữ import nhưng không gọi
+from create_subtitle import create_subtitle
 from create_shorts import create_shorts
 from utils import setup_environment
 
@@ -62,7 +62,7 @@ def main_pipeline():
         
         # TRÍCH XUẤT CÁC THÔNG TIN CẦN THIẾT
         script_path = script_data['script_path']
-        # <<< KHỞI TẠO METADATA YOUTUBE TỪ SCRIPT DATA >>>
+        # <<< KHỞI TẠO METADATA YOUTUBE TỪ SCRIPT DATA (CHO VIDEO 16:9 DÀI) >>>
         youtube_metadata = {
             'title': script_data['youtube_title'],
             'description': script_data['youtube_description'],
@@ -87,20 +87,39 @@ def main_pipeline():
         video_169_path = create_video(final_audio_path, subtitle_path, episode_id)
         if not video_169_path: raise Exception("Lỗi create_video")
 
-        # 7. Create Shorts
+        # 7. Create Shorts (NHẬN VỀ ĐƯỜNG DẪN)
+        shorts_path = None
         try:
-            create_shorts(final_audio_path, subtitle_path, episode_id)
+            shorts_path = create_shorts(final_audio_path, subtitle_path, episode_id)
         except Exception as e:
             logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
-
-        # 8. Upload YouTube (TRUYỀN THÊM METADATA)
-        logging.info("Bắt đầu upload...")
-        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) 
-        logging.info(f"Kết quả Upload: {upload_status}")
+            
+        # 8. Upload YouTube
         
+        # 8a. TẠO METADATA RIÊNG CHO SHORTS (Thêm #shorts)
+        shorts_metadata = youtube_metadata.copy()
+        # Thêm tiền tố và hashtag #shorts vào tiêu đề/mô tả
+        shorts_metadata['title'] = "🔥SHORTS | " + shorts_metadata['title']
+        # Thêm các hashtag phổ biến vào mô tả để YouTube dễ dàng nhận diện Shorts
+        shorts_metadata['description'] = shorts_metadata['description'] + "\n\n#shorts #podcast #vietnam" 
+        
+        upload_status = 'SKIPPED' # Trạng thái upload 16:9
+        shorts_upload_status = 'SKIPPED' # Trạng thái upload Shorts
+        
+        # Bắt đầu Upload Video 16:9 (Podcast dài)
+        logging.info("Bắt đầu upload Video 16:9 (Podcast dài)...")
+        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) 
+        logging.info(f"Kết quả Upload 16:9: {upload_status}")
+        
+        # Bắt đầu Upload Video Shorts
+        if shorts_path:
+             logging.info("Bắt đầu upload Video Shorts 9:16...")
+             shorts_upload_status = upload_video(shorts_path, episode_data, shorts_metadata)
+             logging.info(f"Kết quả Upload Shorts: {shorts_upload_status}")
+
         # 9. Update Status
-        if episode_data.get('Status_Row') and upload_status == 'UPLOADED':
-            update_status_completed(episode_data['Status_Row'])
+        if episode_data.get('Status_Row') and (upload_status == 'UPLOADED' or shorts_upload_status == 'UPLOADED'):
+             update_status_completed(episode_data['Status_Row'])
 
     except Exception as e:
         logging.error(f"PIPELINE FAILED: {e}", exc_info=True)
