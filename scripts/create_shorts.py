@@ -1,8 +1,7 @@
-# scripts/create_shorts.py (ĐÃ SỬA: Giới hạn 60s & Trả về đường dẫn)
+# scripts/create_shorts.py (ĐÃ SỬA: codec='libx264' & Giới hạn 60s)
 import os
 import logging
 from moviepy.editor import *
-# XÓA: from moviepy.video.tools.subtitles import SubtitlesClip 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -57,11 +56,11 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         
         logging.info(f"Bắt đầu xuất Video Shorts 9:16...")
         final_clip.write_videofile(
-            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar'
+            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar' # <<< ĐÃ SỬA: libx64 -> libx264
         )
         
         logging.info(f"Video Shorts 9:16 đã tạo thành công và lưu tại: {video_path}")
-        return video_path # <<< TRẢ VỀ ĐƯỜNG DẪN
+        return video_path 
 
     except Exception as e:
         logging.error(f"Lỗi khi tạo video Shorts: {e}", exc_info=True)
