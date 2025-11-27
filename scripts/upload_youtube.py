@@ -35,12 +35,13 @@ def get_authenticated_service():
 
     return build('youtube', 'v3', credentials=creds)
 
-def upload_video(video_path: str, episode_data: dict):
+def upload_video(video_path: str, episode_data: dict, youtube_metadata: dict): # <<< THÊM ARGUMENT MỚI >>>
     """
     Hàm upload video lên YouTube.
     Args:
         video_path (str): Đường dẫn đến file video.
-        episode_data (dict): Dữ liệu tập (Title, Description, Tags, etc.)
+        episode_data (dict): Dữ liệu tập (Giữ lại để tương thích, không dùng để lấy metadata).
+        youtube_metadata (dict): Metadata tự động (title, description, tags).
     Returns:
         str: 'UPLOADED' nếu thành công, 'FAILED' nếu thất bại.
     """
@@ -53,23 +54,20 @@ def upload_video(video_path: str, episode_data: dict):
         return 'FAILED'
 
     try:
-        # Chuẩn bị Metadata
-        title = episode_data.get('Title', 'New Podcast Episode')
-        # Cắt ngắn tiêu đề nếu quá 100 ký tự (giới hạn YouTube)
-        if len(title) > 100:
-            title = title[:97] + "..."
-            
-        description = episode_data.get('Summary', 'Auto-generated podcast.')
-        tags = episode_data.get('Tags', '').split(',') if episode_data.get('Tags') else []
+        # <<< SỬ DỤNG METADATA TỰ ĐỘNG TẠO >>>
+        title = youtube_metadata['title']
+        description = youtube_metadata['description']
+        tags = youtube_metadata['tags']
+        # Xóa các dòng xử lý title, description, tags thủ công cũ
         
         logging.info(f"Đang chuẩn bị upload: {title}")
 
         body = {
             'snippet': {
-                'title': title,
-                'description': description,
-                'tags': tags,
-                'categoryId': '22' # Category 22 = People & Blogs (hoặc đổi thành số khác tùy ý)
+                'title': title, # Tiêu đề tự động
+                'description': description, # Mô tả tự động
+                'tags': tags, # Tags tự động (đã là list)
+                'categoryId': '22' # Category 22 = People & Blogs
             },
             'status': {
                 'privacyStatus': 'private', # Mặc định để Private để kiểm duyệt
@@ -95,7 +93,7 @@ def upload_video(video_path: str, episode_data: dict):
         return 'UPLOADED'
 
     except Exception as e:
-        logging.error(f"Lỗi khi upload video: {e}")
+        logging.error(f"Lỗi khi upload video: {e}", exc_info=True)
         return 'FAILED'
 
 if __name__ == '__main__':
