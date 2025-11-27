@@ -23,7 +23,7 @@ def generate_script(episode_data):
         
         # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH ---
         # Bạn có thể thay đổi tên kênh và nội dung này
-        CHANNEL_NAME = "Podcast Cinematic" 
+        CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại" 
         
         PODCAST_INTRO = f"""
 Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
