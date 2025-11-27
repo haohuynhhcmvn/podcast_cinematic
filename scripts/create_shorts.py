@@ -1,8 +1,7 @@
-# scripts/create_shorts.py (ĐÃ SỬA: Thêm chuyển động sóng âm)
+# scripts/create_shorts.py (ĐÃ SỬA: Sóng âm động và Xóa import lỗi)
 import os
 import logging
 from moviepy.editor import *
-from moviepy.tools import time_to_seconds # Dùng cho việc tính toán
 import math # Cần import math cho hàm sin
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,9 +10,27 @@ SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
 COLOR_BACKGROUND = (30, 30, 30) 
 
-# ... (Phần create_shorts function bắt đầu)
+def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
+    try:
+        audio_clip = AudioFileClip(final_audio_path)
+        duration = audio_clip.duration
+        
+        # --- LOGIC GIỚI HẠN THỜI LƯỢNG SHORTS (TỐI ĐA 60 GIÂY) ---
+        MAX_SHORTS_DURATION = 60 # 60 giây
+        
+        if duration > MAX_SHORTS_DURATION:
+            logging.warning(f"Audio dài {duration:.2f}s. Cắt về tối đa {MAX_SHORTS_DURATION}s cho Shorts.")
+            audio_clip = audio_clip.subclip(0, MAX_SHORTS_DURATION)
+            duration = MAX_SHORTS_DURATION
+        else:
+             logging.info(f"Audio dài {duration:.2f}s, phù hợp với Shorts.")
+        
+        # --- BỎ QUA PHỤ ĐỀ ---
+        logging.warning("BỎ QUA PHỤ ĐỀ cho video Shorts để hoàn thành pipeline.")
+        subtitle_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
 
-        # ... (Phần Giới hạn thời lượng và Nền giữ nguyên)
+        # Nền
+        background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
         
         # Tiêu đề
         title_text = TextClip(f"PODCAST: {episode_id}", fontsize=80, color='yellow', 
@@ -49,7 +66,7 @@ COLOR_BACKGROUND = (30, 30, 30)
             background_clip, title_text, waveform_clip, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)
         ], size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
 
-        # ... (Phần Xuất Video giữ nguyên)
+        # Xuất Video
         output_dir = os.path.join('outputs', 'shorts')
         video_filename = f"{episode_id}_shorts_916.mp4"
         video_path = os.path.join(output_dir, video_filename)
