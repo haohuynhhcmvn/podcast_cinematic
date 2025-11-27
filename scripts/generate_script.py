@@ -43,7 +43,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
 
         QUY TẮC TẠO KỊCH BẢN (core_script):
         1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
-        2. **Thời lượng:** Kịch bản **phần nội dung chính** nên có độ dài khoảng 150 - 200 từ.
+        2. **Thời lượng:** Kịch bản **phần nội dung chính** nên có độ dài khoảng 1500 - 2000 từ.
         3. **Định dạng:** Chỉ văn bản cần được đọc, KHÔNG bao gồm lời chào/kết.
 
         QUY TẮC TẠO METADATA YOUTUBE:
