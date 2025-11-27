@@ -1,16 +1,13 @@
-# scripts/create_video.py (ĐÃ BỎ QUA SUBTITLE ĐỂ HOÀN THÀNH DỰ ÁN)
+# scripts/create_video.py (ĐÃ SỬA: codec='libx264')
 import os
 import logging
 import moviepy.editor as mp
-# XÓA: from moviepy.video.tools.subtitles import SubtitlesClip, file_to_subtitles 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 COLOR_BACKGROUND = (30, 30, 30)
-
-# XÓA HÀM file_to_subtitles_safe
 
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
@@ -20,7 +17,6 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         duration = audio_clip.duration
         
         # Tạo clip placeholder trong suốt thay thế cho phụ đề
-        # Dùng một clip trong suốt có kích thước toàn màn hình, đặt ở vị trí mặc định.
         subtitle_clip_to_use = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
 
         # Nền (Background)
@@ -43,7 +39,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         
         logging.info(f"Bắt đầu xuất Video 16:9...")
         final_clip.write_videofile(
-            video_path, codec='libx64', audio_codec='aac', fps=24, logger='bar'
+            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar' # <<< ĐÃ SỬA: libx64 -> libx264
         )
 
         logging.info(f"Video 16:9 đã tạo thành công và lưu tại: {video_path}")
