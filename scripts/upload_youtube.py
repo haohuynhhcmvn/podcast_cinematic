@@ -70,7 +70,7 @@ def upload_video(video_path: str, episode_data: dict, youtube_metadata: dict): #
                 'categoryId': '22' # Category 22 = People & Blogs
             },
             'status': {
-                'privacyStatus': 'private', # Mặc định để Private để kiểm duyệt
+                'privacyStatus': 'public', # Mặc định để Private để kiểm duyệt
                 'selfDeclaredMadeForKids': False
             }
         }
