@@ -4,13 +4,15 @@ oauth2client
 python-dotenv
 pydub
 numpy
-# Ghim moviepy về bản cũ ổn định 1.0.3 để dùng được module 'editor'
+# Ghim moviepy và Pillow bản cũ để tránh lỗi ANTIALIAS
 moviepy==1.0.3
-Pillow==9.0.0  # <--- Đã thêm dòng này để khắc phục lỗi ANTIALIAS
-# XÓA imageio và decorator đi, để moviepy tự cài bản nó thích (>=2.5)
-
+Pillow==9.0.0
 # YouTube API
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
 requests
+
+# --- THÊM MỚI CHO SÓNG ÂM ---
+matplotlib
+scipy
