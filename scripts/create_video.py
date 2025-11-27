@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ SỬA LỖI set_opacity & Điều chỉnh vị trí, sóng âm)
+# scripts/create_video.py (ĐÃ SỬA LỖI VÀ ĐIỀU CHỈNH VỊ TRÍ)
 import os
 import logging
 import moviepy.editor as mp
@@ -45,9 +45,9 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải hoặc resize ảnh {image_path}: {e}")
         return None
 
-# --- HÀM TẠO VISUALIZER ĐA THANH ---
+# --- HÀM TẠO VISUALIZER ĐA THANH (SÓNG ÂM MỚI) ---
 def create_multi_bar_visualizer(duration, container_width, container_max_height, base_color):
-    NUM_BARS = 60 # Tăng số lượng thanh
+    NUM_BARS = 60 
     BAR_WIDTH = 3
     BAR_SPACING = 3
     
@@ -78,9 +78,10 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
             opacity = 0.5 + 0.5 * oscillation # Độ trong suốt: từ 0.5 đến 1.0
             return current_height, opacity
         
-        # 3. Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA CÚ PHÁP)
+        # 3. Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA LỖI TYPE ERROR VÀ set_opacity)
         animated_bar = base_bar.fx(mp.vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        animated_bar = animated_bar.set_opacity(lambda t: get_bar_properties(t, i, config)[1]) # <-- ĐÃ SỬA LỖI set_opacity
+        # KHẮC PHỤC LỖI TYPE ERROR BẰNG CÁCH THÊM .to_rgb()
+        animated_bar = animated_bar.to_rgb().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
         
         # 4. Hàm tính toán Vị trí Y
         x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
@@ -116,7 +117,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         # if microphone_clip:
         #     microphone_clip = microphone_clip.fx(mp.vfx.mask_color, color=[0, 0, 0], s=50) 
         
-        # SÓNG ÂM (Màu trắng ngà, Vị trí đã điều chỉnh xuống)
+        # SÓNG ÂM 
         WAVE_COLOR = (240, 240, 240) 
         WAVE_WIDTH = int(VIDEO_WIDTH * 0.7)
         WAVE_MAX_HEIGHT = int(VIDEO_HEIGHT * 0.1) 
