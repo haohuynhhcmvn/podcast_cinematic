@@ -1,4 +1,4 @@
-# scripts/create_shorts.py (ĐÃ SỬA LỖI, VỊ TRÍ VÀ TIÊU ĐỀ)
+# scripts/create_shorts.py (ĐÃ SỬA LỖI to_rgb -> to_RGB)
 import os
 import logging
 from moviepy.editor import *
@@ -75,10 +75,10 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
             opacity = 0.5 + 0.5 * oscillation 
             return current_height, opacity
         
-        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA LỖI TYPE ERROR VÀ set_opacity)
+        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA: to_rgb -> to_RGB)
         animated_bar = base_bar.fx(vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        # KHẮC PHỤC LỖI TYPE ERROR BẰNG CÁCH THÊM .to_rgb()
-        animated_bar = animated_bar.to_rgb().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
+        # KHẮC PHỤC LỖI ATTRIBUTE ERROR: Dùng to_RGB()
+        animated_bar = animated_bar.to_RGB().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
         
         x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
         
@@ -113,12 +113,11 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         # Tải micro (Vị trí đã điều chỉnh xuống)
         microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 180))
         
-        # XỬ LÝ NỀN MICROPHONE (Bỏ comment nếu cần)
+        # XỬ LÝ NỀN MICROPHONE 
         # if microphone_clip:
         #     microphone_clip = microphone_clip.fx(vfx.mask_color, color=[0, 0, 0], s=50) 
         
         # Tiêu đề (ĐÃ SỬA: Loại bỏ chữ "podcast" thừa)
-        # Sử dụng tiêu đề tĩnh theo thương hiệu hình ảnh bạn cung cấp
         title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
         title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
@@ -143,7 +142,7 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
 
         final_clip = CompositeVideoClip(elements, size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
 
-        # Xuất Video (giữ nguyên)
+        # Xuất Video 
         output_dir = os.path.join('outputs', 'shorts')
         video_filename = f"{episode_id}_shorts_916.mp4"
         video_path = os.path.join(output_dir, video_filename)
