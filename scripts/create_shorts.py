@@ -1,9 +1,9 @@
-# scripts/create_shorts.py (ĐÃ SỬA: Cải thiện sóng âm - Spectrum Analyzer Style)
+# scripts/create_shorts.py (ĐÃ SỬA LỖI set_opacity & Điều chỉnh vị trí, sóng âm)
 import os
 import logging
 from moviepy.editor import *
 import math 
-import random # Cần để tạo độ ngẫu nhiên cho nhịp điệu
+import random 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -11,12 +11,14 @@ SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
 COLOR_BACKGROUND = (30, 30, 30) 
 
-# --- HÀM TẢI ẢNH AN TOÀN (GIỮ NGUYÊN) ---
+# --- HÀM TẢI ẢNH AN TOÀN ---
 def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
+    """Tải ảnh, resize và đặt vị trí an toàn."""
     paths_to_check = [
         os.path.join('assets', 'images', file_name), 
         os.path.join('assets', 'image', file_name)
     ]
+    
     image_path = None
     for path in paths_to_check:
         if os.path.exists(path):
@@ -29,19 +31,20 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
 
     try:
         clip = ImageClip(image_path).set_duration(duration)
+        
         if width and height:
             clip = clip.resize(newsize=(width, height))
         elif width:
             clip = clip.resize(width=width)
         elif height:
             clip = clip.resize(height=height)
+            
         return clip.set_pos(position)
     except Exception as e:
         logging.error(f"Lỗi khi tải hoặc resize ảnh {image_path}: {e}")
         return None
-# --- KẾT THÚC HÀM TẢI ẢNH AN TOÀN ---
 
-# --- HÀM TẠO VISUALIZER ĐA THANH MỚI (Cải tiến - Giống create_video.py) ---
+# --- HÀM TẠO VISUALIZER ĐA THANH ---
 def create_multi_bar_visualizer(duration, container_width, container_max_height, base_color):
     NUM_BARS = 60 
     BAR_WIDTH = 3
@@ -72,8 +75,9 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
             opacity = 0.5 + 0.5 * oscillation 
             return current_height, opacity
         
+        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA CÚ PHÁP)
         animated_bar = base_bar.fx(vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        animated_bar = animated_bar.fx(vfx.set_opacity, lambda t: get_bar_properties(t, i, config)[1])
+        animated_bar = animated_bar.set_opacity(lambda t: get_bar_properties(t, i, config)[1]) # <-- ĐÃ SỬA LỖI set_opacity
         
         x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
         
@@ -85,9 +89,8 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
         bar_clips.append(animated_bar.set_pos(get_bar_pos))
 
     return CompositeVideoClip(bar_clips, size=(container_width, container_max_height)).set_duration(duration)
-# --- KẾT THÚC HÀM TẠO VISUALIZER ĐA THANH ---
 
-
+# --- BẮT ĐẦU CREATE_SHORTS ---
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
         audio_clip = AudioFileClip(final_audio_path)
@@ -106,10 +109,10 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         if not background_clip:
             background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
             
-        # Tải micro
-        microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 150))
+        # Tải micro (Vị trí đã điều chỉnh xuống)
+        microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 180))
         
-        # XỬ LÝ NỀN MICROPHONE (Bỏ comment nếu ảnh gốc có nền đen và bạn muốn xóa)
+        # XỬ LÝ NỀN MICROPHONE (Bỏ comment nếu cần)
         # if microphone_clip:
         #     microphone_clip = microphone_clip.fx(vfx.mask_color, color=[0, 0, 0], s=50) 
         
@@ -117,8 +120,8 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         title_text = TextClip(f"PODCAST: {episode_id}", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
         title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
-        # --- SÓNG ÂM MỚI ---
-        WAVE_COLOR = (240, 240, 240) # Màu trắng ngà cho sóng âm
+        # SÓNG ÂM (Màu trắng ngà, Vị trí đã điều chỉnh xuống)
+        WAVE_COLOR = (240, 240, 240) 
         WAVE_WIDTH = int(SHORTS_WIDTH * 0.7)
         WAVE_MAX_HEIGHT = int(SHORTS_HEIGHT * 0.08) 
 
@@ -128,7 +131,8 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
             WAVE_MAX_HEIGHT,
             WAVE_COLOR
         )
-        waveform_clip = waveform_clip.set_pos(("center", SHORTS_HEIGHT * 0.45))
+        # Đặt toàn bộ Visualizer vào vị trí (Vị trí đã điều chỉnh xuống)
+        waveform_clip = waveform_clip.set_pos(("center", SHORTS_HEIGHT * 0.47))
         
         # Ghép các thành phần
         elements = [background_clip, title_text, waveform_clip, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
