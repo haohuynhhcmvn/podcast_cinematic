@@ -1,4 +1,4 @@
-# scripts/create_shorts.py (ĐÃ SỬA LỖI set_opacity & Điều chỉnh vị trí, sóng âm)
+# scripts/create_shorts.py (ĐÃ SỬA LỖI, VỊ TRÍ VÀ TIÊU ĐỀ)
 import os
 import logging
 from moviepy.editor import *
@@ -44,7 +44,7 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải hoặc resize ảnh {image_path}: {e}")
         return None
 
-# --- HÀM TẠO VISUALIZER ĐA THANH ---
+# --- HÀM TẠO VISUALIZER ĐA THANH (SÓNG ÂM MỚI) ---
 def create_multi_bar_visualizer(duration, container_width, container_max_height, base_color):
     NUM_BARS = 60 
     BAR_WIDTH = 3
@@ -75,9 +75,10 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
             opacity = 0.5 + 0.5 * oscillation 
             return current_height, opacity
         
-        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA CÚ PHÁP)
+        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA LỖI TYPE ERROR VÀ set_opacity)
         animated_bar = base_bar.fx(vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        animated_bar = animated_bar.set_opacity(lambda t: get_bar_properties(t, i, config)[1]) # <-- ĐÃ SỬA LỖI set_opacity
+        # KHẮC PHỤC LỖI TYPE ERROR BẰNG CÁCH THÊM .to_rgb()
+        animated_bar = animated_bar.to_rgb().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
         
         x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
         
@@ -116,11 +117,12 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         # if microphone_clip:
         #     microphone_clip = microphone_clip.fx(vfx.mask_color, color=[0, 0, 0], s=50) 
         
-        # Tiêu đề
-        title_text = TextClip(f"PODCAST: {episode_id}", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
+        # Tiêu đề (ĐÃ SỬA: Loại bỏ chữ "podcast" thừa)
+        # Sử dụng tiêu đề tĩnh theo thương hiệu hình ảnh bạn cung cấp
+        title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
         title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
-        # SÓNG ÂM (Màu trắng ngà, Vị trí đã điều chỉnh xuống)
+        # SÓNG ÂM 
         WAVE_COLOR = (240, 240, 240) 
         WAVE_WIDTH = int(SHORTS_WIDTH * 0.7)
         WAVE_MAX_HEIGHT = int(SHORTS_HEIGHT * 0.08) 
