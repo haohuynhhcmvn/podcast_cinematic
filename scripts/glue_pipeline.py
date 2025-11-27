@@ -16,7 +16,7 @@ from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_script
 from create_tts import create_tts
 from auto_music_sfx import auto_music_sfx
-from create_subtitle import create_subtitle
+from create_subtitle import create_subtitle # Vẫn giữ import nhưng không gọi
 from create_shorts import create_shorts
 from utils import setup_environment
 
@@ -77,9 +77,11 @@ def main_pipeline():
         final_audio_path = auto_music_sfx(raw_audio_path, episode_id)
         if not final_audio_path: raise Exception("Lỗi auto_music_sfx")
 
-        # 5. Subtitles
-        subtitle_path = create_subtitle(final_audio_path, script_path, episode_id)
-        if not subtitle_path: raise Exception("Lỗi create_subtitle")
+        # 5. Subtitles (BỎ QUA)
+        logging.info("BỎ QUA BƯỚC TẠO PHỤ ĐỀ ĐỂ HOÀN THÀNH PIPELINE.")
+        # subtitle_path = create_subtitle(final_audio_path, script_path, episode_id) 
+        # if not subtitle_path: raise Exception("Lỗi create_subtitle")
+        subtitle_path = "SKIP_SUBTITLE" # Đặt một giá trị giả
 
         # 6. Create Video 16:9
         video_169_path = create_video(final_audio_path, subtitle_path, episode_id)
@@ -93,7 +95,7 @@ def main_pipeline():
 
         # 8. Upload YouTube (TRUYỀN THÊM METADATA)
         logging.info("Bắt đầu upload...")
-        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) # Thêm argument mới
+        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) 
         logging.info(f"Kết quả Upload: {upload_status}")
         
         # 9. Update Status
