@@ -1,3 +1,4 @@
+# ./script/generate_script.py
 import os
 import logging
 from openai import OpenAI
