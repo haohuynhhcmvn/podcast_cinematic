@@ -1,8 +1,20 @@
-# scripts/glue_pipeline.py (ĐÃ SỬA: Bỏ qua Subtitle và Upload Shorts)
+# scripts/glue_pipeline.py (ĐÃ SỬA: Thêm Patch PIL.Image.ANTIALIAS)
 import sys 
 import os
 import logging
 from dotenv import load_dotenv
+
+# THÊM BƯỚC VÁ LỖI (PATCH) CHO MOVIEPY/PILLOW
+# MoviePy cũ sử dụng hằng số PIL.Image.ANTIALIAS đã bị xóa trong Pillow mới.
+try:
+    from PIL import Image
+    # Kiểm tra và gán lại giá trị của LANCZOS cho ANTIALIAS nếu nó không tồn tại
+    if not hasattr(Image, 'ANTIALIAS'):
+        Image.ANTIALIAS = Image.LANCZOS
+        logging.warning("PATCHED: PIL.Image.ANTIALIAS đã được gán lại giá trị LANCZOS.")
+except ImportError:
+    pass
+# KẾT THÚC BƯỚC VÁ LỖI
 
 # Thiết lập đường dẫn import
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,10 +32,13 @@ from create_subtitle import create_subtitle
 from create_shorts import create_shorts
 from utils import setup_environment
 
+# ... (Phần còn lại của code glue_pipeline.py giữ nguyên)
+# ... (Phần còn lại của code glue_pipeline.py giữ nguyên)
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_status_completed(row_index: int):
-    """Hàm cập nhật trạng thái sử dụng lại logic xác thực của fetch_content"""
+# ... (Hàm update_status_completed giữ nguyên)
     try:
         gc = authenticate_google_sheet()
         sheet_id = os.getenv('GOOGLE_SHEET_ID')
