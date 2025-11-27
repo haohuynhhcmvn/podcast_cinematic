@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ SỬA: BỎ QUA HOÀN TOÀN PHỤ ĐỀ)
+# scripts/create_video.py (ĐÃ BỎ QUA SUBTITLE ĐỂ HOÀN THÀNH DỰ ÁN)
 import os
 import logging
 import moviepy.editor as mp
@@ -19,10 +19,9 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         audio_clip = mp.AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
-        # --- LOGIC BỎ QUA PHỤ ĐỀ HOÀN TOÀN ---
         # Tạo clip placeholder trong suốt thay thế cho phụ đề
+        # Dùng một clip trong suốt có kích thước toàn màn hình, đặt ở vị trí mặc định.
         subtitle_clip_to_use = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
-        # --- END LOGIC BỎ QUA ---
 
         # Nền (Background)
         background_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
@@ -44,7 +43,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         
         logging.info(f"Bắt đầu xuất Video 16:9...")
         final_clip.write_videofile(
-            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar'
+            video_path, codec='libx64', audio_codec='aac', fps=24, logger='bar'
         )
 
         logging.info(f"Video 16:9 đã tạo thành công và lưu tại: {video_path}")
