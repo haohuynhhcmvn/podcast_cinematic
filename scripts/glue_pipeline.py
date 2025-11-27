@@ -62,6 +62,7 @@ def main_pipeline():
         
         # TRÍCH XUẤT CÁC THÔNG TIN CẦN THIẾT
         script_path = script_data['script_path']
+        # <<< KHỞI TẠO METADATA YOUTUBE TỪ SCRIPT DATA >>>
         youtube_metadata = {
             'title': script_data['youtube_title'],
             'description': script_data['youtube_description'],
@@ -90,9 +91,9 @@ def main_pipeline():
         except Exception as e:
             logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
 
-        # 8. Upload YouTube (TRUYỀN METADATA)
+        # 8. Upload YouTube (TRUYỀN THÊM METADATA)
         logging.info("Bắt đầu upload...")
-        upload_status = upload_video(video_169_path, episode_data, youtube_metadata)
+        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) # Thêm argument mới
         logging.info(f"Kết quả Upload: {upload_status}")
         
         # 9. Update Status
