@@ -1,8 +1,8 @@
-# scripts/create_shorts.py (ĐÃ BỎ QUA SUBTITLE ĐỂ HOÀN THÀNH DỰ ÁN)
+# scripts/create_shorts.py (ĐÃ SỬA: Giới hạn thời lượng 60 giây)
 import os
 import logging
 from moviepy.editor import *
-# XÓA: from moviepy.video.tools.subtitles import SubtitlesClip # Giữ import để tránh lỗi NameError
+# XÓA: from moviepy.video.tools.subtitles import SubtitlesClip 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -15,10 +15,23 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         audio_clip = AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
+        # --- LOGIC GIỚI HẠN THỜI LƯỢNG SHORTS (TỐI ĐA 60 GIÂY) ---
+        MAX_SHORTS_DURATION = 60 # 60 giây
+        
+        if duration > MAX_SHORTS_DURATION:
+            logging.warning(f"Audio dài {duration:.2f}s. Cắt về tối đa {MAX_SHORTS_DURATION}s cho Shorts.")
+            # Cắt audio clip
+            audio_clip = audio_clip.subclip(0, MAX_SHORTS_DURATION)
+            duration = MAX_SHORTS_DURATION # Cập nhật lại thời lượng
+        else:
+             logging.info(f"Audio dài {duration:.2f}s, phù hợp với Shorts.")
+        
         # --- BỎ QUA PHỤ ĐỀ: LOGIC ĐẢM BẢO HOÀN THÀNH ---
         logging.warning("BỎ QUA PHỤ ĐỀ cho video Shorts để hoàn thành pipeline.")
         
         # Tạo clip placeholder trong suốt có cùng thời lượng và kích thước
+        # Clip này sẽ chiếm vị trí của phụ đề mà không hiển thị gì.
+        # Đảm bảo duration của placeholder khớp với duration mới (<= 60s)
         subtitle_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
         # --- END LOGIC BỎ QUA ---
 
@@ -28,14 +41,15 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         # Tiêu đề
         title_text = TextClip(f"PODCAST: {episode_id}", fontsize=80, color='yellow', font='Arial-Bold', 
                               size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
+        # Đảm bảo title_text cũng có duration mới (<= 60s)
         title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
         # Sóng âm & Micro Placeholder
         wave_text = TextClip("Sóng Âm Shorts...", fontsize=40, color='white', size=(SHORTS_WIDTH * 0.8, None))
+        # Đảm bảo wave_text cũng có duration mới (<= 60s)
         wave_text = wave_text.set_duration(duration).set_pos(("center", SHORTS_HEIGHT * 0.45))
         
         # Ghép các thành phần
-        # Dùng subtitle_clip là placeholder trong suốt đã tạo
         final_clip = CompositeVideoClip([
             background_clip, title_text, wave_text, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)
         ], size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
@@ -47,7 +61,7 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         
         logging.info(f"Bắt đầu xuất Video Shorts 9:16...")
         final_clip.write_videofile(
-            video_path, codec='libx64', audio_codec='aac', fps=24, logger='bar'
+            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar'
         )
         
         logging.info(f"Video Shorts 9:16 đã tạo thành công và lưu tại: {video_path}")
