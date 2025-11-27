@@ -1,4 +1,4 @@
-# scripts/create_video.py (ĐÃ SỬA LỖI VÀ ĐIỀU CHỈNH VỊ TRÍ)
+# scripts/create_video.py (ĐÃ SỬA LỖI to_rgb -> to_RGB)
 import os
 import logging
 import moviepy.editor as mp
@@ -75,20 +75,20 @@ def create_multi_bar_visualizer(duration, container_width, container_max_height,
         def get_bar_properties(t, index=i, conf=config):
             oscillation = 0.5 * (1 + math.sin(t * 8 * conf['pulse_speed_mult'] + conf['phase_offset']))
             current_height = max(1, int(container_max_height * (conf['min_height_ratio'] + (1 - conf['min_height_ratio']) * oscillation)))
-            opacity = 0.5 + 0.5 * oscillation # Độ trong suốt: từ 0.5 đến 1.0
+            opacity = 0.5 + 0.5 * oscillation 
             return current_height, opacity
         
-        # 3. Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA LỖI TYPE ERROR VÀ set_opacity)
+        # 3. Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA: to_rgb -> to_RGB)
         animated_bar = base_bar.fx(mp.vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        # KHẮC PHỤC LỖI TYPE ERROR BẰNG CÁCH THÊM .to_rgb()
-        animated_bar = animated_bar.to_rgb().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
+        # KHẮC PHỤC LỖI ATTRIBUTE ERROR: Dùng to_RGB()
+        animated_bar = animated_bar.to_RGB().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
         
         # 4. Hàm tính toán Vị trí Y
         x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
         
         def get_bar_pos(t, index=i, conf=config):
             current_height, _ = get_bar_properties(t, index, conf)
-            y_pos = container_max_height - current_height # Neo vào đáy
+            y_pos = container_max_height - current_height 
             return (x_pos, y_pos)
 
         bar_clips.append(animated_bar.set_pos(get_bar_pos))
@@ -113,7 +113,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         # Tải micro (Vị trí đã điều chỉnh xuống)
         microphone_clip = load_asset_image('microphone.png', width=int(VIDEO_WIDTH * 0.2), duration=duration, position=("center", VIDEO_HEIGHT // 2 + 80))
         
-        # XỬ LÝ NỀN MICROPHONE (Bỏ comment nếu cần)
+        # XỬ LÝ NỀN MICROPHONE 
         # if microphone_clip:
         #     microphone_clip = microphone_clip.fx(mp.vfx.mask_color, color=[0, 0, 0], s=50) 
         
@@ -138,7 +138,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
 
         final_clip = mp.CompositeVideoClip(elements, size=(VIDEO_WIDTH, VIDEO_HEIGHT)).set_audio(audio_clip)
 
-        # Xuất Video (giữ nguyên)
+        # Xuất Video 
         output_dir = os.path.join('outputs', 'video')
         video_filename = f"{episode_id}_full_podcast_169.mp4"
         video_path = os.path.join(output_dir, video_filename)
