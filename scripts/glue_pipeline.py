@@ -54,12 +54,20 @@ def main_pipeline():
         episode_id = episode_data['ID']
         logging.info(f"Đang xử lý Episode ID: {episode_id}")
         
-        logging.info("Sử dụng ảnh nền và micro tĩnh từ assets/images/") # Thông báo về logic mới
-             
-        # 2. Generate Script
-        script_path = generate_script(episode_data)
-        if not script_path: raise Exception("Lỗi generate_script")
-
+        logging.info("Sử dụng ảnh nền và micro tĩnh từ assets/images/")
+            
+        # 2. Generate Script (NHẬN VỀ DICTIONARY)
+        script_data = generate_script(episode_data)
+        if not script_data: raise Exception("Lỗi generate_script")
+        
+        # TRÍCH XUẤT CÁC THÔNG TIN CẦN THIẾT
+        script_path = script_data['script_path']
+        youtube_metadata = {
+            'title': script_data['youtube_title'],
+            'description': script_data['youtube_description'],
+            'tags': script_data['youtube_tags']
+        }
+        
         # 3. TTS
         raw_audio_path = create_tts(script_path, episode_id)
         if not raw_audio_path: raise Exception("Lỗi create_tts")
@@ -82,9 +90,9 @@ def main_pipeline():
         except Exception as e:
             logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
 
-        # 8. Upload YouTube
+        # 8. Upload YouTube (TRUYỀN METADATA)
         logging.info("Bắt đầu upload...")
-        upload_status = upload_video(video_169_path, episode_data)
+        upload_status = upload_video(video_169_path, episode_data, youtube_metadata)
         logging.info(f"Kết quả Upload: {upload_status}")
         
         # 9. Update Status
