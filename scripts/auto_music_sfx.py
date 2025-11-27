@@ -1,3 +1,4 @@
+# ./script/auto_music_sfx.py
 import os
 import logging
 from pydub import AudioSegment
