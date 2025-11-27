@@ -1,8 +1,8 @@
-# scripts/create_video.py (ĐÃ SỬA: Thêm chuyển động sóng âm)
+# scripts/create_video.py (ĐÃ SỬA: Sóng âm động và Xóa import lỗi)
 import os
 import logging
 import moviepy.editor as mp
-from moviepy.tools import time_to_seconds # Dùng cho việc tính toán
+import math # Cần import math cho hàm sin
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -24,21 +24,20 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         background_clip = mp.ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
         
         # Sóng âm ĐỘNG (Animated Visual Placeholder)
-        WAVE_COLOR = (0, 200, 0)
+        WAVE_COLOR = (0, 200, 0) # Màu xanh lá đậm
         WAVE_HEIGHT = 10 
         WAVE_WIDTH = int(VIDEO_WIDTH * 0.7)
         
         # Tạo clip cơ sở (thanh sóng âm tĩnh)
         base_waveform_clip = mp.ColorClip((WAVE_WIDTH, WAVE_HEIGHT), color=WAVE_COLOR, duration=duration)
 
-        # THÊM HIỆU ỨNG ĐỘNG (Sử dụng resize theo hàm sin để tạo hiệu ứng "nhảy múa")
+        # THÊM HIỆU ỨNG ĐỘNG
         MAX_HEIGHT_MULTIPLIER = 3.0 # Chiều cao tối đa gấp 3 lần base_height
         PULSE_SPEED = 10 # Tần số nhảy (10 lần/giây)
 
         def resize_func(t):
             # Tính toán hệ số nhân chiều cao dựa trên thời gian (t)
-            # Hàm sin tạo ra sự dao động mượt mà giữa 1.0 và MAX_HEIGHT_MULTIPLIER
-            import math
+            # Hàm sin tạo ra sự dao động mượt mà
             scale_factor = 1.0 + (MAX_HEIGHT_MULTIPLIER - 1.0) * (0.5 * (1 + math.sin(t * PULSE_SPEED)))
             return scale_factor
         
@@ -53,7 +52,7 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
             background_clip, waveform_clip, subtitle_clip_to_use
         ], size=(VIDEO_WIDTH, VIDEO_HEIGHT)).set_audio(audio_clip)
 
-        # ... (Phần Xuất Video giữ nguyên)
+        # Xuất Video
         output_dir = os.path.join('outputs', 'video')
         video_filename = f"{episode_id}_full_podcast_169.mp4"
         video_path = os.path.join(output_dir, video_filename)
