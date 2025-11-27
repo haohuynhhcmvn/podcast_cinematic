@@ -1,4 +1,4 @@
-# scripts/create_shorts.py (ĐÃ SỬA LỖI to_rgb -> to_RGB)
+# scripts/create_shorts.py (Đã loại bỏ sóng âm và sửa tiêu đề)
 import os
 import logging
 from moviepy.editor import *
@@ -44,52 +44,7 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải hoặc resize ảnh {image_path}: {e}")
         return None
 
-# --- HÀM TẠO VISUALIZER ĐA THANH (SÓNG ÂM MỚI) ---
-def create_multi_bar_visualizer(duration, container_width, container_max_height, base_color):
-    NUM_BARS = 60 
-    BAR_WIDTH = 3
-    BAR_SPACING = 3
-    
-    random.seed(42) 
-    bar_configs = []
-    for _ in range(NUM_BARS):
-        bar_configs.append({
-            'pulse_speed_mult': random.uniform(0.8, 1.2), 
-            'phase_offset': random.uniform(0, 2 * math.pi), 
-            'min_height_ratio': random.uniform(0.1, 0.3) 
-        })
-    
-    bar_clips = []
-    
-    total_bar_width = NUM_BARS * (BAR_WIDTH + BAR_SPACING) - BAR_SPACING
-    start_x = (container_width - total_bar_width) / 2 
-
-    for i in range(NUM_BARS):
-        config = bar_configs[i]
-        
-        base_bar = ColorClip((BAR_WIDTH, 1), color=base_color).set_duration(duration)
-
-        def get_bar_properties(t, index=i, conf=config):
-            oscillation = 0.5 * (1 + math.sin(t * 8 * conf['pulse_speed_mult'] + conf['phase_offset']))
-            current_height = max(1, int(container_max_height * (conf['min_height_ratio'] + (1 - conf['min_height_ratio']) * oscillation)))
-            opacity = 0.5 + 0.5 * oscillation 
-            return current_height, opacity
-        
-        # Áp dụng Resize (Chiều cao) và Độ trong suốt (ĐÃ SỬA: to_rgb -> to_RGB)
-        animated_bar = base_bar.fx(vfx.resize, height=lambda t: get_bar_properties(t, i, config)[0])
-        # KHẮC PHỤC LỖI ATTRIBUTE ERROR: Dùng to_RGB()
-        animated_bar = animated_bar.to_RGB().set_opacity(lambda t: get_bar_properties(t, i, config)[1]) 
-        
-        x_pos = start_x + i * (BAR_WIDTH + BAR_SPACING)
-        
-        def get_bar_pos(t, index=i, conf=config):
-            current_height, _ = get_bar_properties(t, index, conf)
-            y_pos = container_max_height - current_height
-            return (x_pos, y_pos)
-
-        bar_clips.append(animated_bar.set_pos(get_bar_pos))
-
-    return CompositeVideoClip(bar_clips, size=(container_width, container_max_height)).set_duration(duration)
+# LƯU Ý: HÀM create_multi_bar_visualizer ĐÃ BỊ LOẠI BỎ THEO YÊU CẦU
 
 # --- BẮT ĐẦU CREATE_SHORTS ---
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
@@ -103,6 +58,7 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
             duration = MAX_SHORTS_DURATION
         
         logging.warning("BỎ QUA PHỤ ĐỀ cho video Shorts để hoàn thành pipeline.")
+        # Clip giữ chỗ cho phụ đề (opacity 0)
         subtitle_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
 
         # Tải nền
@@ -110,33 +66,15 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         if not background_clip:
             background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
             
-        # Tải micro (Vị trí đã điều chỉnh xuống)
+        # Tải micro (Vị trí đã điều chỉnh xuống: SHORTS_HEIGHT // 2 + 180)
         microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 180))
-        
-        # XỬ LÝ NỀN MICROPHONE 
-        # if microphone_clip:
-        #     microphone_clip = microphone_clip.fx(vfx.mask_color, color=[0, 0, 0], s=50) 
         
         # Tiêu đề (ĐÃ SỬA: Loại bỏ chữ "podcast" thừa)
         title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
         title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
-        # SÓNG ÂM 
-        WAVE_COLOR = (240, 240, 240) 
-        WAVE_WIDTH = int(SHORTS_WIDTH * 0.7)
-        WAVE_MAX_HEIGHT = int(SHORTS_HEIGHT * 0.08) 
-
-        waveform_clip = create_multi_bar_visualizer(
-            duration,
-            WAVE_WIDTH,
-            WAVE_MAX_HEIGHT,
-            WAVE_COLOR
-        )
-        # Đặt toàn bộ Visualizer vào vị trí (Vị trí đã điều chỉnh xuống)
-        waveform_clip = waveform_clip.set_pos(("center", SHORTS_HEIGHT * 0.47))
-        
-        # Ghép các thành phần
-        elements = [background_clip, title_text, waveform_clip, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
+        # Ghép các thành phần (ĐÃ LOẠI BỎ waveform_clip)
+        elements = [background_clip, title_text, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
         if microphone_clip:
             elements.insert(1, microphone_clip)
 
