@@ -70,11 +70,11 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 180))
         
         # Tiêu đề (ĐÃ SỬA: Loại bỏ chữ "podcast" thừa)
-        title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
-        title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
+        # title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
+        # title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
 
         # Ghép các thành phần (ĐÃ LOẠI BỎ waveform_clip)
-        elements = [background_clip, title_text, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
+        elements = [background_clip, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
         if microphone_clip:
             elements.insert(1, microphone_clip)
 
