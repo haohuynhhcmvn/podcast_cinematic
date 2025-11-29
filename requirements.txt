@@ -16,3 +16,5 @@ requests
 # --- THÊM MỚI CHO SÓNG ÂM ---
 matplotlib
 scipy
+
+gTTS
