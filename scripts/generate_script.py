@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # --- CÁC THAM SỐ CỐ ĐỊNH ---
 CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại"
-TARGET_WORD_COUNT = 1200 
+TARGET_WORD_COUNT = 1200 # Khoảng 800 - 1200 từ cho video dài
 TTS_VOICE_NAME = "Alloy" 
 
 def _call_openai(system, user, max_tokens=1000, response_format=None):
@@ -38,22 +38,22 @@ def _call_openai(system, user, max_tokens=1000, response_format=None):
 
 
 # ======================================================================================
-# --- A. HÀM TẠO SCRIPT DÀI (LONG FORM) - KHÔI PHỤC INTRO/OUTRO TEXT ---
+# --- A. HÀM TẠO SCRIPT DÀI (LONG FORM) ---
+# Logic: Khôi phục Intro/Outro text cố định và metadata JSON
 # ======================================================================================
 def generate_long_script(data): 
     """
     Tạo kịch bản dài (Bao gồm Intro/Outro text cố định) và Metadata YouTube.
     """
     episode_id = data['ID']
+    # SỬ DỤNG KEY CHUẨN TỪ fetch_content.py
     title = data.get('Name', 'Unknown Title') 
     core_theme = data.get('Core Theme', 'Unknown Theme')
     raw_input = data.get('Content/Input', '')
     
     script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
     
-    # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH (THEO YÊU CẦU) ---
-    CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại" 
-    
+    # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH ---
     PODCAST_INTRO = f"""
 Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
 Hôm nay, chúng ta sẽ đi sâu vào hành trình của: {title}.
@@ -67,24 +67,33 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
     
     # --- LOGIC PROMPT ---
     sys_prompt = f"""
-    Bạn là Master Storyteller với giọng văn Nam Trầm ({TTS_VOICE_NAME}), chuyên tạo nội dung cinematic.
+    Bạn là **Master Storyteller** với giọng văn Nam Trầm ({TTS_VOICE_NAME}), chuyên tạo nội dung cinematic.
     Nhiệm vụ của bạn là tạo Kịch bản và Metadata YouTube phải thật LÔI CUỐN, GÂY TÒ MÒ và TỐI ƯU SEO.
 
     QUY TẮC TẠO KỊCH BẢN (core_script):
     1. Giọng văn phải uyển chuyển, giàu hình ảnh.
-    2. Kịch bản phải bắt đầu bằng HOOK mạnh mẽ, NỐI TIẾP ngay sau Lời Chào cố định.
+    2. Kịch bản phải bắt đầu bằng HOOK mạnh mẽ.
     3. Thời lượng: Khoảng 800 - {TARGET_WORD_COUNT} từ.
     4. Định dạng: Chỉ văn bản cần được đọc. KHÔNG BAO GỒM LỜI CHÀO VÀ KẾT.
 
-    ... [Các quy tắc Metadata giữ nguyên] ...
+    QUY TẮC TẠO METADATA YOUTUBE (Tập trung vào SEO và Hấp dẫn):
+    1. **youtube_title (Tối đa 100 ký tự):** Phải chứa từ khóa chính, gây tò mò, sử dụng TỪ KHÓA IN HOA.
+    2. **youtube_description:** Bắt đầu bằng HOOK VĂN BẢN gây SỐC. Mô tả chi tiết, bao gồm CTA và #Hashtag.
+    3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, bao gồm long-tail keywords và từ khóa viral.
+
+    CHỦ ĐỀ CỐT LÕI: "{core_theme}"
+    TÊN TẬP: "{title}"
     """
     
     user_prompt = f"""
     DỮ LIỆU THÔ ĐẦU VÀO TỪ GOOGLE SHEET: {raw_input}
-    CHỦ ĐỀ CỐT LÕI: "{core_theme}"
-    TÊN TẬP: "{title}"
     Hãy trả về dưới dạng JSON với 4 trường sau:
-    ... [JSON Output Structure giữ nguyên] ...
+    {{
+        "core_script": "[Nội dung kịch bản chính, BẮT ĐẦU BẰNG HOOK CINEMATIC]",
+        "youtube_title": "[Tiêu đề video, LÔI CUỐN/VIRAL]",
+        "youtube_description": "[Mô tả video, GÂY TÒ MÒ VÀ MỜI GỌI]",
+        "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy, 10-15 từ khóa]"
+    }}
     """
     
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
@@ -93,7 +102,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
         data_json = json.loads(raw_json)
         core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
         
-        # --- FIX: GHÉP INTRO/OUTRO VÀO CORE SCRIPT THEO YÊU CẦU ---
+        # GHÉP INTRO/OUTRO VÀO CORE SCRIPT
         full_script = PODCAST_INTRO.strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
         
         with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
@@ -109,7 +118,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
 
 
 # ======================================================================================
-# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - GIỮ NGUYÊN LOGIC CŨ ---
+# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - TĂNG ĐỘ CỨNG NHẮC VÀ CÔ ĐỌNG ---
 # ======================================================================================
 def generate_short_script(data):
     """
@@ -122,22 +131,28 @@ def generate_short_script(data):
     # Kêu gọi hành động cố định cho Shorts
     SHORTS_CTA = "Bạn đã sẵn sàng vén màn bí ẩn này? Hãy **nhấn nút Đăng ký, Theo dõi kênh** ngay để luôn nhận được thông tin mới!"
 
-    # 1. CẤU HÌNH PROMPT VÀ YÊU CẦU JSON OUTPUT (Giữ nguyên)
+    # 1. CẤU HÌNH PROMPT VÀ YÊU CẦU JSON OUTPUT
     sys_prompt = f"""
-    Bạn là **Chuyên gia tạo nội dung Shorts** (video dưới 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**.
-    ... [Các quy tắc giữ nguyên] ...
+    Bạn là **Chuyên gia tạo nội dung Shorts** (video dưới 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**. Tốc độ đọc phải nhanh và kịch tính.
+    
+    YÊU CẦU BẮT BUỘC:
+    1.  **hook_title (VIRAL):** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA).
+    2.  **script_body (CÔ ĐỌNG TUYỆT ĐỐI):** Kịch bản chính **tuyệt đối không được vượt quá 100 từ** và phải truyền tải thông tin với tốc độ cao. (không bao gồm CTA).
     """
     
     user_prompt = f"""
     DỮ LIỆU THÔ ĐẦU VÀO: {data['Content/Input']}.
-    Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau:
-    ... [JSON Output Structure giữ nguyên] ...
+    Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
+    {{
+        "hook_title": "[Tiêu đề giật gân, IN HOA, LÔI CUỐN]",
+        "script_body": "[Nội dung kịch bản HOOK + CỐT LÕI, TỐC ĐỘ CAO]"
+    }}
     """
     
-    # 2. GỌI AI VỚI JSON MODE (Giữ nguyên)
+    # 2. GỌI AI VỚI JSON MODE
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=300, response_format={"type": "json_object"})
 
-    # 3. XỬ LÝ LỖI và TÁCH DỮ LIỆU (Giữ nguyên)
+    # 3. XỬ LÝ LỖI và TÁCH DỮ LIỆU
     hook_title_fallback = f"BÍ MẬT {data['Name'].upper()} VỪA ĐƯỢC VÉN MÀN!"
     script_body_fallback = "Nội dung đang được cập nhật..."
     
@@ -150,10 +165,10 @@ def generate_short_script(data):
         hook_title = hook_title_fallback
         script_body_core = script_body_fallback
 
-    # 4. NỐI KỊCH BẢN VỚI CTA CỐ ĐỊNH (Giữ nguyên)
+    # 4. NỐI KỊCH BẢN VỚI CTA CỐ ĐỊNH
     full_script_for_tts = script_body_core + "\n\n" + SHORTS_CTA
 
-    # 5. LƯU FILE (Giữ nguyên)
+    # 5. LƯU FILE
     with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script_for_tts)
     with open(title_path, 'w', encoding='utf-8') as f: f.write(hook_title)
     
