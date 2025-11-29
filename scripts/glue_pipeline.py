@@ -1,25 +1,29 @@
+# scripts/glue_pipeline.py
 import logging
 import sys
 import os
 
-# 1. THIẾT LẬP MÔI TRƯỜNG & IMPORTS
+# Setup Path (Dùng để import các file ngang hàng)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# 1. IMPORT CÁC MODULE CƠ BẢN VÀ DATA
 from utils import setup_environment
-from fetch_content import fetch_content, authenticate_google_sheet
-from generate_script import generate_long_script, generate_short_script
-from create_tts import create_tts
-from create_video import create_video
-from create_shorts import create_shorts
-from auto_music_sfx import auto_music_sfx
-from upload_youtube import upload_video
+from fetch_content import fetch_content, authenticate_google_sheet # Dùng authenticate_google_sheet cho hàm update status
+from generate_script import generate_long_script, generate_short_script # Tạo script
+from auto_music_sfx import auto_music_sfx # Trộn nhạc
+
+# 2. IMPORT MODULE XUẤT BẢN & VIDEO
+from create_tts import create_tts # Tạo giọng nói
+from create_video import create_video # Dựng video 16:9 (Long)
+from create_shorts import create_shorts # Dựng video 9:16 (Shorts)
+from upload_youtube import upload_video # Upload
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# HÀM CẬP NHẬT TRẠNG THÁI CUỐI CÙNG
+# --- HÀM HỖ TRỢ: CẬP NHẬT TRẠNG THÁI ---
 def update_status_completed(worksheet, row_idx, status):
-    """Cập nhật trạng thái cuối cùng trên Google Sheet, sử dụng Status khác cho mục đích testing."""
+    """Cập nhật trạng thái cuối cùng trên Google Sheet."""
     try:
         # Giả định cột Status là cột 6 (F)
         worksheet.update_cell(row_idx, 6, status) 
@@ -35,6 +39,7 @@ def main():
     # 1. Fetch Dữ liệu từ Google Sheet
     task = fetch_content()
     if not task: return
+    
     data = task['data']
     eid = data['ID']
     row_idx = task['row_idx']
@@ -65,6 +70,7 @@ def main():
 
     # ====================================================================
     # --- LUỒNG SHORTS (9:16) --- (ĐANG HOẠT ĐỘNG)
+    # Ưu tiên test tính ổn định của luồng Shorts
     # ====================================================================
     logger.info("📱 --- LUỒNG SHORTS (9:16) ĐANG CHẠY TEST ---")
     
@@ -72,6 +78,7 @@ def main():
     result_shorts = generate_short_script(data)
     
     if result_shorts:
+        # HỨNG KẾT QUẢ: Nhận 2 giá trị từ hàm generate_short_script
         script_short_path, title_short_path = result_shorts
         
         # Đọc nội dung Tiêu đề Hook từ file (cần cho TextClip)
@@ -97,7 +104,7 @@ def main():
                 # Gọi hàm upload để đẩy Shorts lên YouTube
                 upload_video(shorts_path, shorts_data)
 
-    # 5. Update Sheet: Dùng Status khác để dễ dàng lọc kết quả test
+    # 5. Update Sheet: Ghi Status khác để dễ dàng lọc kết quả test
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
     logger.info("🎉 HOÀN TẤT LUỒNG TEST SHORTS")
 
