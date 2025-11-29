@@ -16,35 +16,39 @@ def generate_hash(text: str) -> str:
 
 def authenticate_google_sheet():
     """
-    Xác thực gspread linh hoạt:
-    1. Kiểm tra nếu biến môi trường là nội dung JSON (String).
-    2. Nếu không, kiểm tra nếu nó là đường dẫn file (Path).
+    Xác thực gspread bằng cách đọc nội dung JSON trực tiếp từ biến môi trường:
+    GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT
     """
     load_dotenv()
     
-    # Lấy giá trị từ biến môi trường (có thể là đường dẫn HOẶC nội dung JSON raw)
-    creds_raw = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+    # 1. Ưu tiên đọc nội dung JSON Raw từ biến GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT
+    creds_content = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT')
     
-    if not creds_raw:
-        logging.error("❌ Biến môi trường GOOGLE_SERVICE_ACCOUNT_JSON chưa được cài đặt.")
+    # 2. Fallback: Nếu không có, thử tìm biến cũ hoặc đường dẫn file (đề phòng chạy local)
+    if not creds_content:
+        creds_content = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+
+    if not creds_content:
+        logging.error("❌ Không tìm thấy biến môi trường GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT.")
         return None
         
     try:
-        # TRƯỜNG HỢP 1: Biến môi trường chứa toàn bộ nội dung JSON (Thường dùng trên GitHub Actions)
-        if creds_raw.strip().startswith('{'):
-            creds_dict = json.loads(creds_raw)
+        # TRƯỜNG HỢP 1: Biến chứa nội dung JSON (Bắt đầu bằng dấu {)
+        # Đây là cách bạn dùng trên GitHub Actions với Secret
+        if creds_content.strip().startswith('{'):
+            creds_dict = json.loads(creds_content)
             gc = gspread.service_account_from_dict(creds_dict)
-            logging.info("✅ Xác thực thành công bằng nội dung JSON (Environment Variable).")
+            logging.info("✅ Xác thực thành công bằng NỘI DUNG JSON (từ GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT).")
             return gc
 
-        # TRƯỜNG HỢP 2: Biến môi trường là đường dẫn file (File Path)
-        elif os.path.exists(creds_raw):
-            gc = gspread.service_account(filename=creds_raw)
-            logging.info(f"✅ Xác thực thành công bằng file: {creds_raw}")
+        # TRƯỜNG HỢP 2: Biến là đường dẫn file (Nếu chạy local và trỏ vào file)
+        elif os.path.exists(creds_content):
+            gc = gspread.service_account(filename=creds_content)
+            logging.info(f"✅ Xác thực thành công bằng FILE: {creds_content}")
             return gc
         
         else:
-            logging.error(f"❌ Không tìm thấy file hoặc nội dung JSON không hợp lệ: {creds_raw}")
+            logging.error("❌ Nội dung biến môi trường không phải là JSON hợp lệ hoặc đường dẫn file không tồn tại.")
             return None
 
     except Exception as e:
@@ -67,9 +71,8 @@ def get_column_index(worksheet, header_name):
 
 def fetch_content():
     """
-    Lấy bản ghi 'pending', tạo hash, tạo thư mục assets và chuyển trạng thái sang 'PROCESSING'.
+    Lấy bản ghi 'pending', tạo hash, folder assets và trả về dữ liệu đã map đúng tên cột.
     """
-    # authenticate_google_sheet đã tự gọi load_dotenv
     gc = authenticate_google_sheet()
     sheet_id = os.getenv('GOOGLE_SHEET_ID')
     
@@ -78,7 +81,7 @@ def fetch_content():
 
     try:
         sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0) # Lấy sheet đầu tiên
+        worksheet = sh.get_worksheet(0) 
         list_of_dicts = worksheet.get_all_records() 
         
         episode_to_process = None
@@ -88,49 +91,44 @@ def fetch_content():
         for list_index, row in enumerate(list_of_dicts):
             if row.get('Status', '').strip().lower() == 'pending':
                 episode_to_process = row
-                row_to_update = list_index + 2 # Hàng thực tế trên Sheet (Hàng 1 là header)
+                row_to_update = list_index + 2 
                 break
         
         if episode_to_process and row_to_update:
             episode_id = episode_to_process.get('ID', row_to_update - 1)
             episode_name = episode_to_process.get('Name')
             
-            # --- TẠO HASH VÀ THƯ MỤC ASSETS ---
-            # Tạo chuỗi nguồn để hash (kết hợp Title, Character, Theme) để đảm bảo duy nhất
+            # --- TẠO HASH ---
+            # Dùng đúng key từ Sheet của bạn: Name, ContentInput, CoreTheme
             hash_source = str(episode_to_process.get('Name', '')) + \
                           str(episode_to_process.get('ContentInput', '')) + \
                           str(episode_to_process.get('CoreTheme', ''))
             
             text_hash = generate_hash(hash_source)
-            
-            # Lưu hash vào dictionary data để các bước sau dùng
             episode_to_process['text_hash'] = text_hash
             
-            # Tạo thư mục assets/{hash}
+            # Tạo folder assets
             folder_path = os.path.join('assets', text_hash)
             os.makedirs(folder_path, exist_ok=True)
-            logging.info(f"📂 Đã tạo hash: {text_hash} và folder: {folder_path}")
+            logging.info(f"📂 Hash: {text_hash} | Folder: {folder_path}")
             
-            # --- CẬP NHẬT TRẠNG THÁI VÀ HASH TRÊN SHEET ---
-            
-            # Tìm cột Status và Hash động (tránh hardcode số cột)
+            # --- CẬP NHẬT SHEET ---
             status_col = get_column_index(worksheet, 'Status')
-            hash_col = get_column_index(worksheet, 'Hash') # Nếu bạn có cột Hash trên sheet
+            hash_col = get_column_index(worksheet, 'Hash') 
 
             if status_col:
                 worksheet.update_cell(row_to_update, status_col, 'PROCESSING')
-                logging.info(f"🔄 Đã cập nhật trạng thái tập '{episode_name}' -> PROCESSING.")
+                logging.info(f"🔄 Đã cập nhật trạng thái '{episode_name}' -> PROCESSING.")
             
             if hash_col:
                 worksheet.update_cell(row_to_update, hash_col, text_hash)
-                logging.info(f"📝 Đã ghi Hash vào Sheet.")
 
-            # --- CHUẨN BỊ DỮ LIỆU TRẢ VỀ (MAPPING CHUẨN) ---
-            # Mapping lại tên cột từ Sheet (ContentInput) sang tên biến code dùng (Content/Input)
+            # --- MAPPING DỮ LIỆU CHUẨN ---
             processed_data = {
                 'ID': episode_id,
                 'Name': episode_name,
                 
+                # Mapping đúng cột Sheet (viết liền) -> Biến Code (có dấu / hoặc cách)
                 'Core Theme': episode_to_process.get('CoreTheme', ''),
                 'Content/Input': episode_to_process.get('ContentInput', ''),
                 'ImageFolder': episode_to_process.get('ImageFolder', ''),
@@ -140,35 +138,12 @@ def fetch_content():
             }
             return processed_data
         else:
-            logging.info("ℹ️ Không có tập nào có Status là 'pending'.")
+            logging.info("ℹ️ Không có tập nào 'pending'.")
             return None
 
     except Exception as e:
-        logging.error(f"❌ Lỗi trong quá trình lấy nội dung từ Sheet: {e}", exc_info=True)
+        logging.error(f"❌ Lỗi Fetch Content: {e}", exc_info=True)
         return None
 
-def update_episode_status(row_index: int, status: str):
-    """Cập nhật trạng thái của tập trên Google Sheet."""
-    gc = authenticate_google_sheet()
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
-    
-    if not gc or not sheet_id: return
-
-    try:
-        sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0)
-        
-        status_col = get_column_index(worksheet, 'Status')
-        
-        if status_col and row_index > 1:
-            worksheet.update_cell(row_index, status_col, status)
-            logging.info(f"✅ Đã cập nhật trạng thái hàng {row_index} thành '{status}'.")
-        else:
-            logging.warning(f"⚠️ Không tìm thấy cột Status hoặc hàng không hợp lệ.")
-
-    except Exception as e:
-        logging.error(f"❌ LỖI CẬP NHẬT TRẠNG THÁI: {e}")
-
 if __name__ == '__main__':
-    # Test chạy thử
     fetch_content()
