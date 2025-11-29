@@ -3,23 +3,23 @@ import logging
 import sys
 import os
 
-# Thiết lập đường dẫn import (GIỮ NGUYÊN)
+# Thiết lập đường dẫn import (GIỮ NGUYÊN - CẦN THIẾT CHO CI/CD)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-# --- 1. IMPORT CÁC MODULE CHÍNH (ĐÃ FIX LỖI IMPORT TƯƠNG ĐỐI BẰNG DẤU CHẤM) ---
-# Việc dùng 'from .module_name' giúp Python tìm thấy các file trong thư mục scripts/ một cách ổn định.
+# --- 1. IMPORT CÁC MODULE CHÍNH (ĐÃ SỬA LỖI: DÙNG ABSOLUTE IMPORTS) ---
+# Dùng tên file/module (ví dụ: fetch_content) thay vì dấu chấm (ví dụ: .fetch_content)
 
-from .utils import setup_environment
-from .fetch_content import fetch_content, authenticate_google_sheet 
-from .generate_script import generate_long_script, generate_short_script 
-from .auto_music_sfx import auto_music_sfx 
+from utils import setup_environment
+from fetch_content import fetch_content, authenticate_google_sheet 
+from generate_script import generate_long_script, generate_short_script 
+from auto_music_sfx import auto_music_sfx 
 
-from .create_tts import create_tts 
-from .create_video import create_video 
-from .create_shorts import create_shorts 
-from .upload_youtube import upload_video 
+from create_tts import create_tts 
+from create_video import create_video 
+from create_shorts import create_shorts 
+from upload_youtube import upload_video 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def main():
     setup_environment()
     
     # 1. Fetch Dữ liệu từ Google Sheet
-    task = fetch_content() # Sẽ hoạt động ổn định sau khi fix import
+    task = fetch_content() # Bây giờ hàm này đã được import đúng
     if not task: 
         logger.info("Không có dữ liệu mới.")
         return
