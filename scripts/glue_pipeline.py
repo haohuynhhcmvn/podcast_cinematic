@@ -1,121 +1,109 @@
 # scripts/glue_pipeline.py
-import sys 
-import os
 import logging
-from dotenv import load_dotenv
+import sys
+import os
 
-# Thiết lập đường dẫn import
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
+# Setup Path (Dùng để import các file ngang hàng)
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import Modules
-from create_video import create_video
-from upload_youtube import upload_video 
-from fetch_content import fetch_content, authenticate_google_sheet
-from generate_script import generate_script
-from create_tts import create_tts
-from auto_music_sfx import auto_music_sfx
-from create_subtitle import create_subtitle
-from create_shorts import create_shorts
 from utils import setup_environment
+from fetch_content import fetch_content
+from generate_script import generate_long_script, generate_short_script
+from create_tts import create_tts
+from create_video import create_video
+from create_shorts import create_shorts
+from auto_music_sfx import auto_music_sfx
+from upload_youtube import upload_video
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def update_status_completed(row_index: int):
-    """Hàm cập nhật trạng thái sử dụng lại logic xác thực của fetch_content"""
+# --- BỔ SUNG: HÀM CẬP NHẬT STATUS (TỪ FETCH_CONTENT) ---
+# Cần phải import hàm này hoặc tái tạo nó để cập nhật trạng thái sau khi xử lý xong
+# (Giả định fetch_content đã trả về 'worksheet' và 'row_idx')
+def update_status_completed(worksheet, row_idx, status):
+    """Cập nhật trạng thái cuối cùng trên Google Sheet."""
     try:
-        gc = authenticate_google_sheet()
-        sheet_id = os.getenv('GOOGLE_SHEET_ID')
-        if not gc or not sheet_id: return False
-
-        sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0)
-        # Update cột F (cột 6) thành COMPLETED
-        worksheet.update_cell(row_index, 6, 'COMPLETED') 
-        logging.info(f"Đã cập nhật hàng {row_index}: COMPLETED")
-        return True
+        # Giả định cột Status là cột 6 (F)
+        worksheet.update_cell(row_idx, 6, status) 
+        logger.info(f"✅ Đã cập nhật hàng {row_idx}: {status}")
     except Exception as e:
-        logging.error(f"Lỗi update sheet: {e}")
-        return False
+        logger.error(f"❌ Lỗi update sheet: {e}")
 
-def main_pipeline():
-    logging.info("=== BẮT ĐẦU PIPELINE ===")
-    load_dotenv()
-    setup_environment() 
+# --- HÀM CHÍNH ---
+
+def main():
+    setup_environment()
     
-    try:
-        # 1. Lấy dữ liệu
-        episode_data = fetch_content()
-        if not episode_data:
-            logging.info("Không có dữ liệu mới.")
-            return
+    # 1. Fetch Dữ liệu từ Google Sheet
+    task = fetch_content()
+    if not task: return
+    
+    data = task['data']
+    eid = data['ID']
+    row_idx = task['row_idx']
+    worksheet = task['worksheet']
 
-        episode_id = episode_data['ID']
-        logging.info(f"Đang xử lý Episode ID: {episode_id}")
+    # ====================================================================
+    # --- LUỒNG VIDEO DÀI (16:9) ---
+    # TẠM KHÓA: Mở lại bằng cách xóa dấu # ở đầu mỗi dòng
+    # ====================================================================
+    logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
+    
+    # # BƯỚC 1: Tạo Script Dài
+    # script_long = generate_long_script(data)
+    
+    # # BƯỚC 2: TTS Dài & Mix Audio
+    # if script_long:
+    #     tts_long = create_tts(script_long, eid, "long")
+    #     if tts_long:
+    #         audio_final = auto_music_sfx(tts_long, eid)
+            
+    # # BƯỚC 3: Tạo Video 16:9 & Upload
+    #         if audio_final:
+    #             vid_path = create_video(audio_final, eid)
+    #             if vid_path:
+    #                 upload_video(vid_path, data)
+    # --------------------------------------------------------------------
+
+
+    # ====================================================================
+    # --- LUỒNG SHORTS (9:16) --- (ĐANG HOẠT ĐỘNG)
+    # ====================================================================
+    logger.info("📱 --- LUỒNG SHORTS (9:16) ĐANG CHẠY TEST ---")
+    
+    # 1. Generate Script Short (Trả về Script và Title Hook)
+    result_shorts = generate_short_script(data)
+    
+    if result_shorts:
+        script_short_path, title_short_path = result_shorts
         
-        logging.info("Sử dụng ảnh nền và micro tĩnh từ assets/images/")
-             
-        # 2. Generate Script
-        script_path = generate_script(episode_data)
-        if not script_path: raise Exception("Lỗi generate_script")
-
-        # 3. TTS
-        raw_audio_path = create_tts(script_path, episode_id)
-        if not raw_audio_path: raise Exception("Lỗi create_tts")
-
-        # 4. Audio Mixing
-        final_audio_path = auto_music_sfx(raw_audio_path, episode_id)
-        if not final_audio_path: raise Exception("Lỗi auto_music_sfx")
-
-        # 5. Subtitles
-        subtitle_path = create_subtitle(final_audio_path, script_path, episode_id)
-        # (Subtitle có thể None nếu tắt tính năng, không cần raise Exception)
-
-        # 6. Create Video 16:9
-        video_169_path = create_video(final_audio_path, subtitle_path, episode_id)
-        if not video_169_path: raise Exception("Lỗi create_video")
-
-        # 7. Create Shorts
-        shorts_path = None
+        # Đọc nội dung Tiêu đề Hook từ file (cần cho TextClip)
         try:
-            # Hứng lấy đường dẫn file shorts trả về
-            shorts_path = create_shorts(final_audio_path, subtitle_path, episode_id)
-        except Exception as e:
-            logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
+            with open(title_short_path, 'r', encoding='utf-8') as f:
+                hook_title = f.read().strip()
+        except:
+            hook_title = ""
 
-        # 8. Upload YouTube (Video 16:9)
-        logging.info("--> Bắt đầu upload Video 16:9...")
-        upload_status_169 = upload_video(video_169_path, episode_data)
-        logging.info(f"Kết quả Upload 16:9: {upload_status_169}")
+        # 2. Tạo TTS cho phần nội dung (Chỉ TTS thô)
+        tts_short = create_tts(script_short_path, eid, "short")
         
-        # 9. Upload YouTube (Shorts) - MỚI THÊM
-        upload_status_shorts = "SKIPPED"
-        if shorts_path and os.path.exists(shorts_path):
-            logging.info("--> Bắt đầu upload Video Shorts...")
+        if tts_short:
+            # 3. Tạo Shorts (Có nhạc nền và Title động)
+            shorts_path = create_shorts(tts_short, hook_title, eid)
             
-            # Tạo metadata riêng cho Shorts (Thêm tag #Shorts vào tiêu đề)
-            shorts_data = episode_data.copy()
-            original_title = shorts_data.get('Title', shorts_data.get('Name', 'Shorts'))
-            shorts_data['Name'] = f"{original_title} #Shorts"
-            
-            # Gọi hàm upload lần 2
-            upload_status_shorts = upload_video(shorts_path, shorts_data)
-            logging.info(f"Kết quả Upload Shorts: {upload_status_shorts}")
-        else:
-            logging.warning("Không tìm thấy file Shorts để upload.")
+            # 4. Upload Shorts (Nếu có file)
+            if shorts_path:
+                shorts_data = data.copy()
+                # Thêm #Shorts vào tiêu đề
+                shorts_data['Name'] = f"{data.get('Name')} | {hook_title} #Shorts" 
+                
+                # Hàm upload_video() sẽ tự xử lý việc upload lên YouTube
+                upload_video(shorts_path, shorts_data)
 
-        # 10. Update Status
-        # Chỉ cần Video chính (16:9) lên thành công là coi như task hoàn thành
-        if episode_data.get('Status_Row') and upload_status_169 == 'UPLOADED':
-            update_status_completed(episode_data['Status_Row'])
+    # 5. Update Sheet: Ghi Status khác để dễ dàng lọc kết quả test
+    update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
+    logger.info("🎉 HOÀN TẤT LUỒNG TEST SHORTS")
 
-    except Exception as e:
-        logging.error(f"PIPELINE FAILED: {e}", exc_info=True)
-        sys.exit(1)
-
-    finally:
-        logging.info("=== KẾT THÚC QUY TRÌNH ===")
-
-if __name__ == '__main__':
-    main_pipeline()
+if __name__ == "__main__":
+    main()
