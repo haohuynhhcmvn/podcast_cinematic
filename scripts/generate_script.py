@@ -27,7 +27,6 @@ def _call_openai(system, user, max_tokens=1000, response_format=None):
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "max_tokens": max_tokens
         }
-        # response_format={"type": "json_object"} là cách cứng nhắc nhất để yêu cầu JSON
         if response_format:
             config["response_format"] = response_format
 
@@ -38,7 +37,7 @@ def _call_openai(system, user, max_tokens=1000, response_format=None):
         logger.error(f"❌ OpenAI Error: {e}"); return None
 
 # ======================================================================================
-# --- A. HÀM TẠO SCRIPT DÀI (LONG FORM) ---
+# --- A. HÀM TẠO SCRIPT DÀI (LONG FORM) - TẠO METADATA HẤP DẪN ---
 # ======================================================================================
 def generate_long_script(data):
     """
@@ -49,12 +48,20 @@ def generate_long_script(data):
     
     sys_prompt = f"""
     Bạn là **Master Storyteller** với giọng văn Nam Trầm ({TTS_VOICE_NAME}), chuyên tạo nội dung cinematic.
-    Nhiệm vụ của bạn là tạo Kịch bản và Metadata YouTube phải thật LÔI CUỐN và TỐI ƯU SEO.
+    Nhiệm vụ của bạn là tạo Kịch bản và Metadata YouTube phải thật **LÔI CUỐN, GÂY TÒ MÒ và TỐI ƯU SEO** để tăng Click-Through Rate (CTR).
 
     QUY TẮC TẠO KỊCH BẢN (core_script):
     1. BẮT ĐẦU NGAY LẬP TỨC: Kịch bản phải bắt đầu bằng HOOK mạnh mẽ.
     2. Thời lượng: Khoảng 800 - {TARGET_WORD_COUNT} từ.
-    ... [Các quy tắc khác] ...
+    3. Định dạng: Chỉ văn bản cần được đọc.
+
+    QUY TẮC TẠO METADATA YOUTUBE (Tập trung vào SEO và Hấp dẫn):
+    1. **youtube_title (Tối đa 100 ký tự):** Phải chứa từ khóa chính ở đầu, gây tò mò, sử dụng TỪ KHÓA IN HOA hoặc dấu ngoặc đơn/kép để tăng CTR.
+    2. **youtube_description:** Bắt đầu bằng HOOK VĂN BẢN gây SỐC. Mô tả chi tiết, bao gồm CTA rõ ràng và #Hashtag liên quan.
+    3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, bao gồm long-tail keywords và từ khóa viral.
+
+    CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{data['Core Theme']}"
+    TÊN NHÂN VẬT/TIÊU ĐỀ: "{data['Name']}"
     """
     
     user_prompt = f"""
@@ -62,9 +69,9 @@ def generate_long_script(data):
     Hãy trả về dưới dạng JSON với 4 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
     {{
         "core_script": "[Nội dung kịch bản chính, BẮT ĐẦU BẰNG HOOK CINEMATIC]",
-        "youtube_title": "[Tiêu đề video, TỐI ƯU SEO VÀ CTR]",
-        "youtube_description": "[Mô tả video, BẮT ĐẦU BẰNG HOOK MẠNH MẼ]",
-        "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy]"
+        "youtube_title": "[Tiêu đề video, LÔI CUỐN/VIRAL, TỐI ƯU SEO VÀ CTR]",
+        "youtube_description": "[Mô tả video, GÂY TÒ MÒ VÀ MỜI GỌI]",
+        "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy, 10-15 từ khóa]"
     }}
     """
     
@@ -73,7 +80,6 @@ def generate_long_script(data):
     try:
         data_json = json.loads(raw_json)
         core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
-        
         full_script = core_script 
         
         with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
@@ -88,12 +94,11 @@ def generate_long_script(data):
         return None
 
 # ======================================================================================
-# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - ĐÃ FIX LỖI ĐỊNH DẠNG ---
+# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - TẠO HOOK GIẬT GÂN ---
 # ======================================================================================
 def generate_short_script(data):
     """
     Tạo kịch bản Shorts cô đọng, sử dụng JSON output để đảm bảo định dạng Title và Script.
-    (Fix lỗi ValueError: too many values to unpack)
     """
     episode_id = data['ID']
     script_path = get_path('data', 'episodes', f"{episode_id}_script_short.txt")
@@ -107,7 +112,7 @@ def generate_short_script(data):
     Bạn là **Chuyên gia tạo nội dung Shorts** (video dưới 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**.
     
     YÊU CẦU BẮT BUỘC:
-    1.  **hook_title:** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA).
+    1.  **hook_title (VIRAL):** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA) để tối đa hóa thời gian xem.
     2.  **script_body:** Kịch bản chính chỉ dài khoảng **70 - 100 từ** (không bao gồm CTA).
     """
     
@@ -115,7 +120,7 @@ def generate_short_script(data):
     DỮ LIỆU THÔ ĐẦU VÀO: {data['Content/Input']}.
     Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
     {{
-        "hook_title": "[Tiêu đề giật gân, IN HOA]",
+        "hook_title": "[Tiêu đề giật gân, IN HOA, LÔI CUỐN]",
         "script_body": "[Nội dung kịch bản HOOK + CỐT LÕI]"
     }}
     """
@@ -124,13 +129,11 @@ def generate_short_script(data):
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=300, response_format={"type": "json_object"})
 
     # 3. XỬ LÝ LỖI và TÁCH DỮ LIỆU
-    # Giá trị mặc định an toàn nếu JSON bị lỗi parsing
     hook_title_fallback = f"BÍ MẬT {data['Name'].upper()} VỪA ĐƯỢC VÉN MÀN!"
     script_body_fallback = "Nội dung đang được cập nhật..."
     
     try:
         data_json = json.loads(raw_json)
-        # Sử dụng .get() để lấy giá trị (dùng giá trị mặc định nếu key không tồn tại)
         hook_title = data_json.get('hook_title', hook_title_fallback).strip()
         script_body_core = data_json.get('script_body', script_body_fallback).strip()
     except Exception as e:
@@ -145,7 +148,6 @@ def generate_short_script(data):
     with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script_for_tts)
     with open(title_path, 'w', encoding='utf-8') as f: f.write(hook_title)
     
-    logger.info(f"✅ Kịch bản Shorts ({len(full_script_for_tts.split())} từ) đã hoàn tất.")
+    logger.info(f"✅ Kịch bản Shorts đã hoàn tất.")
     
-    # TRẢ VỀ CHÍNH XÁC 2 GIÁ TRỊ (script_path, title_path)
     return script_path, title_path
