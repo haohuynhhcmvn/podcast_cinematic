@@ -47,7 +47,7 @@ def main():
 
     # ====================================================================
     # --- LUỒNG VIDEO DÀI (16:9) ---
-    # TẠM KHÓA: Giữ nguyên trạng thái khóa để test shorts
+    # KHÓA TẠM THỜI: Giữ nguyên trạng thái khóa để test shorts
     # ====================================================================
     logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
     
@@ -70,7 +70,8 @@ def main():
     #                 if vid_path:
     #                     # TRUYỀN METADATA MỚI CHO UPLOAD
     #                     upload_data = {
-    #                         'Title': metadata_long.get('youtube_title', data.get('Name')),
+    #                         # Map key AI (youtube_title) sang key upload_youtube.py (Title)
+    #                         'Title': metadata_long.get('youtube_title', data.get('Name')), 
     #                         'Summary': metadata_long.get('youtube_description', 'Mô tả video dài.'),
     #                         'Tags': metadata_long.get('youtube_tags', 'podcast, story, viral')
     #                     }
@@ -96,30 +97,34 @@ def main():
         except:
             hook_title = ""
 
-        # 2. Tạo TTS cho phần nội dung (Chỉ TTS thô, không cần Audio Mix)
+        # 2. Tạo TTS cho phần nội dung
         tts_short = create_tts(script_short_path, eid, "short")
         
         if tts_short:
             # 3. TẠO SHORTS: Dựng video 9:16
             shorts_path = create_shorts(tts_short, hook_title, eid)
             
-            # 4. UPLOAD SHORTS
+            # 4. UPLOAD SHORTS (SỬA LỖI KEY MISMATCH)
             if shorts_path:
-                # TRUYỀN METADATA CHO UPLOAD (Sử dụng Title và Description lôi cuốn)
                 
-                # Tiêu đề: Lấy HOOK TITLE + Tên tập + #Shorts
+                # --- XÂY DỰNG METADATA CHUẨN CHO SHORTS ---
+                # Title: HOOK TITLE + Tên tập + #Shorts
                 short_title = f"{hook_title} | {data.get('Name')} #Shorts"
                 
-                # Mô tả: Lấy nội dung từ Content/Input để AI có thể dùng làm mô tả hook
-                short_description = data.get('Content/Input', 'Video Shorts hấp dẫn, xem ngay!')
+                # Summary (Mô tả): Lấy Core Theme và thêm CTA Viral
+                short_description = f"🔥 Vén màn bí mật: {data.get('Core Theme', '')}\n\nXem toàn bộ câu chuyện và nhiều huyền thoại khác trên kênh Podcast Theo Dấu Chân Huyền Thoại!\n#shorts #viral #podcast"
                 
+                # Tags: Lấy Tags mặc định
+                short_tags = 'shorts, viral, podcast, storytelling, ' + data.get('Core Theme', '')
+
+                # TẠO DICTIONARY VỚI KEY CHÍNH XÁC
                 upload_data = {
                     'Title': short_title, 
                     'Summary': short_description, 
-                    'Tags': 'shorts, viral, podcast, storytelling'
+                    'Tags': short_tags 
                 }
                 
-                # Gọi hàm upload để đẩy Shorts lên YouTube
+                # Gọi hàm upload
                 upload_video(shorts_path, upload_data)
 
     # 5. Update Sheet: Ghi Status
