@@ -1,4 +1,4 @@
-# ./script/generate_script.py (ĐÃ SỬA: Tăng yêu cầu độ dài kịch bản lên TỐI THIỂU 10 PHÚT)
+#./scripts/generate_script.py
 import os
 import logging
 import json 
@@ -11,60 +11,63 @@ def generate_script(episode_data):
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: 
-        logging.error("Thiếu OPENAI_API_KEY."); return None
+        logging.error("Missing OPENAI_API_KEY."); return None
 
     try:
         client = OpenAI(api_key=api_key)
         
+        # Lấy dữ liệu tập phim
         episode_id = episode_data['ID']
         title = episode_data['Name']
         core_theme = episode_data['Core Theme']
         raw_content = episode_data['Content/Input']
         
-        # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH ---
-        CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại" 
+        # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH (TIẾNG ANH) ---
+        CHANNEL_NAME = "Legends Trail Podcast" # Đổi tên kênh tiếng Việt thành Tiếng Anh
         
         PODCAST_INTRO = f"""
-Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
-Hôm nay, chúng ta sẽ đi sâu vào hành trình của: {title}.
+Welcome to the {CHANNEL_NAME}. This is where we explore compelling stories, unsolved mysteries, and little-known historical corners. 
+Today, we delve into the journey of: {title}.
 """
         
         PODCAST_OUTRO = f"""
-Và đó là tất cả những gì chúng ta đã khám phá trong tập {CHANNEL_NAME} ngày hôm nay. 
-Nếu bạn thấy nội dung này hữu ích và truyền cảm hứng, đừng quên nhấn nút Đăng ký, chia sẻ và theo dõi để không bỏ lỡ những hành trình tri thức tiếp theo. 
-Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
+And that wraps up everything we explored on today's episode of {CHANNEL_NAME}. 
+If you found this content helpful and inspiring, don't forget to hit the Subscribe button, share, and follow us so you don't miss our next journey of knowledge. 
+Thank you for listening. See you in the next episode!
 """
         
-        # --- 2. CẬP NHẬT PROMPT: YÊU CẦU ĐỘ DÀI KỊCH BẢN ---
+        # --- 2. CẬP NHẬT PROMPT: YÊU CẦU LLM VIẾT BẰNG TIẾNG ANH ---
         system_prompt = f"""
-        Bạn là **Master Storyteller** (Người kể chuyện bậc thầy) với giọng văn **Nam Trầm, lôi cuốn, có chiều sâu và truyền cảm hứng**.
-        Nhiệm vụ của bạn là biến nội dung thô dưới đây thành một **đối tượng JSON** chứa Kịch bản Audio Cinematic (Chỉ phần nội dung chính) và Metadata YouTube đi kèm.
+        You are a **Master Storyteller** with a **deep, compelling, and inspiring Male Baritone voice style**.
+        Your task is to transform the raw content below into a **JSON object** containing the Cinematic Audio Script (Core Content Only) and accompanying YouTube Metadata.
+        
+        SCRIPT GENERATION RULES (core_script):
+        1. **Language:** The script MUST be written **ENTIRELY IN ENGLISH**.
+        2. **Tone:** Compelling, sharp, clear, and rich in imagery.
+        3. **Crucial Length Requirement (INCREASED):** The **core content** script should be approximately **2500 - 3000 words**. This is a strict requirement to ensure the video lasts a minimum of 15-20 minutes. Write in depth and detail to meet this length.
+        4. **Format:** Only include the text to be read; DO NOT include the intro/outro greetings.
 
-        QUY TẮC TẠO KỊCH BẢN (core_script):
-        1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
-        2. **Thời lượng quan trọng (ĐÃ TĂNG):** Kịch bản **phần nội dung chính** nên có độ dài khoảng **2500 - 3000 từ**. Đây là một yêu cầu cứng để đảm bảo video đạt tối thiểu 15-20 phút. Hãy viết chi tiết, có chiều sâu để đạt được độ dài này.
-        3. **Định dạng:** Chỉ văn bản cần được đọc, KHÔNG bao gồm lời chào/kết.
+        YOUTUBE METADATA GENERATION RULES (ALL IN ENGLISH):
+        1. **youtube_title:** Highly engaging title, maximum 100 characters.
+        2. **youtube_description:** Detailed description (approx. 300 words), including summary, Call-to-Action (CTA), and hashtags.
+        3. **youtube_tags:** A list of 10-15 relevant keywords, lowercase, separated by commas.
 
-        QUY TẮC TẠO METADATA YOUTUBE:
-        1. **youtube_title:** Tiêu đề hấp dẫn, tối đa 100 ký tự.
-        2. **youtube_description:** Mô tả đầy đủ (khoảng 300 từ), bao gồm tóm tắt, kêu gọi hành động (CTA), và hashtag.
-        3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, viết thường, ngăn cách bằng dấu phẩy.
-
-        CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{core_theme}"
-        TÊN NHÂN VẬT/TIÊU ĐỀ: "{title}"
+        CORE THEME FOR THIS EPISODE: "{core_theme}"
+        CHARACTER/TOPIC NAME: "{title}"
         """
 
         user_prompt = f"""
-        NỘI DUNG THÔ CẦN XỬ LÝ:\n---\n{raw_content}\n---\n
-        Hãy tạo Kịch bản **NỘI DUNG CHÍNH** và Metadata YouTube, trả về dưới dạng JSON với 4 trường sau:
+        RAW CONTENT TO PROCESS:\n---\n{raw_content}\n---\n
+        Generate the **CORE SCRIPT** and YouTube Metadata, returning the result as a JSON with the following 4 fields:
         {{
-            "core_script": "[Nội dung kịch bản chính, KHÔNG BAO GỒM LỜI CHÀO/KẾT]",
-            "youtube_title": "[Tiêu đề video]",
-            "youtube_description": "[Mô tả video]",
-            "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy]"
+            "core_script": "[Core script content, EXCLUDING INTRO/OUTRO]",
+            "youtube_title": "[Video Title]",
+            "youtube_description": "[Video Description]",
+            "youtube_tags": "[Video tags, comma-separated]"
         }}
         """
 
+        # Gọi API OpenAI
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
@@ -82,7 +85,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
             youtube_tags_raw = json_response.get('youtube_tags', '')
             
         except json.JSONDecodeError as e:
-            logging.error(f"Lỗi phân tích cú pháp JSON từ OpenAI: {e}")
+            logging.error(f"Error parsing JSON from OpenAI: {e}")
             return None
 
         # GHÉP KỊCH BẢN CUỐI CÙNG: CÂU CHÀO + NỘI DUNG CHÍNH + CÂU KẾT
@@ -98,7 +101,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(script_content)
         
-        logging.info(f"Đã tạo kịch bản (gồm chào/kết) và metadata thành công. Script lưu tại: {script_path}")
+        logging.info(f"Successfully created script (including intro/outro) and metadata. Script saved at: {script_path}")
         
         # Trả về Dictionary chứa cả path và metadata
         return {
@@ -109,5 +112,5 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
         }
 
     except Exception as e:
-        logging.error(f"Lỗi tổng quát khi tạo kịch bản: {e}", exc_info=True)
+        logging.error(f"General error while creating script: {e}", exc_info=True)
         return None
