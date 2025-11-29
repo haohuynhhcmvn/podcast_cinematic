@@ -1,3 +1,4 @@
+# scripts/create_shorts.py
 import logging
 import os
 import math 
@@ -10,10 +11,9 @@ logger = logging.getLogger(__name__)
 SHORTS_SIZE = (1080, 1920)
 MAX_DURATION = 60 
 
-def create_shorts(audio_path, title_text, episode_id):
+def create_shorts(audio_path, title_text, episode_id): # Giữ title_text (hook_title) nhưng sẽ ít dùng hơn
     try:
         # 1. Load Voice (TTS)
-        # Tăng âm lượng giọng đọc lên 1.3 lần
         voice = AudioFileClip(audio_path).volumex(1.5) 
         duration = min(voice.duration, MAX_DURATION) 
         voice = voice.subclip(0, duration) 
@@ -40,34 +40,28 @@ def create_shorts(audio_path, title_text, episode_id):
 
         elements = [clip]
 
-        # 4. Thêm Text Tiêu Đề ĐỘNG (Vị trí 1/3 dưới)
-        if title_text:
+        # 4. Thêm Text Tiêu Đề Cố Định (Tên nhân vật - Trắng Neon)
+        # Lấy tên nhân vật từ data.get('Name')
+        # SỬ DỤNG TÊN NHÂN VẬT THAY VÌ HOOK_TITLE
+        main_title_content = episode_id.split('_')[0] # Lấy phần trước dấu gạch dưới từ episode_id (ví dụ: "Abraham Lincoln" từ "Abraham Lincoln_short")
+        if main_title_content:
             try:
-                # Logic ngắt dòng
-                display_text = title_text
-                if len(display_text) > 20 and "\n" not in display_text:
-                    mid = len(display_text) // 2
-                    split_idx = display_text.find(' ', mid - 5, mid + 5)
-                    if split_idx == -1: split_idx = mid
-                    display_text = display_text[:split_idx] + "\n" + display_text[split_idx+1:]
-
-                txt = TextClip(
-                    display_text, 
-                    fontsize=50, 
-                    color='yellow', 
-                    # --- FIX FONT TIẾNG VIỆT ---
-                    font='DejaVu-Sans-Bold', # Thay thế Arial-Bold bằng font chuẩn Unicode trên Linux
-                    method='caption', 
-                    size=(950, None), 
-                    stroke_color='black', 
-                    stroke_width=3, 
-                    align='center'
-                )
+                # Định dạng chữ trắng neon
+                main_title_clip = TextClip(main_title_content.upper(), 
+                                           fontsize=85, 
+                                           color='white', # Màu chữ trắng
+                                           font='DejaVu-Sans-Bold', # Font mạnh mẽ
+                                           method='caption', 
+                                           size=(1000, None), # Chiều rộng tối đa 1000px
+                                           stroke_color='cyan', # Viền màu xanh cyan để tạo hiệu ứng neon
+                                           stroke_width=5, 
+                                           align='center')
                 
-                txt = txt.set_pos(('center', 1280)).set_duration(duration)
-                elements.append(txt)
+                # Đặt vị trí ở khoảng 1/4 trên màn hình
+                main_title_clip = main_title_clip.set_pos(('center', 150)).set_duration(duration)
+                elements.append(main_title_clip)
             except Exception as e:
-                logger.warning(f"⚠️ Bỏ qua Text do lỗi ImageMagick hoặc Font: {e}")
+                logger.warning(f"⚠️ Bỏ qua Text Title chính do lỗi ImageMagick hoặc Font: {e}")
 
         # 5. Render
         final = CompositeVideoClip(elements, size=SHORTS_SIZE).set_audio(final_audio)
