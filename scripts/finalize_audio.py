@@ -1,4 +1,6 @@
-#./scripts/finalize_audio.py
+# File: ./scripts/finalize_audio.py
+# Chức năng: Trộn audio TTS thô với nhạc nền (background music - BGM) để tạo file audio cuối cùng.
+
 import os
 import logging
 from pydub import AudioSegment
@@ -23,8 +25,10 @@ def finalize_audio(raw_audio_path: str, is_short: bool = False):
     # Lấy Episode ID và định nghĩa tên file đầu ra
     episode_id = os.path.basename(raw_audio_path).split('_')[0]
     if is_short:
+        # Output: 01_final_podcast_short.mp3
         output_filename = f"{episode_id}_final_podcast_short.mp3"
     else:
+        # Output: 01_final_podcast.mp3
         output_filename = f"{episode_id}_final_podcast.mp3"
         
     audio_dir = os.path.join('outputs', 'audio')
@@ -38,6 +42,7 @@ def finalize_audio(raw_audio_path: str, is_short: bool = False):
 
     try:
         # Tải các đoạn Audio
+        # Yêu cầu pydub và ffmpeg được cài đặt
         raw_audio = AudioSegment.from_mp3(raw_audio_path)
         bgm = AudioSegment.from_mp3(bgm_path)
         
@@ -58,7 +63,7 @@ def finalize_audio(raw_audio_path: str, is_short: bool = False):
 
         # TRỘN AUDIO:
         # Sử dụng .overlay(raw_audio, position=0) để đảm bảo TTS (raw_audio)
-        # bắt đầu ở miligiây thứ 0 của BGM. Loại bỏ mọi khoảng dạo nhạc intro.
+        # bắt đầu ở miligiây thứ 0 của BGM.
         final_audio_segment = bgm_volume_reduced.overlay(raw_audio, position=0) 
         
         # Xuất file cuối cùng
