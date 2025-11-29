@@ -1,23 +1,21 @@
-#utils.py
 import os
+import sys
+
+# Xác định thư mục gốc của dự án
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_path(*args):
+    """Trả về đường dẫn tuyệt đối an toàn."""
+    return os.path.join(PROJECT_ROOT, *args)
 
 def setup_environment():
-    """Kiểm tra và tạo các thư mục cần thiết cho dự án."""
+    """Tạo đầy đủ cấu trúc thư mục đầu ra."""
     required_dirs = [
-        'data/episodes', 'inputs/images', 'outputs/audio', 'outputs/subtitle',
-        'outputs/video', 'outputs/shorts', 'assets/intro_outro', 'assets/background_music'
+        'data/episodes', 
+        'assets/images', 'assets/audio', 'assets/video', 
+        'assets/intro_outro', 'assets/background_music',
+        'outputs/audio', 'outputs/video', 'outputs/shorts'
     ]
-    
-    for dir_path in required_dirs:
-        os.makedirs(dir_path, exist_ok=True)
-    
-    print("Môi trường và cấu trúc thư mục đã được thiết lập.")
-
-def load_template_file(filepath):
-    """Tải nội dung từ một file."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        print(f"Lỗi: Không tìm thấy file template tại {filepath}")
-        return None
+    for d in required_dirs:
+        os.makedirs(get_path(d), exist_ok=True)
+    print(f"✅ Môi trường đã sẵn sàng tại: {PROJECT_ROOT}")
