@@ -1,4 +1,3 @@
-# scripts/create_shorts.py
 import logging
 import os
 import math 
@@ -11,7 +10,7 @@ logger = logging.getLogger(__name__)
 SHORTS_SIZE = (1080, 1920)
 MAX_DURATION = 60 
 
-def create_shorts(audio_path, title_text, episode_id): # Giữ title_text (hook_title) nhưng sẽ ít dùng hơn
+def create_shorts(audio_path, title_text, episode_id): 
     try:
         # 1. Load Voice (TTS)
         voice = AudioFileClip(audio_path).volumex(1.5) 
@@ -41,24 +40,26 @@ def create_shorts(audio_path, title_text, episode_id): # Giữ title_text (hook_
         elements = [clip]
 
         # 4. Thêm Text Tiêu Đề Cố Định (Tên nhân vật - Trắng Neon)
-        # Lấy tên nhân vật từ data.get('Name')
-        # SỬ DỤNG TÊN NHÂN VẬT THAY VÌ HOOK_TITLE
-        main_title_content = episode_id.split('_')[0] # Lấy phần trước dấu gạch dưới từ episode_id (ví dụ: "Abraham Lincoln" từ "Abraham Lincoln_short")
+        # Lấy tên nhân vật từ episode_id (giả định có dạng 'Name_short')
+        main_title_content = episode_id.split('_')[0]
+        
         if main_title_content:
             try:
-                # Định dạng chữ trắng neon
-                main_title_clip = TextClip(main_title_content.upper(), 
+                # Chuyển đổi thành chữ in hoa
+                display_content = main_title_content.upper()
+                
+                main_title_clip = TextClip(display_content, 
                                            fontsize=85, 
-                                           color='white', # Màu chữ trắng
-                                           font='DejaVu-Sans-Bold', # Font mạnh mẽ
+                                           color='white', 
+                                           font='DejaVu-Sans-Bold', 
                                            method='caption', 
-                                           size=(1000, None), # Chiều rộng tối đa 1000px
-                                           stroke_color='cyan', # Viền màu xanh cyan để tạo hiệu ứng neon
+                                           size=(1000, None), 
+                                           stroke_color='cyan', 
                                            stroke_width=5, 
                                            align='center')
                 
-                # Đặt vị trí ở khoảng 1/4 trên màn hình
-                main_title_clip = main_title_clip.set_pos(('center', 150)).set_duration(duration)
+                # SỬA VỊ TRÍ: Đặt ở Y=1280 (khoảng 2/3 màn hình)
+                main_title_clip = main_title_clip.set_pos(('center', 1280)).set_duration(duration)
                 elements.append(main_title_clip)
             except Exception as e:
                 logger.warning(f"⚠️ Bỏ qua Text Title chính do lỗi ImageMagick hoặc Font: {e}")
