@@ -72,7 +72,7 @@ def create_shorts(audio_path, title_text, episode_id):
         out_path = get_path('outputs', 'shorts', f"{episode_id}_shorts.mp4")
         
         # Dùng preset ultrafast và threads cao để render nhanh
-        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger=None)
+        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger='bar')
         logger.info(f"📱 Shorts xong (Nhạc nền + Title 1/3 dưới): {out_path}")
         return out_path
     except Exception as e:
