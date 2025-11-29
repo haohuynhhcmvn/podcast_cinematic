@@ -7,7 +7,7 @@ from utils import get_path # Đảm bảo file utils được import để dùng
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- CẤU HÌNH ÂM LƯỢNG MỚI ---
-VOLUME_VOICE = -5.0      # SỬA LỖI: Tăng Giọng nói lên 5dB để to và rõ hơn
+VOLUME_VOICE = -3.0      # SỬA LỖI: Tăng Giọng nói lên 5dB để to và rõ hơn
 VOLUME_BG_MUSIC = -25.0  # Nhạc nền (giữ nguyên độ nhỏ để không át giọng)
 VOLUME_INTRO_OUTRO = -15.0 # Intro/Outro
 
