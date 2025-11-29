@@ -76,15 +76,23 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
     5. Định dạng: Chỉ văn bản cần được đọc. KHÔNG BAO GỒM LỜI CHÀO VÀ KẾT.
 
     QUY TẮC TẠO METADATA YOUTUBE (Tập trung vào SEO và Hấp dẫn):
-    ... [Các quy tắc Metadata giữ nguyên] ...
+    1. **youtube_title (Tối đa 100 ký tự):** Phải chứa từ khóa chính, gây tò mò, sử dụng TỪ KHÓA IN HOA.
+    2. **youtube_description:** Bắt đầu bằng HOOK VĂN BẢN gây SỐC. Mô tả chi tiết, bao gồm CTA và #Hashtag.
+    3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, bao gồm long-tail keywords và từ khóa viral.
+
+    CHỦ ĐỀ CỐT LÕI: "{core_theme}"
+    TÊN TẬP: "{title}"
     """
     
     user_prompt = f"""
     DỮ LIỆU THÔ ĐẦU VÀO TỪ GOOGLE SHEET: {raw_input}
-    CHỦ ĐỀ CỐT LÕI: "{core_theme}"
-    TÊN TẬP: "{title}"
     Hãy trả về dưới dạng JSON với 4 trường sau:
-    ... [JSON Output Structure giữ nguyên] ...
+    {{
+        "core_script": "[Nội dung kịch bản chính, BẮT ĐẦU BẰNG HOOK CINEMATIC]",
+        "youtube_title": "[Tiêu đề video, LÔI CUỐN/VIRAL]",
+        "youtube_description": "[Mô tả video, GÂY TÒ MÒ VÀ MỜI GỌI]",
+        "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy, 10-15 từ khóa]"
+    }}
     """
     
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
@@ -109,7 +117,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
 
 
 # ======================================================================================
-# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) ---
+# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - FIX HOOK GÂY SỐC ---
 # ======================================================================================
 def generate_short_script(data):
     """
@@ -129,8 +137,8 @@ def generate_short_script(data):
     YÊU CẦU BẮT BUỘC:
     1.  **hook_title (VIRAL):** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA).
     2.  **script_body (CÔ ĐỌNG, DÀI HƠN):** Kịch bản chính **phải có độ dài từ 150 đến 200 từ** để đạt thời lượng 60 giây.
-        **QUAN TRỌNG:** Kịch bản phải **BẮT ĐẦU BẰNG TÊN NHÂN VẬT** hoặc sự kiện được đề cập.
     3.  **Tốc độ đọc:** Sử dụng dấu phẩy và dấu chấm một cách dồn dập, ít khoảng trắng giữa các câu để tạo nhịp đọc **NHANH, GẤP GÁP, KỊCH TÍNH**.
+    4.  **QUAN TRỌNG:** Kịch bản phải **BẮT ĐẦU BẰNG MỘT TUYÊN BỐ GÂY SỐC** về nghịch lý/xung đột lớn nhất của nhân vật/sự kiện. Tên nhân vật chỉ được nhắc đến ở **giữa hoặc cuối câu đầu tiên** để giữ sự tò mò. (Ví dụ: "NGƯỜI NÀY ĐÃ TẠO RA DÒNG ĐIỆN XOAY CHIỀU, NHƯNG LẠI CHẾT TRONG CÔ ĐƠN: **Nikola Tesla**.")
     """
     
     user_prompt = f"""
@@ -138,7 +146,7 @@ def generate_short_script(data):
     Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
     {{
         "hook_title": "[Tiêu đề giật gân, IN HOA, LÔI CUỐN]",
-        "script_body": "[Nội dung kịch bản HOOK + CỐT LÕI, TỐC ĐỘ CAO]"
+        "script_body": "[Nội dung kịch bản HOOK GÂY SỐC + CỐT LÕI]"
     }}
     """
     
