@@ -1,15 +1,13 @@
+# scripts/upload_youtube.py
 import os
 import pickle
 import logging
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 
 def get_authenticated_service():
     """Lấy dịch vụ YouTube đã xác thực từ token.pickle"""
@@ -22,56 +20,50 @@ def get_authenticated_service():
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                with open('token.pickle', 'wb') as token:
-                    pickle.dump(creds, token)
             except Exception as e:
                 logging.error(f"Không thể refresh token: {e}")
                 return None
         else:
-            logging.error("Token không hợp lệ hoặc không tìm thấy. Vui lòng chạy script xác thực cục bộ.")
+            logging.error("Token không hợp lệ hoặc không tìm thấy.")
             return None
 
     return build('youtube', 'v3', credentials=creds)
 
-# Đã đổi tên hàm thành upload_youtube_video để khớp với glue_pipeline.py
-def upload_youtube_video(video_path: str, metadata: dict):
-    """
-    Tải video lên YouTube bằng Google Data API.
-    """
+# QUAN TRỌNG: Tên hàm phải là 'upload_video' để khớp với glue_pipeline.py
+def upload_video(video_path: str, episode_data: dict):
     if not video_path or not os.path.exists(video_path):
         logging.error(f"File video không tồn tại: {video_path}")
-        return False
+        return 'FAILED'
 
     youtube = get_authenticated_service()
     if not youtube:
-        return False
+        return 'FAILED'
 
     try:
-        # Lấy metadata an toàn
-        title = metadata.get('title', 'Video Podcast Tự Động')
-        description = metadata.get('description', 'Mô tả tự động.')
-        tags = metadata.get('tags', [])
+        # Chuẩn bị Metadata
+        title = episode_data.get('Name', 'New Podcast Episode')
+        # Cắt ngắn tiêu đề nếu quá 100 ký tự
+        if len(title) > 100:
+            title = title[:97] + "..."
+            
+        description = episode_data.get('Content/Input', 'Auto-generated podcast.')[:5000]
+        tags = ['podcast', 'ai']
         
-        # Mặc định để 'unlisted' hoặc 'private' để kiểm duyệt
-        privacy_status = metadata.get('privacyStatus', 'unlisted')
-        category_id = '22' 
-
-        logging.info(f"Đang chuẩn bị upload: Title='{title}'")
+        logging.info(f"Đang chuẩn bị upload: {title}")
 
         body = {
             'snippet': {
                 'title': title,
                 'description': description,
                 'tags': tags,
-                'categoryId': category_id
+                'categoryId': '22'
             },
             'status': {
-                'privacyStatus': privacy_status,
+                'privacyStatus': 'private', # Để private để kiểm duyệt
                 'selfDeclaredMadeForKids': False
             }
         }
 
-        # Upload
         media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
         request = youtube.videos().insert(
             part=','.join(body.keys()),
@@ -83,11 +75,11 @@ def upload_youtube_video(video_path: str, metadata: dict):
         while response is None:
             status, response = request.next_chunk()
             if status:
-                logging.info(f"Tiến độ Upload: {int(status.progress() * 100)}%")
+                logging.info(f"Upload: {int(status.progress() * 100)}%")
 
         logging.info(f"Upload thành công! Video ID: {response.get('id')}")
-        return True
+        return 'UPLOADED'
 
     except Exception as e:
-        logging.error(f"Lỗi khi upload video: {e}", exc_info=True)
-        return False
+        logging.error(f"Lỗi upload: {e}")
+        return 'FAILED'
