@@ -1,147 +1,84 @@
-# scripts/glue_pipeline.py (ĐÃ SỬA: Thêm Patch PIL.Image.ANTIALIAS)
-import sys 
 import os
 import logging
 from dotenv import load_dotenv
+import json # Cần thiết cho việc đọc data
 
-# THÊM BƯỚC VÁ LỖI (PATCH) CHO MOVIEPY/PILLOW
-# MoviePy cũ sử dụng hằng số PIL.Image.ANTIALIAS đã bị xóa trong Pillow mới.
-try:
-    from PIL import Image
-    # Kiểm tra và gán lại giá trị của LANCZOS cho ANTIALIAS nếu nó không tồn tại
-    if not hasattr(Image, 'ANTIALIAS'):
-        Image.ANTIALIAS = Image.LANCZOS
-        logging.warning("PATCHED: PIL.Image.ANTIALIAS đã được gán lại giá trị LANCZOS.")
-except ImportError:
-    pass
-# KẾT THÚC BƯỚC VÁ LỖI
+# Import các hàm từ các module khác
+from .generate_script import generate_script 
+from .generate_short_script import generate_short_script # BƯỚC MỚI
+from .text_to_speech import text_to_speech
+from .finalize_audio import finalize_audio
+from .create_video import create_video
+from .create_shorts import create_shorts
+from .youtube_uploader import upload_youtube_video
 
-# Thiết lập đường dẫn import
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-# Import Modules
-from create_video import create_video
-from upload_youtube import upload_video 
-from fetch_content import fetch_content, authenticate_google_sheet
-from generate_script import generate_script
-from create_tts import create_tts
-from auto_music_sfx import auto_music_sfx
-from create_subtitle import create_subtitle
-from create_shorts import create_shorts
-from utils import setup_environment
-
-# ... (Phần còn lại của code glue_pipeline.py giữ nguyên)
-# ... (Phần còn lại của code glue_pipeline.py giữ nguyên)
-
+# Thiết lập Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def update_status_completed(row_index: int):
-# ... (Hàm update_status_completed giữ nguyên)
-    try:
-        gc = authenticate_google_sheet()
-        sheet_id = os.getenv('GOOGLE_SHEET_ID')
-        if not gc or not sheet_id: return False
+def main_pipeline(episode_id: int):
+    # Tải data tập phim
+    data_path = os.path.join('data', 'episodes', f'{episode_id}_data.json')
+    if not os.path.exists(data_path):
+        logging.error(f"Không tìm thấy file data cho Episode ID {episode_id}")
+        return
 
-        sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0)
-        # Update cột F (cột 6) thành COMPLETED
-        worksheet.update_cell(row_index, 6, 'COMPLETED') 
-        logging.info(f"Đã cập nhật hàng {row_index}: COMPLETED")
-        return True
-    except Exception as e:
-        logging.error(f"Lỗi update sheet: {e}")
-        return False
+    with open(data_path, 'r', encoding='utf-8') as f:
+        episode_data = json.load(f)
 
-def main_pipeline():
-    logging.info("=== BẮT ĐẦU PIPELINE ===")
-    load_dotenv()
-    setup_environment() 
+    # --- 1. Tạo Kịch bản (dài) và Metadata ---
+    logging.info("Bắt đầu tạo Kịch bản DÀI (Podcast) và Metadata YouTube...")
+    long_script_data = generate_script(episode_data)
+    if not long_script_data: return
     
-    try:
-        # 1. Lấy dữ liệu
-        episode_data = fetch_content()
-        if not episode_data:
-            logging.info("Không có dữ liệu mới.")
-            return
+    # --- 2. TẠO KỊCH BẢN NGẮN CHO SHORTS (BƯỚC MỚI) ---
+    logging.info("Bắt đầu tạo Kịch bản NGẮN (Shorts)...")
+    short_script_data = generate_short_script(episode_data)
+    if not short_script_data: return
 
-        episode_id = episode_data['ID']
-        logging.info(f"Đang xử lý Episode ID: {episode_id}")
-        
-        logging.info("Sử dụng ảnh nền và micro tĩnh từ assets/images/")
-            
-        # 2. Generate Script (NHẬN VỀ DICTIONARY)
-        script_data = generate_script(episode_data)
-        if not script_data: raise Exception("Lỗi generate_script")
-        
-        # TRÍCH XUẤT CÁC THÔNG TIN CẦN THIẾT
-        script_path = script_data['script_path']
-        # <<< KHỞI TẠO METADATA YOUTUBE TỪ SCRIPT DATA (CHO VIDEO 16:9 DÀI) >>>
-        youtube_metadata = {
-            'title': script_data['youtube_title'],
-            'description': script_data['youtube_description'],
-            'tags': script_data['youtube_tags']
-        }
-        
-        # 3. TTS
-        raw_audio_path = create_tts(script_path, episode_id)
-        if not raw_audio_path: raise Exception("Lỗi create_tts")
+    # --- 3. Text-to-Speech (TTS) ---
+    # 3a. TTS cho Kịch bản DÀI
+    logging.info("Bắt đầu TTS cho Kịch bản DÀI...")
+    long_raw_audio_path = text_to_speech(long_script_data['script_path'], is_short=False)
+    if not long_raw_audio_path: return
+    
+    # 3b. TTS cho Kịch bản NGẮN
+    logging.info("Bắt đầu TTS cho Kịch bản NGẮN (Shorts)...")
+    short_raw_audio_path = text_to_speech(short_script_data['short_script_path'], is_short=True)
+    if not short_raw_audio_path: return
+    
+    # --- 4. Finalize Audio (Trộn nhạc nền) ---
+    # 4a. Finalize Audio DÀI
+    logging.info("Bắt đầu trộn nhạc nền cho Audio DÀI...")
+    long_final_audio_path = finalize_audio(long_raw_audio_path, is_short=False)
+    if not long_final_audio_path: return
 
-        # 4. Audio Mixing
-        final_audio_path = auto_music_sfx(raw_audio_path, episode_id)
-        if not final_audio_path: raise Exception("Lỗi auto_music_sfx")
+    # 4b. Finalize Audio NGẮN
+    logging.info("Bắt đầu trộn nhạc nền cho Audio NGẮN (Shorts)...")
+    short_final_audio_path = finalize_audio(short_raw_audio_path, is_short=True)
+    if not short_final_audio_path: return
 
-        # 5. Subtitles (BỎ QUA)
-        logging.info("BỎ QUA BƯỚC TẠO PHỤ ĐỀ ĐỂ HOÀN THÀNH PIPELINE.")
-        # subtitle_path = create_subtitle(final_audio_path, script_path, episode_id) 
-        # if not subtitle_path: raise Exception("Lỗi create_subtitle")
-        subtitle_path = "SKIP_SUBTITLE" # Đặt một giá trị giả
+    # --- 5. Tạo Video ---
+    # 5a. Tạo Video DÀI (sử dụng audio dài)
+    logging.info("Bắt đầu tạo Video DÀI (16:9)...")
+    long_video_path = create_video(long_final_audio_path, long_script_data['script_path'], episode_id)
+    if not long_video_path: return
+    
+    # 5b. Tạo Video NGẮN (sử dụng audio ngắn)
+    logging.info("Bắt đầu tạo Video NGẮN (Shorts 9:16)...")
+    short_video_path = create_shorts(short_final_audio_path, long_script_data['script_path'], episode_id)
+    if not short_video_path: return
 
-        # 6. Create Video 16:9
-        video_169_path = create_video(final_audio_path, subtitle_path, episode_id)
-        if not video_169_path: raise Exception("Lỗi create_video")
+    # --- 6. Upload Video (Sử dụng metadata từ kịch bản dài) ---
+    logging.info("Bắt đầu Upload Video DÀI...")
+    upload_youtube_video(long_video_path, long_script_data)
 
-        # 7. Create Shorts (NHẬN VỀ ĐƯỜNG DẪN)
-        shorts_path = None
-        try:
-            shorts_path = create_shorts(final_audio_path, subtitle_path, episode_id)
-        except Exception as e:
-            logging.warning(f"Bỏ qua Shorts do lỗi: {e}")
-            
-        # 8. Upload YouTube
-        
-        # 8a. TẠO METADATA RIÊNG CHO SHORTS (Thêm #shorts)
-        shorts_metadata = youtube_metadata.copy()
-        # Thêm tiền tố và hashtag #shorts vào tiêu đề/mô tả
-        shorts_metadata['title'] = "🔥SHORTS | " + shorts_metadata['title']
-        # Thêm các hashtag phổ biến vào mô tả để YouTube dễ dàng nhận diện Shorts
-        shorts_metadata['description'] = shorts_metadata['description'] + "\n\n#shorts #podcast #vietnam" 
-        
-        upload_status = 'SKIPPED' # Trạng thái upload 16:9
-        shorts_upload_status = 'SKIPPED' # Trạng thái upload Shorts
-        
-        # Bắt đầu Upload Video 16:9 (Podcast dài)
-        logging.info("Bắt đầu upload Video 16:9 (Podcast dài)...")
-        upload_status = upload_video(video_169_path, episode_data, youtube_metadata) 
-        logging.info(f"Kết quả Upload 16:9: {upload_status}")
-        
-        # Bắt đầu Upload Video Shorts
-        if shorts_path:
-             logging.info("Bắt đầu upload Video Shorts 9:16...")
-             shorts_upload_status = upload_video(shorts_path, episode_data, shorts_metadata)
-             logging.info(f"Kết quả Upload Shorts: {shorts_upload_status}")
+    logging.info("Bắt đầu Upload Video NGẮN...")
+    # Thường nên tạo metadata riêng cho shorts, nhưng tạm dùng metadata dài để hoàn thành flow
+    upload_youtube_video(short_video_path, long_script_data) 
+    
+    logging.info("Pipeline đã hoàn thành thành công cho cả Video DÀI và Video NGẮN!")
 
-        # 9. Update Status
-        if episode_data.get('Status_Row') and (upload_status == 'UPLOADED' or shorts_upload_status == 'UPLOADED'):
-             update_status_completed(episode_data['Status_Row'])
-
-    except Exception as e:
-        logging.error(f"PIPELINE FAILED: {e}", exc_info=True)
-        sys.exit(1)
-
-    finally:
-        logging.info("=== KẾT THÚC QUY TRÌNH ===")
-
-if __name__ == '__main__':
-    main_pipeline()
+if __name__ == "__main__":
+    load_dotenv()
+    # Ví dụ chạy với Episode ID 1 (Sửa lại ID nếu cần)
+    main_pipeline(episode_id=1)
