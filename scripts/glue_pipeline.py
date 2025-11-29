@@ -1,3 +1,6 @@
+# File: ./scripts/glue_pipeline.py
+# Chức năng: Điều phối toàn bộ quy trình tạo nội dung (fetch -> script -> audio -> video) từ Google Sheet.
+
 import os
 import sys
 import logging
@@ -17,8 +20,6 @@ try:
     from generate_script import generate_full_script 
     from text_to_speech import text_to_speech 
     from finalize_audio import finalize_audio 
-    
-    # IMPORT CÁC MODULE TẠO VIDEO MỚI
     from create_video import create_video 
     from create_shorts import create_shorts 
     
