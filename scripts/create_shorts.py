@@ -53,7 +53,7 @@ def create_shorts(audio_path, title_text, episode_id):
 
                 txt = TextClip(
                     display_text, 
-                    fontsize=70, 
+                    fontsize=50, 
                     color='yellow', 
                     # --- FIX FONT TIẾNG VIỆT ---
                     font='DejaVu-Sans-Bold', # Thay thế Arial-Bold bằng font chuẩn Unicode trên Linux
