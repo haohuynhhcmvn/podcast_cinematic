@@ -1,20 +1,18 @@
+# --- CƠ BẢN & AI ---
 openai
 gspread
-oauth2client
+gTTS
 python-dotenv
 pydub
-numpy
-# Ghim moviepy và Pillow bản cũ để tránh lỗi ANTIALIAS
+
+# --- VIDEO & HÌNH ẢNH ---
 moviepy==1.0.3
 Pillow==9.0.0
-# YouTube API
-google-api-python-client
-google-auth-oauthlib
-google-auth-httplib2
-requests
-
-# --- THÊM MỚI CHO SÓNG ÂM ---
+numpy
 matplotlib
 scipy
 
-gTTS
+# --- YOUTUBE API & GOOGLE AUTH ---
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
