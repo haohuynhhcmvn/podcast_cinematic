@@ -1,127 +1,75 @@
-# File: ./scripts/create_shorts.py
-# Chức năng: Tạo video Shorts 9:16 bằng cách trộn audio, video nền (hoặc ảnh tĩnh) và ảnh micro.
-
-import os
+# scripts/create_shorts.py
 import logging
-from moviepy.editor import *
-import math 
-import random 
-# BỎ QUA SubtitlesClip và file_to_subtitles
+import os
+from moviepy.editor import AudioFileClip, VideoFileClip, ImageClip, ColorClip, TextClip, CompositeVideoClip
+from utils import get_path
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-SHORTS_WIDTH = 1080
-SHORTS_HEIGHT = 1920
-COLOR_BACKGROUND = (30, 30, 30)
-BACKGROUND_VIDEO_SHORT = 'podcast_loop_bg_short.mp4' # <-- Tên file video nền ngắn
+# Cấu hình Shorts
+SHORTS_SIZE = (1080, 1920)
+MAX_DURATION = 60 # YouTube Shorts tối đa 60s
 
-# --- HÀM TẢI ẢNH AN TOÀN --- (Giữ nguyên)
-def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
-    """Tải ảnh từ thư mục assets/images, resize và đặt vị trí an toàn."""
-    paths_to_check = [
-        os.path.join('assets', 'images', file_name), 
-        os.path.join('assets', 'image', file_name)
-    ]
-    
-    image_path = None
-    for path in paths_to_check:
-        if os.path.exists(path):
-            image_path = path
-            break
-            
-    if not image_path:
-        logging.warning(f"Không tìm thấy file ảnh: {file_name}. Trả về None.")
-        return None
-
+def create_shorts(audio_path, episode_id):
     try:
-        clip = ImageClip(image_path).set_duration(duration)
+        # 1. Xử lý Audio (Cắt ngắn nếu quá 60s)
+        audio = AudioFileClip(audio_path)
+        duration = audio.duration
+        if duration > MAX_DURATION:
+            audio = audio.subclip(0, MAX_DURATION)
+            duration = MAX_DURATION
+
+        # 2. Load Background Video (Ưu tiên mp4 dọc)
+        bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_short.mp4')
+        bg_image_path = get_path('assets', 'images', 'default_background_shorts.png')
+
+        if os.path.exists(bg_video_path):
+            logger.info(f"📱 Sử dụng nền Video Shorts: {bg_video_path}")
+            # Load video, resize về 1080x1920, và loop
+            clip = VideoFileClip(bg_video_path).resize(SHORTS_SIZE).loop(duration=duration)
+            
+        elif os.path.exists(bg_image_path):
+            logger.info("📷 Dùng ảnh nền Shorts tĩnh.")
+            clip = ImageClip(bg_image_path).set_duration(duration).resize(SHORTS_SIZE)
         
-        if width and height:
-            clip = clip.resize(newsize=(width, height))
-        elif width:
-            clip = clip.resize(width=width)
-        elif height:
-            clip = clip.resize(height=height)
-            
-        return clip.set_pos(position)
-    except Exception as e:
-        logging.error(f"Lỗi khi tải ảnh {image_path}: {e}")
-        return None
-
-# --- HÀM TẢI VIDEO LẶP NỀN (TỪ create_video.py) ---
-def load_looping_background_video(file_name, target_duration, width, height):
-    """Tải video nền và lặp lại cho đến khi đạt độ dài mong muốn."""
-    video_path = os.path.join('assets', 'video', file_name)
-    if not os.path.exists(video_path):
-        logging.warning(f"Không tìm thấy video nền tại: {video_path}. Dùng nền màu tĩnh.")
-        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
-
-    try:
-        original_clip = VideoFileClip(video_path)
-        if original_clip.duration >= target_duration:
-            clip = original_clip.subclip(0, target_duration)
         else:
-            num_loops = math.ceil(target_duration / original_clip.duration)
-            looped_clips = [original_clip] * num_loops
-            final_loop = concatenate_videoclips(looped_clips)
-            clip = final_loop.subclip(0, target_duration)
+            clip = ColorClip(size=SHORTS_SIZE, color=(30, 30, 30), duration=duration)
+
+        # 3. Tạo danh sách các lớp video (Layers)
+        final_elements = [clip]
+
+        # 4. Thêm Text Tiêu đề (Bọc trong try/except để tránh lỗi ImageMagick)
+        try:
+            # Lưu ý: Cần cài ImageMagick để chạy TextClip
+            txt_clip = TextClip(
+                "THEO DẤU CHÂN\nHUYỀN THOẠI", 
+                fontsize=80, color='white', font='Arial-Bold', method='caption', 
+                size=(900, None), stroke_color='black', stroke_width=2
+            )
+            # Đặt text ở phần trên của video
+            txt_clip = txt_clip.set_position(('center', 250)).set_duration(duration)
+            final_elements.append(txt_clip)
+        except Exception as e:
+            logger.warning(f"⚠️ Không thể tạo Text (ImageMagick chưa cài?). Bỏ qua text.")
+
+        # 5. Thêm Micro (Nếu có)
+        mic_path = get_path('assets', 'images', 'microphone.png')
+        if os.path.exists(mic_path):
+            # Micro nhỏ hơn chút cho vừa màn hình điện thoại
+            mic = ImageClip(mic_path).set_duration(duration).resize(width=350).set_position(('center', 'center'))
+            final_elements.append(mic)
+
+        # 6. Render
+        final = CompositeVideoClip(final_elements, size=SHORTS_SIZE).set_audio(audio)
+        output_path = get_path('outputs', 'shorts', f"{episode_id}_shorts.mp4")
         
-        clip = clip.resize(newsize=(width, height))
-        logging.info(f"Đã tạo video nền lặp thành công từ file: {file_name}")
-        return clip
-    except Exception as e:
-        logging.error(f"Lỗi khi tải video nền {video_path}: {e}")
-        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
-
-
-# --- BẮT ĐẦU CREATE_SHORTS ---
-def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
-    try:
-        logging.warning("CHẾ ĐỘ TẮT TÍNH NĂNG: Phụ đề và Sóng âm đã bị BỎ QUA để chạy thử pipeline.")
-
-        audio_clip = AudioFileClip(final_audio_path)
-        duration = audio_clip.duration
+        logger.info("📱 Đang render Shorts...")
+        # Preset 'ultrafast' giúp render video ngắn cực nhanh
+        final.write_videofile(output_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', logger=None)
         
-        MAX_SHORTS_DURATION = 60 
-        if duration > MAX_SHORTS_DURATION:
-            audio_clip = audio_clip.subclip(0, MAX_SHORTS_DURATION)
-            duration = audio_clip.duration
-        
-        # 1. Bỏ qua xử lý Phụ đề và Sóng âm
-
-        # 2. Tải Nền Video Lặp (9:16)
-        # SỬ DỤNG HÀM TẢI VIDEO LẶP VÀ HẰNG SỐ ĐÃ ĐỊNH NGHĨA Ở TRÊN
-        background_clip = load_looping_background_video(BACKGROUND_VIDEO_SHORT, duration, SHORTS_WIDTH, SHORTS_HEIGHT)
-            
-        # 3. Tải Micro (Ảnh tĩnh)
-        microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT * 0.55)) 
-        
-        # 4. Tiêu đề tĩnh
-        title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
-        title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
-
-        # 5. Ghép các thành phần
-        # Chỉ bao gồm nền, tiêu đề và micro (nếu có)
-        elements = [background_clip, title_text]
-        if microphone_clip:
-            elements.append(microphone_clip) 
-
-        final_clip = CompositeVideoClip(elements, size=(SHORTS_WIDTH, SHORTS_HEIGHT)).set_audio(audio_clip)
-
-        # 6. Xuất Video 
-        output_dir = os.path.join('outputs', 'shorts')
-        os.makedirs(output_dir, exist_ok=True)
-        video_filename = f"{episode_id}_shorts_916.mp4"
-        video_path = os.path.join(output_dir, video_filename)
-        
-        logging.info(f"Bắt đầu xuất Video Shorts 9:16 (Chỉ nền, tiêu đề và micro)...")
-        final_clip.write_videofile(
-            video_path, codec='libx264', audio_codec='aac', fps=24, logger='bar'
-        )
-        
-        logging.info(f"Video Shorts 9:16 đã tạo thành công và lưu tại: {video_path}")
-        return video_path 
+        logger.info(f"✅ Shorts hoàn tất: {output_path}")
+        return output_path
 
     except Exception as e:
-        logging.error(f"Lỗi khi tạo video Shorts: {e}", exc_info=True)
+        logger.error(f"❌ Lỗi tạo Shorts: {e}")
         return None
