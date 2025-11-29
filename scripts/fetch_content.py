@@ -1,137 +1,143 @@
+# File: ./scripts/fetch_content.py
+# Chức năng: Kết nối Google Sheet, lấy danh sách tập 'pending', tạo hash, và cập nhật trạng thái.
+
 import os
-import json
 import logging
-import hashlib
 import gspread
-from dotenv import load_dotenv
+from oauth2client.service_account import ServiceAccountCredentials
+import hashlib
+import json
+import sys
+import time
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Tên file credentials mà gspread sẽ sử dụng
-CREDS_FILE = 'service_account.json'
+# --- HÀM HỖ TRỢ ---
+def create_service_account_file():
+    """Tạo file service_account.json từ biến môi trường SERVICE_ACCOUNT_CONTENT."""
+    sa_content = os.getenv("SERVICE_ACCOUNT_CONTENT")
+    if not sa_content:
+        logging.error("Biến môi trường SERVICE_ACCOUNT_CONTENT không được định nghĩa.")
+        sys.exit(1) 
+    
+    try:
+        sa_data = json.loads(sa_content)
+        with open('service_account.json', 'w', encoding='utf-8') as f:
+            json.dump(sa_data, f, ensure_ascii=False, indent=4)
+        logging.info("Đã tạo/cập nhật file service_account.json từ biến môi trường.")
+        return True
+    except Exception as e:
+        logging.error(f"Lỗi khi giải mã SERVICE_ACCOUNT_CONTENT. Kiểm tra định dạng JSON. Lỗi: {e}")
+        sys.exit(1)
+        return False
 
 def generate_hash(text: str) -> str:
-    """Tạo SHA-256 hash từ chuỗi đầu vào, trả về 8 ký tự đầu."""
+    """Tạo SHA256 hash từ chuỗi văn bản."""
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:8]
 
-def authenticate_google_sheet():
-    """Đảm bảo file credentials tồn tại và trả về gspread client."""
-    load_dotenv()
-    
-    # BƯỚC 1: TẠO FILE CREDENTIALS TỪ BIẾN MÔI TRƯỜNG (Fix lỗi File Not Found)
-    service_account_content = os.getenv('SERVICE_ACCOUNT_CONTENT')
-    if not service_account_content:
-        logging.error("LỖI: Biến môi trường SERVICE_ACCOUNT_CONTENT không được thiết lập.")
-        return None
-        
+def authorize_gspread():
+    """Thực hiện xác thực và trả về client GSpread."""
+    # Đảm bảo file credentials tồn tại trước khi authorize
+    if not os.path.exists('service_account.json'):
+         create_service_account_file()
+
     try:
-        # Ghi chuỗi JSON thô vào file để gspread sử dụng
-        json_data = json.loads(service_account_content)
-        with open(CREDS_FILE, 'w') as f:
-            json.dump(json_data, f)
-        logging.info(f"Đã tạo/cập nhật file {CREDS_FILE} từ biến môi trường.")
-    except Exception as e:
-        logging.error(f"LỖI KHÔNG THỂ TẠO FILE {CREDS_FILE}. Kiểm tra SERVICE_ACCOUNT_CONTENT: {e}")
-        return None
-        
-    # BƯỚC 2: XÁC THỰC BẰNG FILE VỪA TẠO
-    try:
-        # gspread.service_account là phương pháp hiện đại và đáng tin cậy
-        gc = gspread.service_account(filename=CREDS_FILE)
+        scope = [
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        # Chờ 5 giây để đảm bảo file service_account.json đã được ghi hoàn tất
+        time.sleep(5) 
+        creds = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
+        client = gspread.authorize(creds)
         logging.info("Xác thực Google Sheet thành công.")
-        return gc
+        return client
     except Exception as e:
-        logging.error(f"Lỗi xác thực Google Sheet: {e}")
+        logging.error(f"LỖI XÁC THỰC GOOGLE SHEET: {e}")
         return None
 
-def fetch_content():
+# --- HÀM CHÍNH ---
+
+def fetch_pending_episodes() -> list:
     """
-    Tìm tập 'pending' đầu tiên, tạo hash, tạo folder assets, và cập nhật trạng thái.
+    Lấy danh sách các tập có trạng thái 'pending' từ Google Sheet.
+    Cập nhật hash (cột G) và tạo thư mục assets.
     """
-    gc = authenticate_google_sheet()
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
+    client = authorize_gspread()
+    if not client: return []
     
-    if not gc or not sheet_id: return None
+    try:
+        sheet_id = os.getenv("GOOGLE_SHEET_ID")
+        if not sheet_id:
+            logging.error("Thiếu GOOGLE_SHEET_ID trong biến môi trường.")
+            return []
+            
+        sheet = client.open_by_key(sheet_id).sheet1
+        
+        # Lấy toàn bộ dữ liệu dưới dạng Dictionary
+        rows = sheet.get_all_records()
+        
+        episodes_to_process = []
+        
+        # Duyệt qua các hàng (bắt đầu từ hàng 2 trên Sheet vì hàng 1 là header)
+        for idx, row in enumerate(rows, start=2):
+            if row.get('status', '').lower() == 'pending':
+                
+                # Cột ID trên sheet là cột A (index 1)
+                episode_id = row.get('ID', idx - 1) 
+                
+                # Các cột cần hash: 'title', 'character', 'core_theme'
+                hash_source = str(row.get('title', '')) + str(row.get('character', '')) + str(row.get('core_theme', ''))
+                text_hash = generate_hash(hash_source)
+
+                # Cập nhật hash vào Sheet (Giả sử cột Hash là cột G - Index 7)
+                sheet.update_cell(idx, 7, text_hash) 
+                
+                # Tạo folder assets
+                folder_path = os.path.join('assets', text_hash)
+                os.makedirs(folder_path, exist_ok=True)
+                logging.info(f"Đã tạo hash: {text_hash} và folder tại: {folder_path}")
+                
+                # Thêm dữ liệu vào danh sách xử lý
+                row['row_index'] = idx
+                row['text_hash'] = text_hash
+                row['ID'] = episode_id
+                episodes_to_process.append(row)
+                
+                # Đánh dấu là 'processing' ngay lập tức
+                # Cột status là F (Index 6)
+                sheet.update_cell(idx, 6, 'processing') 
+                logging.info(f"Đã đánh dấu hàng {idx} ('{row.get('title')}') là 'processing'.")
+
+        return episodes_to_process
+
+    except Exception as e:
+        logging.error(f"LỖI ĐỌC DỮ LIỆU GOOGLE SHEET: {e}", exc_info=True)
+        return []
+
+def update_episode_status(episode_id: int, status: str):
+    """Cập nhật trạng thái của tập trên Google Sheet (Cột F)."""
+    client = authorize_gspread()
+    if not client: return
 
     try:
-        sh = gc.open_by_key(sheet_id)
-        # Sử dụng get_worksheet(0) để lấy Sheet đầu tiên
-        worksheet = sh.get_worksheet(0) 
-        list_of_records = worksheet.get_all_records()
+        sheet_id = os.getenv("GOOGLE_SHEET_ID")
+        if not sheet_id:
+            logging.error("Thiếu GOOGLE_SHEET_ID trong biến môi trường.")
+            return
+
+        sheet = client.open_by_key(sheet_id).sheet1
         
+        # Tìm hàng dựa trên ID (giả sử cột A là cột ID - Index 1)
+        cell = sheet.find(str(episode_id), in_column=1) 
+        
+        if cell:
+            row_index = cell.row
+            # Cột status là F (Index 6)
+            sheet.update_cell(row_index, 6, status) 
+            logging.info(f"Đã cập nhật trạng thái cho Episode ID {episode_id} thành '{status}'.")
+        else:
+            logging.warning(f"Không tìm thấy Episode ID {episode_id} để cập nhật trạng thái.")
+
     except Exception as e:
-        logging.error(f"Lỗi khi đọc Sheet ID {sheet_id}: {e}")
-        return None
-
-    # Lặp qua các hàng để tìm và xử lý
-    for idx, row in enumerate(list_of_records):
-        row_index_in_sheet = idx + 2 # Hàng thực tế trong sheet
-        
-        # Giả định: Cột G (index 7) lưu hash, Cột F (index 6) lưu status.
-        HASH_COL_INDEX = 7 
-        STATUS_COL_INDEX = 6 
-        
-        # Lấy status và hash
-        row_status = row.get('status', row.get('Status', '')).strip().lower()
-        row_hash = row.get('text_hash', row.get('text_hash', '')).strip()
-
-        # 1. Xử lý tập 'pending' hoặc tập cần tạo hash
-        if row_status == 'pending':
-            
-            # --- TẠO HASH VÀ FOLDER ---
-            content_to_hash = row.get('title', '') + row.get('character', '') + row.get('core_theme', '')
-            text_hash = generate_hash(content_to_hash)
-            
-            # Cập nhật hash vào Sheet (Cột G)
-            worksheet.update_cell(row_index_in_sheet, HASH_COL_INDEX, text_hash) 
-            
-            # Tạo folder assets
-            folder_path = os.path.join('assets', text_hash)
-            os.makedirs(folder_path, exist_ok=True)
-            logging.info(f"Đã tạo hash: {text_hash} và folder tại: {folder_path}")
-            
-            # Cập nhật row_hash để hàng này được chọn cho bước tiếp theo
-            row_hash = text_hash
-
-        # 2. Xử lý hàng vừa có hash (hoặc đã có hash) và chưa được processed
-        if row_hash and row_status != 'processed' and row_status != 'completed' and row_status != 'failed' and row_status != 'processing':
-            
-            # --- CẬP NHẬT TRẠNG THÁI: 'PROCESSING' ---
-            worksheet.update_cell(row_index_in_sheet, STATUS_COL_INDEX, 'processing') 
-            logging.info(f"Đã đánh dấu hàng {row_index_in_sheet} ('{row.get('title')}') là 'processing'.")
-
-            # --- TRẢ VỀ DỮ LIỆU ĐÃ TÌM THẤY ---
-            episode_data = {
-                'ID': row_index_in_sheet,
-                'title': row.get('title', '').strip(),
-                'character': row.get('character', '').strip(),
-                'core_theme': row.get('core_theme', '').strip(),
-                'text_hash': row_hash
-            }
-            return episode_data
-
-    logging.info("Không tìm thấy tập nào mới để xử lý.")
-    return None
-
-def update_sheet_status(episode_id: int, status: str):
-    """Cập nhật trạng thái cuối cùng (processed/failed) trên Google Sheet."""
-    gc = authenticate_google_sheet()
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
-    
-    if not gc or not sheet_id: return
-
-    try:
-        sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0)
-        # Giả định cột status là cột F (index 6)
-        worksheet.update_cell(episode_id, 6, status.lower())
-        logging.info(f"Đã cập nhật trạng thái cho Episode ID {episode_id} thành '{status.lower()}'.")
-    except Exception as e:
-        logging.error(f"Lỗi khi cập nhật trạng thái cuối cùng cho Episode ID {episode_id}: {e}")
-
-if __name__ == "__main__":
-    # Ví dụ chạy thử
-    data = fetch_content()
-    if data:
-        logging.info(f"Đã tìm thấy tập để xử lý: {data['title']}")
-        # update_sheet_status(data['ID'], 'failed') # Ví dụ cập nhật lại
+        logging.error(f"LỖI CẬP NHẬT TRẠNG THÁI GOOGLE SHEET cho ID {episode_id}: {e}", exc_info=True)
