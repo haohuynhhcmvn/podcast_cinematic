@@ -3,13 +3,12 @@ import logging
 import sys
 import os
 
-# Thiết lập đường dẫn import (GIỮ NGUYÊN - CẦN THIẾT CHO CI/CD)
+# Thiết lập đường dẫn import (BẮT BUỘC ĐỂ GIẢI QUYẾT VẤN ĐỀ PATH)
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-# --- 1. IMPORT CÁC MODULE CHÍNH (ĐÃ SỬA LỖI: DÙNG ABSOLUTE IMPORTS) ---
-# Dùng tên file/module (ví dụ: fetch_content) thay vì dấu chấm (ví dụ: .fetch_content)
+# --- 1. IMPORT CÁC MODULE CHÍNH (SỬ DỤNG ABSOLUTE IMPORTS ĐÃ FIX) ---
 
 from utils import setup_environment
 from fetch_content import fetch_content, authenticate_google_sheet 
@@ -40,7 +39,7 @@ def main():
     setup_environment()
     
     # 1. Fetch Dữ liệu từ Google Sheet
-    task = fetch_content() # Bây giờ hàm này đã được import đúng
+    task = fetch_content() 
     if not task: 
         logger.info("Không có dữ liệu mới.")
         return
@@ -80,7 +79,8 @@ def main():
         
         if tts_short:
             # 3. TẠO SHORTS
-            shorts_path = create_shorts(tts_short, hook_title, eid)
+            # FIX MỚI: Truyền data['Name'] (Tên nhân vật) để hiển thị lên Short
+            shorts_path = create_shorts(tts_short, hook_title, eid, data['Name']) 
             
             # 4. UPLOAD SHORTS
             if shorts_path:
