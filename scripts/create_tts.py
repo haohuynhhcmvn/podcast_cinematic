@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 # Cấu hình OpenAI TTS
 OPENAI_TTS_MODEL = "tts-1"   
-OPENAI_TTS_VOICE = "onyx"    # ĐÃ SỬA: Giọng nam trầm ấm, lôi cuốn, kể chuyện huyền thoại
+OPENAI_TTS_VOICE = "alloy"    # ĐÃ SỬA: Giọng nam trầm ấm, lôi cuốn, kể chuyện huyền thoại
                             # (Các lựa chọn khác: 'alloy' (chuyên nghiệp), 'nova' (nữ tự nhiên))
 
 def create_tts(script_path: str, episode_id, mode="long"):
