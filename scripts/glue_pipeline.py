@@ -1,139 +1,195 @@
 import os
+import sys
 import logging
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import hashlib
+import time
 import json
+from dotenv import load_dotenv
 
+# Thiết lập logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- HÀM HỖ TRỢ ---
-def create_service_account_file():
-    """Tạo file service_account.json từ biến môi trường."""
-    sa_content = os.getenv("SERVICE_ACCOUNT_CONTENT")
-    if not sa_content:
-        logging.error("Biến môi trường SERVICE_ACCOUNT_CONTENT không được định nghĩa.")
-        return False
+# Thêm thư mục scripts vào PATH để import
+sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
+
+# Import các modules cần thiết
+try:
+    from fetch_content import fetch_pending_episodes, update_episode_status
+    from generate_script import generate_full_script 
+    from text_to_speech import text_to_speech 
+    from finalize_audio import finalize_audio 
     
-    try:
-        sa_data = json.loads(sa_content)
-        with open('service_account.json', 'w', encoding='utf-8') as f:
-            json.dump(sa_data, f, ensure_ascii=False, indent=4)
-        logging.info("Đã tạo/cập nhật file service_account.json từ biến môi trường.")
-        return True
-    except Exception as e:
-        logging.error(f"Lỗi khi giải mã SERVICE_ACCOUNT_CONTENT: {e}")
-        return False
-
-def generate_hash(text: str) -> str:
-    """Tạo SHA256 hash từ chuỗi văn bản."""
-    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:8]
-
-def authorize_gspread():
-    """Thực hiện xác thực và trả về client GSpread."""
-    if not create_service_account_file():
-        return None
-
-    try:
-        scope = [
-            'https://spreadsheets.google.com/feeds',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name('service_account.json', scope)
-        client = gspread.authorize(creds)
-        logging.info("Xác thực Google Sheet thành công.")
-        return client
-    except Exception as e:
-        logging.error(f"LỖI XÁC THỰC GOOGLE SHEET: {e}")
-        return None
-
-# --- HÀM CHÍNH ---
-
-def fetch_pending_episodes() -> list:
-    """
-    Lấy danh sách các tập có trạng thái 'pending' từ Google Sheet.
-    Cập nhật hash và tạo thư mục assets.
-    """
-    client = authorize_gspread()
-    if not client: return []
+    # IMPORT CÁC MODULE TẠO VIDEO MỚI
+    from create_video import create_video 
+    from create_shorts import create_shorts 
     
+except ImportError as e:
+    logging.error(f"Lỗi Import: Không thể tải một trong các module. Vui lòng kiểm tra tên file. Lỗi: {e}")
+    sys.exit(1)
+
+
+# --- MOCK CHỨC NĂNG TẠO KỊCH BẢN NGẮN (CHƯA TRIỂN KHAI) ---
+def mock_generate_short_script(episode_data: dict, full_script_path: str):
+    """
+    Giả lập việc tạo kịch bản ngắn bằng cách lấy 1/4 nội dung của kịch bản dài.
+    Sau này sẽ thay bằng gọi LLM để tóm tắt.
+    """
+    
+    # Lấy hash và ID
+    text_hash = episode_data.get('text_hash')
+    episode_id = episode_data.get('ID')
+    
+    if not full_script_path or not os.path.exists(full_script_path):
+        logging.warning("Không tìm thấy kịch bản dài để tạo kịch bản ngắn mock.")
+        return {'short_script_txt_path': ''}
+
+    output_dir = os.path.join('data', 'episodes')
+    short_script_path = os.path.join(output_dir, f"{text_hash}_short_script.txt")
+
     try:
-        sheet_id = os.getenv("GOOGLE_SHEET_ID")
-        if not sheet_id:
-            logging.error("Thiếu GOOGLE_SHEET_ID trong biến môi trường.")
-            return []
+        logging.info(f"MOCK: Tạo kịch bản NGẮN cho ID {episode_id}")
+        
+        with open(full_script_path, 'r', encoding='utf-8') as f:
+            full_script_content = f.read()
+        
+        # Lấy 1/4 kịch bản dài làm kịch bản ngắn (tạm thời)
+        words = full_script_content.split()
+        short_content = ' '.join(words[:len(words)//4])
+
+        with open(short_script_path, 'w', encoding='utf-8') as f:
+            f.write(short_content)
+
+        return {
+            'short_script_txt_path': short_script_path,
+        }
+
+    except Exception as e:
+        logging.error(f"LỖI MOCK TẠO KỊCH BẢN NGẮN: {e}")
+        return {'short_script_txt_path': ''}
+# -----------------------------------------------------------------
+
+
+def run_pipeline():
+    """Chạy toàn bộ quy trình tạo nội dung từ Google Sheet."""
+    load_dotenv()
+    logging.info("--- BẮT ĐẦU PIPELINE TẠO NỘI DUNG ---")
+    
+    # BƯỚC 1: LẤY DỮ LIỆU TỪ GOOGLE SHEET
+    episodes_to_process = []
+    try:
+        # Bắt đầu với việc tạo file service_account.json
+        if not os.path.exists('service_account.json'):
+             # Tận dụng fetch_content để tạo file service_account.json trước khi fetch
+             from fetch_content import create_service_account_file
+             create_service_account_file()
+
+        episodes_to_process = fetch_pending_episodes()
+    except Exception as e:
+        logging.error(f"LỖI KẾT NỐI/ĐỌC SHEET: {e}", exc_info=True)
+        return
+
+    if not episodes_to_process:
+        logging.info("Không tìm thấy tập mới nào cần xử lý ('pending').")
+        return
+
+    for episode in episodes_to_process:
+        episode_id = episode.get('ID')
+        text_hash = episode.get('text_hash')
+        title = episode.get('title', 'Tập Không Tiêu Đề')
+        
+        processing_status = 'processing'
+        success_status = 'processed'
+        
+        final_audio_long_path = None
+        final_audio_short_path = None
+        
+        try:
+            logging.info(f"Đang xử lý tập: {title} (ID: {episode_id}, Hash: {text_hash})")
             
-        sheet = client.open_by_key(sheet_id).sheet1
-        
-        # Lấy toàn bộ dữ liệu dưới dạng Dictionary
-        rows = sheet.get_all_records()
-        
-        episodes_to_process = []
-        
-        # Duyệt qua các hàng (bắt đầu từ hàng 2 trên Sheet)
-        for idx, row in enumerate(rows, start=2):
-            if row.get('status', '').lower() == 'pending':
+            # ĐÁNH DẤU TRẠNG THÁI 'processing'
+            update_episode_status(episode_id, processing_status)
+            
+            
+            # --- BƯỚC 2: TẠO KỊCH BẢN DÀI (16:9) & METADATA ---
+            logging.info("Bắt đầu tạo kịch bản DÀI (16:9)...")
+            script_long_data = generate_full_script(episode)
+            if not script_long_data or not script_long_data.get('full_script_txt_path'):
+                 raise Exception("LLM thất bại khi tạo kịch bản DÀI hoặc trả về dữ liệu rỗng.")
+            logging.info("Tạo kịch bản DÀI thành công.")
+            
+            
+            # --- BƯỚC 3: TẠO KỊCH BẢN NGẮN (Shorts 9:16) (MOCK) ---
+            logging.info("Bắt đầu tạo kịch bản NGẮN (Shorts 9:16)...")
+            script_short_data = mock_generate_short_script(episode, script_long_data['full_script_txt_path'])
+            if not script_short_data or not script_short_data.get('short_script_txt_path'):
+                 logging.warning("Không tạo được kịch bản ngắn (Mock). Bỏ qua bước Shorts.")
+            logging.info("Tạo kịch bản NGẮN thành công.")
+            
+            
+            # --- BƯỚC 4: TẠO TTS AUDIO DÀI ---
+            logging.info("Bắt đầu tạo TTS Audio DÀI...")
+            raw_audio_long_path = text_to_speech(script_long_data['full_script_txt_path'], is_short=False)
+            if not raw_audio_long_path:
+                raise Exception("TTS thất bại khi tạo audio DÀI.")
+            logging.info("Tạo TTS Audio DÀI thành công.")
+
+            # --- BƯỚC 5: TRỘN AUDIO DÀI VỚI NHẠC NỀN ---
+            logging.info("Bắt đầu trộn Audio DÀI (BGM)...")
+            final_audio_long_path = finalize_audio(raw_audio_long_path, is_short=False)
+            if not final_audio_long_path:
+                raise Exception("Trộn Audio DÀI thất bại.")
+            logging.info(f"Hoàn thành trộn Audio DÀI.")
+
+            
+            # --- BƯỚC 6: TẠO VIDEO 16:9 ---
+            logging.info("Bắt đầu TẠO VIDEO 16:9...")
+            video_long_path = create_video(final_audio_long_path, subtitle_path="", episode_id=episode_id)
+            if not video_long_path:
+                 raise Exception("Tạo video 16:9 thất bại.")
+            logging.info(f"TẠO VIDEO 16:9 thành công tại: {video_long_path}")
+            
+            
+            # --- XỬ LÝ SHORTS (Nếu kịch bản và audio ngắn tồn tại) ---
+            if script_short_data.get('short_script_txt_path'):
                 
-                # Tạo ID (ID sheet là cột đầu tiên, ID hàng là chỉ số hiện tại)
-                episode_id = row.get('ID', idx - 1) 
+                # --- BƯỚC 7: TẠO TTS AUDIO NGẮN ---
+                logging.info("Bắt đầu tạo TTS Audio NGẮN...")
+                raw_audio_short_path = text_to_speech(script_short_data['short_script_txt_path'], is_short=True)
                 
-                # Cột B, C, D là 'title', 'character', 'core_theme'
-                hash_source = str(row.get('title', '')) + str(row.get('character', '')) + str(row.get('core_theme', ''))
-                text_hash = generate_hash(hash_source)
+                if raw_audio_short_path:
+                    logging.info("Tạo TTS Audio NGẮN thành công.")
 
-                # Cập nhật hash vào Sheet (Giả sử cột hash là cột G - Index 7)
-                sheet.update_cell(idx, 7, text_hash) 
-                
-                # Tạo folder assets
-                folder_path = os.path.join('assets', text_hash)
-                os.makedirs(folder_path, exist_ok=True)
-                logging.info(f"Đã tạo hash: {text_hash} và folder tại: {folder_path}")
-                
-                # Thêm dữ liệu vào danh sách xử lý
-                row['row_index'] = idx
-                row['text_hash'] = text_hash
-                row['ID'] = episode_id
-                episodes_to_process.append(row)
-                
-                # Đánh dấu là 'processing' ngay lập tức
-                sheet.update_cell(idx, 6, 'processing') # Giả sử cột F là cột 'status'
-                logging.info(f"Đã đánh dấu hàng {idx} ('{row.get('title')}') là 'processing'.")
+                    # --- BƯỚC 8: TRỘN AUDIO NGẮN VỚI NHẠC NỀN ---
+                    logging.info("Bắt đầu trộn Audio NGẮN (BGM)...")
+                    final_audio_short_path = finalize_audio(raw_audio_short_path, is_short=True)
+                    
+                    if final_audio_short_path:
+                        logging.info("Hoàn thành trộn Audio NGẮN.")
+                        
+                        # --- BƯỚC 9: TẠO SHORTS 9:16 ---
+                        logging.info("Bắt đầu TẠO SHORTS 9:16...")
+                        video_short_path = create_shorts(final_audio_short_path, subtitle_path="", episode_id=episode_id)
+                        if not video_short_path:
+                             logging.warning("Tạo Shorts 9:16 thất bại. Tiếp tục.")
+                        else:
+                             logging.info(f"TẠO SHORTS 9:16 thành công tại: {video_short_path}")
+                    else:
+                        logging.warning("Trộn Audio NGẮN thất bại. Bỏ qua bước Shorts.")
 
-        return episodes_to_process
+                else:
+                    logging.warning("TTS thất bại khi tạo audio NGẮN. Bỏ qua bước Shorts.")
+            
+            
+            # --- BƯỚC 10: CẬP NHẬT TRẠNG THÁI THÀNH CÔNG ---
+            update_episode_status(episode_id, success_status)
+            
+        except Exception as e:
+            logging.error(f"PIPELINE THẤT BẠI cho tập ID {episode_id}: {e}", exc_info=True)
+            # CẬP NHẬT TRẠNG THÁI 'failed' TRÊN SHEET NẾU CÓ LỖI XẢY RA
+            update_episode_status(episode_id, 'failed')
+            
+        # Tạm dừng 1 giây giữa các lần xử lý tập
+        time.sleep(1) 
 
-    except Exception as e:
-        logging.error(f"LỖI ĐỌC DỮ LIỆU GOOGLE SHEET: {e}", exc_info=True)
-        return []
 
-def update_episode_status(episode_id: int, status: str):
-    """Cập nhật trạng thái của tập trên Google Sheet."""
-    client = authorize_gspread()
-    if not client: return
-
-    try:
-        sheet_id = os.getenv("GOOGLE_SHEET_ID")
-        if not sheet_id:
-            logging.error("Thiếu GOOGLE_SHEET_ID trong biến môi trường.")
-            return
-
-        sheet = client.open_by_key(sheet_id).sheet1
-        
-        # Tìm hàng dựa trên ID (giả sử cột A là cột ID)
-        # GSpread bắt đầu từ 1, ID trong sheet cũng thường bắt đầu từ 1 hoặc 2
-        # Tốt nhất là dùng row_index đã lưu trong dữ liệu fetch_pending_episodes
-        # Nhưng vì không có row_index ở đây, ta sẽ tìm kiếm cột ID.
-        
-        # Để đơn giản, ta tìm kiếm cột ID. Giả sử ID là số nguyên.
-        # Ta sẽ quét cột A (ID) để tìm giá trị khớp
-        cell = sheet.find(str(episode_id), in_column=1) # Cột 1 là A
-        
-        if cell:
-            row_index = cell.row
-            # Cột status là F (Index 6)
-            sheet.update_cell(row_index, 6, status) 
-            logging.info(f"Đã cập nhật trạng thái cho Episode ID {episode_id} thành '{status}'.")
-        else:
-            logging.warning(f"Không tìm thấy Episode ID {episode_id} để cập nhật trạng thái.")
-
-    except Exception as e:
-        logging.error(f"LỖI CẬP NHẬT TRẠNG THÁI GOOGLE SHEET cho ID {episode_id}: {e}", exc_info=True)
+if __name__ == "__main__":
+    run_pipeline()
