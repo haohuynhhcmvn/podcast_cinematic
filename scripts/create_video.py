@@ -1,24 +1,26 @@
-# scripts/create_video.py (PHIÊN BẢN TẠM THỜI: TẮT PHỤ ĐỀ VÀ SÓNG ÂM)
+# File: ./scripts/create_video.py
+# Chức năng: Tạo video 16:9 (video dài) bằng cách trộn audio, video nền lặp và ảnh tĩnh.
+
 import os
 import logging
 import moviepy.editor as mp
 import math
 import random
 # BỎ QUA SubtitlesClip và file_to_subtitles để tránh lỗi và không cần dùng
-# from moviepy.video.tools.subtitles import SubtitlesClip, file_to_subtitles
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 COLOR_BACKGROUND = (30, 30, 30)
+BACKGROUND_VIDEO_LONG = 'podcast_loop_bg_long.mp4' # <-- Tên file video nền dài
 
-# --- HÀM TẢI ẢNH AN TOÀN ---
+# --- HÀM TẢI ẢNH AN TOÀN --- (Giữ nguyên)
 def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
     """Tải ảnh từ thư mục assets/images, resize và đặt vị trí an toàn."""
     paths_to_check = [
         os.path.join('assets', 'images', file_name),
-        os.path.join('assets', 'image', file_name) # Tương thích với cấu trúc cũ
+        os.path.join('assets', 'image', file_name)
     ]
     
     image_path = None
@@ -45,7 +47,7 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải ảnh {image_path}: {e}")
         return None
 
-# --- HÀM TẢI VIDEO LẶP NỀN ---
+# --- HÀM TẢI VIDEO LẶP NỀN --- (Giữ nguyên)
 def load_looping_background_video(file_name, target_duration, width, height):
     """Tải video nền và lặp lại cho đến khi đạt độ dài mong muốn."""
     video_path = os.path.join('assets', 'video', file_name)
@@ -64,7 +66,7 @@ def load_looping_background_video(file_name, target_duration, width, height):
             clip = final_loop.subclip(0, target_duration)
         
         clip = clip.resize(newsize=(width, height))
-        logging.info(f"Đã tạo video nền lặp thành công.")
+        logging.info(f"Đã tạo video nền lặp thành công từ file: {file_name}")
         return clip
     except Exception as e:
         logging.error(f"Lỗi khi tải video nền {video_path}: {e}")
@@ -73,7 +75,6 @@ def load_looping_background_video(file_name, target_duration, width, height):
 # --- HÀM CHÍNH: CREATE_VIDEO ---
 def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
-        # THÔNG BÁO CHẾ ĐỘ TẮT TÍNH NĂNG
         logging.warning("CHẾ ĐỘ TẮT TÍNH NĂNG: Phụ đề và Sóng âm đã bị BỎ QUA để chạy thử pipeline.")
 
         audio_clip = mp.AudioFileClip(final_audio_path)
@@ -82,7 +83,8 @@ def create_video(final_audio_path: str, subtitle_path: str, episode_id: int):
         # 1. Bỏ qua xử lý Phụ đề
         
         # 2. Tải Nền Video Lặp (16:9)
-        background_clip = load_looping_background_video('podcast_loop_bg_long.mp4', duration, VIDEO_WIDTH, VIDEO_HEIGHT)
+        # SỬ DỤNG HẰNG SỐ ĐÃ ĐỊNH NGHĨA Ở TRÊN
+        background_clip = load_looping_background_video(BACKGROUND_VIDEO_LONG, duration, VIDEO_WIDTH, VIDEO_HEIGHT)
 
         # 3. Tải Micro (Ảnh tĩnh)
         microphone_clip = load_asset_image('microphone.png', width=int(VIDEO_WIDTH * 0.15), duration=duration, position=("center", VIDEO_HEIGHT * 0.4))
