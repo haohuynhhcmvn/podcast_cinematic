@@ -1,59 +1,92 @@
-# scripts/get_episode_data.py: Module đóng vai trò là cầu nối dữ liệu, KHÔNG SỬA read_sheet.py
+# scripts/get_episode_data.py: Tích hợp logic xử lý Sheet để tránh lỗi ImportError từ read_sheet.py
 import os
 import logging
 import importlib.util
+import hashlib
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials # Cần thiết cho gspread
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- 1. LOGIC HASH ĐỘC LẬP ---
+# Tự định nghĩa generate_hash để loại bỏ phụ thuộc vào utils.py
+def generate_hash(text: str) -> str:
+    """Tạo SHA-256 hash từ chuỗi đầu vào, trả về 8 ký tự đầu."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:8]
+
+# --- 2. LOGIC KHỞI TẠO GOOGLE SHEET ĐỘC LẬP (Lấy từ read_sheet.py) ---
+try:
+    # Cấu hình Google Sheet (Giả định các biến này đã được read_sheet.py sử dụng)
+    CREDS_FILE = 'service_account.json'
+    SHEET_NAME = 'podcast_requests'
+
+    scope = [
+        'https://spreadsheets.google.com/feeds',
+        'https://www.googleapis.com/auth/drive'
+    ]
+
+    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_FILE, scope)
+    CLIENT = gspread.authorize(creds)
+    SHEET = CLIENT.open(SHEET_NAME).sheet1
+    logging.info("Đã kết nối thành công với Google Sheet.")
+
+except Exception as e:
+    logging.error(f"LỖI KHI KẾT NỐI GOOGLE SHEET: {e}", exc_info=True)
+    # Khởi tạo SHEET rỗng để tránh lỗi nếu không kết nối được
+    SHEET = None
+
+
 def get_next_episode_data():
     """
-    1. Gọi read_sheet.py để thực thi logic tạo hash/thư mục.
+    1. Tự thực thi logic tạo hash và folder nếu có hàng 'pending'.
     2. Đọc lại Sheet để tìm hàng vừa được đánh dấu/tạo hash.
     3. Cập nhật trạng thái sang 'PROCESSING' và trả về dữ liệu.
     """
-    
-    # 1. GỌI LOGIC TỪ read_sheet.py (Để đảm bảo hash và folder được tạo)
-    logging.info("Đang thực thi logic từ read_sheet.py gốc (tạo hash và folder)...")
-    try:
-        # Tải và chạy module read_sheet.py
-        spec = importlib.util.spec_from_file_location("read_sheet_module", "scripts/read_sheet.py")
-        read_sheet_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(read_sheet_module)
-        
-        # Lấy các biến global từ read_sheet.py
-        SHEET = read_sheet_module.sheet
-        
-        logging.info("Logic tạo hash/folder của read_sheet.py đã hoàn tất.")
-
-    except Exception as e:
-        logging.error(f"LỖI KHÔNG THỂ TẢI HOẶC CHẠY read_sheet.py: {e}", exc_info=True)
+    if SHEET is None:
         return None
 
-    # 2. TÌM HÀNG VỪA ĐƯỢC XỬ LÝ (Tức là hàng có hash mới nhất)
-    # Giả định: Cột G (index 7) lưu hash, Cột F (index 6) lưu status.
-    HASH_COL_INDEX = 7 
-    STATUS_COL_INDEX = 6 
+    try:
+        rows = SHEET.get_all_records()
+    except Exception as e:
+        logging.error(f"Lỗi khi đọc dữ liệu từ Sheet: {e}", exc_info=True)
+        return None
+        
+    found_pending = False
     
-    # Đọc lại dữ liệu (vì sheet đã được cập nhật sau khi chạy read_sheet.py)
-    rows_updated = SHEET.get_all_records()
-    
-    for i, row in enumerate(rows_updated):
-        row_index_in_sheet = i + 2 # Hàng thực tế trong sheet
+    # 1. Tự thực thi logic tạo hash/folder (Lấy từ read_sheet.py gốc)
+    for idx, row in enumerate(rows):
+        row_index_in_sheet = idx + 2 # Hàng thực tế trong sheet
         
-        # Kiểm tra: Hàng phải có hash (tức là đã được read_sheet.py xử lý) 
-        # VÀ Status không phải là 'processed' hoặc 'completed'
+        # Giả định: Cột G (index 7) lưu hash, Cột F (index 6) lưu status.
+        HASH_COL_INDEX = 7 
+        STATUS_COL_INDEX = 6 
         
-        # GSpread sử dụng __EMPTY_N cho các cột không có tiêu đề trong hàng đầu tiên. 
-        # Giả định cột hash là cột G (index 7), nên khóa có thể là '__EMPTY_6' (index 7 - 1 = 6) hoặc 'text_hash'
-        
-        # Ta sẽ dùng row.get(key)
+        # GSpread sử dụng __EMPTY_N nếu không có tiêu đề cột
         row_hash = row.get(f'__EMPTY_{HASH_COL_INDEX - 1}', '').strip()
-        if not row_hash:
-             # Thử với khóa 'text_hash' nếu có thể
-             row_hash = row.get('text_hash', '').strip()
+        row_status = row.get('status', '').strip().lower()
 
-        row_status = row.get('status', '').strip().lower() # Sử dụng 'status' theo read_sheet.py
+        if row_status == 'pending':
+            found_pending = True
+            
+            # Tạo hash mới
+            content_to_hash = row['title'] + row['character'] + row['core_theme']
+            text_hash = generate_hash(content_to_hash)
+            
+            # Ghi hash vào Sheet (Cột G)
+            try:
+                SHEET.update_cell(row_index_in_sheet, HASH_COL_INDEX, text_hash) 
+            except Exception as e:
+                logging.warning(f"Không thể cập nhật hash cho hàng {row_index_in_sheet}: {e}")
+            
+            # Tạo folder
+            folder_path = os.path.join('assets', text_hash)
+            os.makedirs(folder_path, exist_ok=True)
+            logging.info(f"Đã tạo hash: {text_hash} và folder tại: {folder_path}")
+            
+            # Dừng lại ở hàng đầu tiên 'pending' và tiếp tục xử lý ở bước 2
 
+        # 2. TÌM HÀNG VỪA ĐƯỢC XỬ LÝ (hoặc hàng đã có hash mà chưa xong)
+        # Sử dụng các khóa chính xác: title, character, core_theme
         if row_hash and row_status != 'processed' and row_status != 'completed' and row_status != 'failed' and row_status != 'processing':
             
             # --- ĐÁNH DẤU TRẠNG THÁI 'PROCESSING' ---
@@ -72,19 +105,22 @@ def get_next_episode_data():
                 'text_hash': row_hash
             }
             return episode_data
-
+    
+    # Nếu không tìm thấy hàng 'pending' nào để xử lý, log và kết thúc.
+    if not found_pending:
+        logging.info("Không tìm thấy tập nào mới để xử lý.")
+        
     logging.info("Không tìm thấy tập nào đã được tạo hash mà chưa xử lý.")
     return None
 
+
 def update_sheet_status(episode_id: int, status: str):
     """Cập nhật trạng thái cuối cùng (processed/failed) trên Google Sheet."""
-    try:
-        # Lại phải gọi lại các biến global
-        spec = importlib.util.spec_from_file_location("read_sheet_module", "scripts/read_sheet.py")
-        read_sheet_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(read_sheet_module)
-        SHEET = read_sheet_module.sheet
+    if SHEET is None:
+        logging.error("Không thể cập nhật trạng thái vì kết nối Sheet thất bại.")
+        return
         
+    try:
         # Giả định cột status là cột F (index 6)
         SHEET.update_cell(episode_id, 6, status.lower())
         logging.info(f"Đã cập nhật trạng thái cho Episode ID {episode_id} thành '{status.lower()}'.")
