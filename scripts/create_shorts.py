@@ -1,4 +1,6 @@
-# scripts/create_shorts.py (PHIÊN BẢN TẠM THỜI: TẮT PHỤ ĐỀ VÀ SÓNG ÂM)
+# File: ./scripts/create_shorts.py
+# Chức năng: Tạo video Shorts 9:16 bằng cách trộn audio, video nền (hoặc ảnh tĩnh) và ảnh micro.
+
 import os
 import logging
 from moviepy.editor import *
@@ -10,7 +12,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
-COLOR_BACKGROUND = (30, 30, 30) 
+COLOR_BACKGROUND = (30, 30, 30)
+BACKGROUND_VIDEO_SHORT = 'podcast_loop_bg_short.mp4' # <-- Tên file video nền ngắn
 
 # --- HÀM TẢI ẢNH AN TOÀN --- (Giữ nguyên)
 def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
@@ -45,10 +48,35 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải ảnh {image_path}: {e}")
         return None
 
+# --- HÀM TẢI VIDEO LẶP NỀN (TỪ create_video.py) ---
+def load_looping_background_video(file_name, target_duration, width, height):
+    """Tải video nền và lặp lại cho đến khi đạt độ dài mong muốn."""
+    video_path = os.path.join('assets', 'video', file_name)
+    if not os.path.exists(video_path):
+        logging.warning(f"Không tìm thấy video nền tại: {video_path}. Dùng nền màu tĩnh.")
+        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
+
+    try:
+        original_clip = VideoFileClip(video_path)
+        if original_clip.duration >= target_duration:
+            clip = original_clip.subclip(0, target_duration)
+        else:
+            num_loops = math.ceil(target_duration / original_clip.duration)
+            looped_clips = [original_clip] * num_loops
+            final_loop = concatenate_videoclips(looped_clips)
+            clip = final_loop.subclip(0, target_duration)
+        
+        clip = clip.resize(newsize=(width, height))
+        logging.info(f"Đã tạo video nền lặp thành công từ file: {file_name}")
+        return clip
+    except Exception as e:
+        logging.error(f"Lỗi khi tải video nền {video_path}: {e}")
+        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
+
+
 # --- BẮT ĐẦU CREATE_SHORTS ---
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
     try:
-        # THÔNG BÁO CHẾ ĐỘ TẮT TÍNH NĂNG
         logging.warning("CHẾ ĐỘ TẮT TÍNH NĂNG: Phụ đề và Sóng âm đã bị BỎ QUA để chạy thử pipeline.")
 
         audio_clip = AudioFileClip(final_audio_path)
@@ -61,10 +89,9 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         
         # 1. Bỏ qua xử lý Phụ đề và Sóng âm
 
-        # 2. Tải Nền (Ảnh tĩnh)
-        background_clip = load_asset_image('default_background_shorts.png', width=SHORTS_WIDTH, height=SHORTS_HEIGHT, duration=duration)
-        if not background_clip:
-            background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
+        # 2. Tải Nền Video Lặp (9:16)
+        # SỬ DỤNG HÀM TẢI VIDEO LẶP VÀ HẰNG SỐ ĐÃ ĐỊNH NGHĨA Ở TRÊN
+        background_clip = load_looping_background_video(BACKGROUND_VIDEO_SHORT, duration, SHORTS_WIDTH, SHORTS_HEIGHT)
             
         # 3. Tải Micro (Ảnh tĩnh)
         microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT * 0.55)) 
