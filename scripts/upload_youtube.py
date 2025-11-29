@@ -78,7 +78,7 @@ def upload_video(video_path: str, episode_data: dict):
                 'categoryId': '22'
             },
             'status': {
-                'privacyStatus': 'private', 
+                'privacyStatus': 'public', 
                 'selfDeclaredMadeForKids': False
             }
         }
