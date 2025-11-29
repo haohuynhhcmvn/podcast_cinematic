@@ -1,4 +1,4 @@
-# scripts/create_shorts.py (Đã loại bỏ sóng âm và sửa tiêu đề)
+# scripts/create_shorts.py (Đã dùng VIDEO LẶP NỀN RIÊNG)
 import os
 import logging
 from moviepy.editor import *
@@ -11,7 +11,7 @@ SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
 COLOR_BACKGROUND = (30, 30, 30) 
 
-# --- HÀM TẢI ẢNH AN TOÀN ---
+# --- HÀM TẢI ẢNH AN TOÀN (GIỮ NGUYÊN) ---
 def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
     """Tải ảnh, resize và đặt vị trí an toàn."""
     paths_to_check = [
@@ -44,7 +44,41 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải hoặc resize ảnh {image_path}: {e}")
         return None
 
-# LƯU Ý: HÀM create_multi_bar_visualizer ĐÃ BỊ LOẠI BỎ THEO YÊU CẦU
+# --- HÀM TẢI VIDEO LẶP NỀN MỚI (CHUNG) ---
+def load_looping_background_video(file_name, target_duration, width, height):
+    """
+    Tải video nền, đảm bảo video lặp lại liên tục cho đến khi đạt được target_duration.
+    """
+    video_path = os.path.join('assets', 'video', file_name)
+    if not os.path.exists(video_path):
+        logging.warning(f"Không tìm thấy video nền tại: {video_path}. Sẽ dùng nền màu tĩnh.")
+        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
+
+    try:
+        # Tải video gốc
+        original_clip = VideoFileClip(video_path)
+        
+        # Nếu video gốc đã dài hơn thời lượng mục tiêu, chỉ cần cắt
+        if original_clip.duration >= target_duration:
+            clip = original_clip.subclip(0, target_duration)
+        else:
+            # Tính toán số lần lặp cần thiết
+            num_loops = math.ceil(target_duration / original_clip.duration)
+            # Tạo danh sách các clip lặp lại và nối lại
+            looped_clips = [original_clip] * num_loops
+            final_loop = concatenate_videoclips(looped_clips)
+            clip = final_loop.subclip(0, target_duration)
+        
+        # Đảm bảo clip được resize để vừa với khung hình mục tiêu
+        clip = clip.resize(newsize=(width, height))
+
+        logging.info(f"Đã tạo video nền lặp thành công. Độ dài: {clip.duration:.2f}s")
+        return clip
+
+    except Exception as e:
+        logging.error(f"Lỗi khi tải hoặc lặp video nền {video_path}: {e}")
+        return ColorClip((width, height), color=COLOR_BACKGROUND, duration=target_duration)
+
 
 # --- BẮT ĐẦU CREATE_SHORTS ---
 def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
@@ -52,28 +86,17 @@ def create_shorts(final_audio_path: str, subtitle_path: str, episode_id: int):
         audio_clip = AudioFileClip(final_audio_path)
         duration = audio_clip.duration
         
-        MAX_SHORTS_DURATION = 60 
-        if duration > MAX_SHORTS_DURATION:
-            audio_clip = audio_clip.subclip(0, MAX_SHORTS_DURATION)
-            duration = MAX_SHORTS_DURATION
-        
+        # --- 1. Tải Nền Dạng Video Lặp (SHORT) ---
+        background_clip = load_looping_background_video('podcast_loop_bg_short.mp4', duration, SHORTS_WIDTH, SHORTS_HEIGHT)
+
         logging.warning("BỎ QUA PHỤ ĐỀ cho video Shorts để hoàn thành pipeline.")
         # Clip giữ chỗ cho phụ đề (opacity 0)
         subtitle_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=(0, 0, 0), duration=duration).set_opacity(0)
 
-        # Tải nền
-        background_clip = load_asset_image('default_background_shorts.png', width=SHORTS_WIDTH, height=SHORTS_HEIGHT, duration=duration)
-        if not background_clip:
-            background_clip = ColorClip((SHORTS_WIDTH, SHORTS_HEIGHT), color=COLOR_BACKGROUND, duration=duration)
-            
         # Tải micro (Vị trí đã điều chỉnh xuống: SHORTS_HEIGHT // 2 + 180)
         microphone_clip = load_asset_image('microphone.png', width=int(SHORTS_WIDTH * 0.3), duration=duration, position=("center", SHORTS_HEIGHT // 2 + 180))
         
-        # Tiêu đề (ĐÃ SỬA: Loại bỏ chữ "podcast" thừa)
-        # title_text = TextClip("THEO DẤU CHÂN HUYỀN THOẠI", fontsize=80, color='yellow', font='sans-bold', size=(SHORTS_WIDTH * 0.9, None), bg_color='black')
-        # title_text = title_text.set_duration(duration).set_pos(('center', SHORTS_HEIGHT * 0.1))
-
-        # Ghép các thành phần (ĐÃ LOẠI BỎ waveform_clip)
+        # Ghép các thành phần (Chỉ gồm nền, micro và clip giữ chỗ phụ đề)
         elements = [background_clip, subtitle_clip.set_duration(duration).set_pos(('center', 'bottom')).margin(bottom=50)]
         if microphone_clip:
             elements.insert(1, microphone_clip)
