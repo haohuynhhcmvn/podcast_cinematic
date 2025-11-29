@@ -1,3 +1,4 @@
+# /scripts/fetch_content.py
 import os
 import json
 import gspread
