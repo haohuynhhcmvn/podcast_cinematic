@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 1. IMPORT CÁC MODULE CƠ BẢN VÀ DATA
 from utils import setup_environment
-from fetch_content import fetch_content # Lấy dữ liệu từ Sheet
+from fetch_content import fetch_content, authenticate_google_sheet # Dùng authenticate_google_sheet cho hàm update status
 from generate_script import generate_long_script, generate_short_script # Tạo script
 from auto_music_sfx import auto_music_sfx # Trộn nhạc
 
@@ -47,24 +47,34 @@ def main():
 
     # ====================================================================
     # --- LUỒNG VIDEO DÀI (16:9) ---
-    # KHÓA TẠM THỜI: Mở lại bằng cách xóa dấu # ở đầu mỗi dòng
+    # TẠM KHÓA: Mở lại bằng cách xóa dấu # ở đầu mỗi dòng
     # ====================================================================
     logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
     
-    # # BƯỚC 1: Tạo Script Dài (Gọi AI)
-    # script_long = generate_long_script(data)
+    # # BƯỚC 1: TẠO SCRIPT DÀI (Nhận dictionary chứa path và metadata)
+    # long_script_result = generate_long_script(data)
     
     # # BƯỚC 2: TTS Dài & Mix Audio
-    # if script_long:
-    #     tts_long = create_tts(script_long, eid, "long")
-    #     if tts_long:
-    #         audio_final = auto_music_sfx(tts_long, eid) # Thêm nhạc nền và Outro
-            
+    # if long_script_result:
+    #     script_long = long_script_result['script_path']
+    #     metadata_long = long_script_result['metadata'] # Lấy metadata từ AI
+        
+    #     if script_long:
+    #         tts_long = create_tts(script_long, eid, "long")
+    #         if tts_long:
+    #             audio_final = auto_music_sfx(tts_long, eid) # Thêm nhạc nền và Outro
+                
     # # BƯỚC 3: Tạo Video 16:9 & Upload
-    #         if audio_final:
-    #             vid_path = create_video(audio_final, eid)
-    #             if vid_path:
-    #                 upload_video(vid_path, data) # Upload Video Dài
+    #             if audio_final:
+    #                 vid_path = create_video(audio_final, eid)
+    #                 if vid_path:
+    #                     # TRUYỀN METADATA MỚI CHO UPLOAD
+    #                     upload_data = {
+    #                         'Name': metadata_long['youtube_title'],
+    #                         'Content/Input': metadata_long['youtube_description'],
+    #                         'Tags': metadata_long['youtube_tags']
+    #                     }
+    #                     upload_video(vid_path, upload_data) # Upload Video Dài
     # --------------------------------------------------------------------
 
 
@@ -87,7 +97,7 @@ def main():
         except:
             hook_title = ""
 
-        # 2. Tạo TTS cho phần nội dung (Chỉ TTS thô)
+        # 2. Tạo TTS cho phần nội dung (Chỉ TTS thô, không cần Audio Mix)
         tts_short = create_tts(script_short_path, eid, "short")
         
         if tts_short:
