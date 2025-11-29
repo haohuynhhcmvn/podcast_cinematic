@@ -1,7 +1,7 @@
-# ./script/generate_script.py (ĐÃ SỬA: Thêm CÂU CHÀO và CÂU KẾT CỐ ĐỊNH)
+# ./script/generate_script.py (ĐÃ SỬA: Tăng yêu cầu độ dài kịch bản lên TỐI THIỂU 10 PHÚT)
 import os
 import logging
-import json # Cần import thêm thư viện JSON
+import json 
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -22,7 +22,6 @@ def generate_script(episode_data):
         raw_content = episode_data['Content/Input']
         
         # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH ---
-        # Bạn có thể thay đổi tên kênh và nội dung này
         CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại" 
         
         PODCAST_INTRO = f"""
@@ -36,14 +35,14 @@ Nếu bạn thấy nội dung này hữu ích và truyền cảm hứng, đừng
 Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
 """
         
-        # --- 2. CẬP NHẬT PROMPT: CHỈ YÊU CẦU NỘI DUNG CHÍNH (core_script) ---
+        # --- 2. CẬP NHẬT PROMPT: YÊU CẦU ĐỘ DÀI KỊCH BẢN ---
         system_prompt = f"""
         Bạn là **Master Storyteller** (Người kể chuyện bậc thầy) với giọng văn **Nam Trầm, lôi cuốn, có chiều sâu và truyền cảm hứng**.
         Nhiệm vụ của bạn là biến nội dung thô dưới đây thành một **đối tượng JSON** chứa Kịch bản Audio Cinematic (Chỉ phần nội dung chính) và Metadata YouTube đi kèm.
 
         QUY TẮC TẠO KỊCH BẢN (core_script):
         1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
-        2. **Thời lượng:** Kịch bản **phần nội dung chính** nên có độ dài khoảng 1500 - 2000 từ.
+        2. **Thời lượng quan trọng (ĐÃ TĂNG):** Kịch bản **phần nội dung chính** nên có độ dài khoảng **2500 - 3000 từ**. Đây là một yêu cầu cứng để đảm bảo video đạt tối thiểu 15-20 phút. Hãy viết chi tiết, có chiều sâu để đạt được độ dài này.
         3. **Định dạng:** Chỉ văn bản cần được đọc, KHÔNG bao gồm lời chào/kết.
 
         QUY TẮC TẠO METADATA YOUTUBE:
