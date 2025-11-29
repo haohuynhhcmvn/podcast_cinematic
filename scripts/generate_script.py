@@ -118,7 +118,7 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
 
 
 # ======================================================================================
-# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - TĂNG ĐỘ CỨNG NHẮC VÀ CÔ ĐỌNG ---
+# --- B. HÀM TẠO SCRIPT NGẮN (SHORTS) - TĂNG THỜI LƯỢNG VÀ NHẮC TÊN NHÂN VẬT ĐẦU TIÊN ---
 # ======================================================================================
 def generate_short_script(data):
     """
@@ -133,11 +133,12 @@ def generate_short_script(data):
 
     # 1. CẤU HÌNH PROMPT VÀ YÊU CẦU JSON OUTPUT
     sys_prompt = f"""
-    Bạn là **Chuyên gia tạo nội dung Shorts** (video dưới 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**. Tốc độ đọc phải nhanh và kịch tính.
+    Bạn là **Chuyên gia tạo nội dung Shorts** (video tối đa 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**. Tốc độ đọc phải nhanh và kịch tính.
     
     YÊU CẦU BẮT BUỘC:
     1.  **hook_title (VIRAL):** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA).
-    2.  **script_body (CÔ ĐỌNG TUYỆT ĐỐI):** Kịch bản chính **tuyệt đối không được vượt quá 100 từ** và phải truyền tải thông tin với tốc độ cao. (không bao gồm CTA).
+    2.  **script_body (CÔ ĐỌNG, DÀI HƠN):** Kịch bản chính **phải có độ dài từ 150 đến 200 từ** để đạt thời lượng 60 giây.
+        **QUAN TRỌNG:** Kịch bản phải **BẮT ĐẦU BẰNG TÊN NHÂN VẬT** hoặc sự kiện được đề cập. (ví dụ: "Abraham Lincoln đã...", hoặc "Vào năm 1945, sự kiện...")
     """
     
     user_prompt = f"""
@@ -145,12 +146,12 @@ def generate_short_script(data):
     Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
     {{
         "hook_title": "[Tiêu đề giật gân, IN HOA, LÔI CUỐN]",
-        "script_body": "[Nội dung kịch bản HOOK + CỐT LÕI, TỐC ĐỘ CAO]"
+        "script_body": "[Nội dung kịch bản HOOK + CỐT LÕI, BẮT ĐẦU BẰNG TÊN NHÂN VẬT/SỰ KIỆN]"
     }}
     """
     
     # 2. GỌI AI VỚI JSON MODE
-    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=300, response_format={"type": "json_object"})
+    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=600, response_format={"type": "json_object"}) # Tăng max_tokens lên để chứa kịch bản dài hơn
 
     # 3. XỬ LÝ LỖI và TÁCH DỮ LIỆU
     hook_title_fallback = f"BÍ MẬT {data['Name'].upper()} VỪA ĐƯỢC VÉN MÀN!"
