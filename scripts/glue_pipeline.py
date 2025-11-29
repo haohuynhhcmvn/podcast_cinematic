@@ -1,83 +1,55 @@
-# scripts/glue_pipeline.py
-# Đây là file điều phối (glue) các bước trong pipeline tự động hóa podcast.
-
-import os
 import logging
-# Sửa lỗi Import: Import hàm fetch_content và đổi tên (alias) thành fetch_pending_episodes
-from fetch_content import fetch_content as fetch_pending_episodes, update_episode_status
-from upload_youtube import upload_youtube_video
-# Cần import các hàm từ các script tạo nội dung. Chúng ta sẽ giả lập chúng ở đây.
-# from generate_script import generate_script_and_audio
-# from create_video import create_podcast_video
-# from create_shorts import create_shorts_video
+import sys
+import os
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Setup Path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def mock_generate_and_create(data: dict) -> tuple[str | None, dict | None]:
-    """
-    Hàm mô phỏng việc tạo kịch bản, audio, và video.
-    """
-    logging.info("BƯỚC 2 & 3: Bắt đầu tạo nội dung (Mô phỏng)...")
+from utils import setup_environment
+from fetch_content import fetch_content
+from generate_script import generate_long_script, generate_short_script
+from create_tts import create_tts
+from create_video import create_video
+from create_shorts import create_shorts
+from auto_music_sfx import auto_music_sfx
+from upload_youtube import upload_video
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def main():
+    setup_environment()
     
-    # Định nghĩa các đường dẫn giả định cho các bước tiếp theo
-    video_output_path = os.path.join('outputs', 'video', f"{data.get('ID', 'temp_id')}_full_podcast_169.mp4")
-    metadata = {
-        'title': f"Podcast: {data.get('Name')} | {data.get('Core Theme')}",
-        'description': f"Tập podcast mới nhất về chủ đề: {data.get('Core Theme')}. Hash: {data['text_hash']}",
-        'tags': ['podcast', 'podcastviet', data.get('Core Theme')]
-    }
-    
-    # Tạo file video giả để mô phỏng thành công
-    try:
-        os.makedirs(os.path.dirname(video_output_path), exist_ok=True)
-        with open(video_output_path, 'w') as f:
-            f.write("Mô phỏng nội dung video đã tạo.")
-        logging.info(f"Đã tạo file video mô phỏng tại: {video_output_path}")
-    except Exception as e:
-        logging.error(f"Lỗi tạo file mô phỏng: {e}")
-        return None, None
-        
-    logging.info("Tạo nội dung mô phỏng thành công.")
-    return video_output_path, metadata
+    # 1. Fetch
+    task = fetch_content()
+    if not task: return
+    data = task['data']
+    eid = data['ID']
 
-def run_pipeline():
-    """Chạy toàn bộ quy trình tự động hóa."""
-    try:
-        # BƯỚC 1: LẤY BẢN GHI PENDING
-        logging.info("BẮT ĐẦU: Lấy bản ghi 'pending' từ Google Sheet...")
-        # LƯU Ý: Đây là nơi gọi hàm fetch_content() nhưng dùng alias là fetch_pending_episodes
-        episode_data = fetch_pending_episodes()
-        
-        if not episode_data:
-            logging.info("KẾT THÚC: Không có tập nào cần xử lý.")
-            return
+    # --- LUỒNG VIDEO DÀI ---
+    logger.info("🎬 --- BẮT ĐẦU VIDEO DÀI ---")
+    script_long = generate_long_script(data)
+    if script_long:
+        tts_long = create_tts(script_long, eid, "long")
+        if tts_long:
+            # Mix nhạc chỉ cho video dài
+            audio_final = auto_music_sfx(tts_long, eid)
+            if audio_final:
+                vid_path = create_video(audio_final, eid)
+                if vid_path:
+                    upload_video(vid_path, data)
 
-        row_index = episode_data['Status_Row']
-        
-        # BƯỚC 2 & 3: TẠO VIDEO (Thay thế bằng các hàm thực tế)
-        video_path, metadata = mock_generate_and_create(episode_data)
-        
-        if not video_path:
-            logging.error("LỖI PIPELINE: Không tạo được video.")
-            update_episode_status(row_index, 'FAILED_VIDEO_CREATE')
-            return
+    # --- LUỒNG SHORTS ---
+    logger.info("📱 --- BẮT ĐẦU SHORTS ---")
+    script_short = generate_short_script(data)
+    if script_short:
+        tts_short = create_tts(script_short, eid, "short")
+        if tts_short:
+            create_shorts(tts_short, eid)
 
-        # BƯỚC 4: UPLOAD YOUTUBE
-        logging.info("BƯỚC 4: Bắt đầu Upload YouTube...")
-        # Vì upload_youtube_video chưa được định nghĩa, ta giả định thành công
-        # upload_success = upload_youtube_video(video_path, metadata)
-        upload_success = True 
-        
-        # BƯỚC 5: CẬP NHẬT TRẠNG THÁI CUỐI CÙNG
-        if upload_success:
-            update_episode_status(row_index, 'COMPLETED')
-        else:
-            update_episode_status(row_index, 'FAILED_UPLOAD')
-            
-        logging.info("KẾT THÚC: Quy trình xử lý tập phim đã hoàn tất.")
+    # Update Sheet
+    task['worksheet'].update_cell(task['row_idx'], task['col_idx'], 'COMPLETED')
+    logger.info("🎉 DONE ALL TASKS")
 
-    except Exception as e:
-        logging.error(f"LỖI KHÔNG XÁC ĐỊNH TRONG PIPELINE: {e}", exc_info=True)
-
-if __name__ == '__main__':
-    run_pipeline()
+if __name__ == "__main__":
+    main()
