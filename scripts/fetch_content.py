@@ -1,73 +1,85 @@
-# /scripts/fetch_content.py
+# scripts/glue_pipeline.py
+# Đây là file điều phối (glue) các bước trong pipeline tự động hóa podcast.
+
 import os
-import json
-import gspread
 import logging
-from dotenv import load_dotenv
+# Sửa lỗi Import: Import hàm fetch_content và đổi tên (alias) thành fetch_pending_episodes
+from fetch_content import fetch_content as fetch_pending_episodes, update_episode_status
+from upload_youtube import upload_youtube_video
+# Cần import các hàm từ các script tạo nội dung. Chúng ta sẽ giả lập chúng ở đây.
+# from generate_script import generate_script_and_audio
+# from create_video import create_podcast_video
+# from create_shorts import create_shorts_video
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def authenticate_google_sheet():
-    load_dotenv()
-    # Đường dẫn file JSON được đọc từ .env (tên file: service-account.json)
-    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') 
+def mock_generate_and_create(data: dict) -> tuple[str | None, dict | None]:
+    """
+    Hàm mô phỏng việc tạo kịch bản, audio, và video.
+    Trong môi trường thực, các bước này sẽ được thay thế bằng các hàm gọi API
+    và xử lý MoviePy thực tế.
+    """
+    logging.info("BƯỚC 2 & 3: Bắt đầu tạo nội dung (Mô phỏng)...")
     
-    # Kiểm tra file đã được giải mã/tạo chưa
-    if not service_account_file or not os.path.exists(service_account_file):
-        logging.error(f"File Service Account JSON không tồn tại tại: {service_account_file}")
-        return None
-        
+    # Định nghĩa các đường dẫn giả định cho các bước tiếp theo
+    video_output_path = os.path.join('outputs', 'video', f"{data['ID']}_full_podcast_169.mp4")
+    metadata = {
+        'title': f"Podcast: {data.get('Name')} | {data.get('Core Theme')}",
+        'description': f"Tập podcast mới nhất về chủ đề: {data.get('Core Theme')}. Hash: {data['text_hash']}",
+        'tags': ['podcast', 'podcastviet', data.get('Core Theme')]
+    }
+    
+    # Tạo file video giả để mô phỏng thành công
     try:
-        # gspread sẽ sử dụng file này để xác thực
-        gc = gspread.service_account(filename=service_account_file)
-        return gc
+        os.makedirs(os.path.dirname(video_output_path), exist_ok=True)
+        with open(video_output_path, 'w') as f:
+            f.write("Mô phỏng nội dung video đã tạo.")
+        logging.info(f"Đã tạo file video mô phỏng tại: {video_output_path}")
     except Exception as e:
-        logging.error(f"Lỗi xác thực Google Sheet: {e}")
-        return None
+        logging.error(f"Lỗi tạo file mô phỏng: {e}")
+        return None, None
+        
+    logging.info("Tạo nội dung mô phỏng thành công.")
+    return video_output_path, metadata
 
-def fetch_content():
-    load_dotenv()
-    gc = authenticate_google_sheet()
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
-    
-    if not gc or not sheet_id: return None
-
+def run_pipeline():
+    """Chạy toàn bộ quy trình tự động hóa."""
     try:
-        sh = gc.open_by_key(sheet_id)
-        worksheet = sh.get_worksheet(0) # Lấy sheet đầu tiên
-        list_of_dicts = worksheet.get_all_records()
+        # BƯỚC 1: LẤY BẢN GHI PENDING
+        logging.info("BẮT ĐẦU: Lấy bản ghi 'pending' từ Google Sheet...")
+        # Gọi hàm fetch_content, nhưng được alias thành fetch_pending_episodes
+        episode_data = fetch_pending_episodes()
         
-        # Lọc tập cần xử lý: Status 'pending'
-        episode_to_process = next((row for row in list_of_dicts if row.get('Status', '').lower() == 'pending'), None)
-        
-        if episode_to_process:
-            episode_id = episode_to_process.get('ID')
-            episode_name = episode_to_process.get('Name')
-            
-            # Lấy số hàng để cập nhật trạng thái sau này
-            cell = worksheet.find('pending', in_column=6) # Giả định cột Status là cột F (cột 6)
-            
-            # CẬP NHẬT TRẠNG THÁI: 'pending' -> 'PROCESSING'
-            if cell:
-                row_to_update = cell.row
-                worksheet.update_cell(row_to_update, cell.col, 'PROCESSING')
-                logging.info(f"Đã cập nhật trạng thái của tập {episode_id} thành 'PROCESSING'.")
-            else:
-                row_to_update = None
+        if not episode_data:
+            logging.info("KẾT THÚC: Không có tập nào cần xử lý.")
+            return
 
-            processed_data = {
-                'ID': episode_id,
-                'Name': episode_name,
-                'Core Theme': episode_to_process.get('Core Theme', ''),
-                'Content/Input': episode_to_process.get('Content/Input', ''),
-                'ImageFolder': episode_to_process.get('ImageFolder', ''),
-                'Status_Row': row_to_update # Lưu lại hàng cần cập nhật
-            }
-            return processed_data
+        row_index = episode_data['Status_Row']
+        
+        # BƯỚC 2 & 3: TẠO VIDEO (Thay thế bằng các hàm thực tế)
+        video_path, metadata = mock_generate_and_create(episode_data)
+        
+        if not video_path:
+            logging.error("LỖI PIPELINE: Không tạo được video.")
+            update_episode_status(row_index, 'FAILED_VIDEO_CREATE')
+            return
+
+        # BƯỚC 4: UPLOAD YOUTUBE
+        logging.info("BƯỚC 4: Bắt đầu Upload YouTube...")
+        # Giả định hàm upload_youtube_video được import từ upload_youtube.py
+        # upload_success = upload_youtube_video(video_path, metadata)
+        upload_success = True # Tạm thời giả định thành công
+        
+        # BƯỚC 5: CẬP NHẬT TRẠNG THÁI CUỐI CÙNG
+        if upload_success:
+            update_episode_status(row_index, 'COMPLETED')
         else:
-            logging.info("Không có tập nào có Status là 'pending'.")
-            return None
+            update_episode_status(row_index, 'FAILED_UPLOAD')
+            
+        logging.info("KẾT THÚC: Quy trình xử lý tập phim đã hoàn tất.")
 
     except Exception as e:
-        logging.error(f"Lỗi trong quá trình lấy nội dung từ Sheet: {e}")
-        return None
+        logging.error(f"LỖI KHÔNG XÁC ĐỊNH TRONG PIPELINE: {e}", exc_info=True)
+
+if __name__ == '__main__':
+    run_pipeline()
