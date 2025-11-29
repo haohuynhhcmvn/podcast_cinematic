@@ -1,13 +1,12 @@
-# scripts/glue_pipeline.py
 import logging
 import sys
 import os
 
-# Setup Path (Dùng để import các file ngang hàng)
+# 1. THIẾT LẬP MÔI TRƯỜNG & IMPORTS
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils import setup_environment
-from fetch_content import fetch_content
+from fetch_content import fetch_content, authenticate_google_sheet
 from generate_script import generate_long_script, generate_short_script
 from create_tts import create_tts
 from create_video import create_video
@@ -18,11 +17,9 @@ from upload_youtube import upload_video
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- BỔ SUNG: HÀM CẬP NHẬT STATUS (TỪ FETCH_CONTENT) ---
-# Cần phải import hàm này hoặc tái tạo nó để cập nhật trạng thái sau khi xử lý xong
-# (Giả định fetch_content đã trả về 'worksheet' và 'row_idx')
+# HÀM CẬP NHẬT TRẠNG THÁI CUỐI CÙNG
 def update_status_completed(worksheet, row_idx, status):
-    """Cập nhật trạng thái cuối cùng trên Google Sheet."""
+    """Cập nhật trạng thái cuối cùng trên Google Sheet, sử dụng Status khác cho mục đích testing."""
     try:
         # Giả định cột Status là cột 6 (F)
         worksheet.update_cell(row_idx, 6, status) 
@@ -30,7 +27,7 @@ def update_status_completed(worksheet, row_idx, status):
     except Exception as e:
         logger.error(f"❌ Lỗi update sheet: {e}")
 
-# --- HÀM CHÍNH ---
+# --- HÀM CHÍNH: ORCHESTRATOR ---
 
 def main():
     setup_environment()
@@ -38,7 +35,6 @@ def main():
     # 1. Fetch Dữ liệu từ Google Sheet
     task = fetch_content()
     if not task: return
-    
     data = task['data']
     eid = data['ID']
     row_idx = task['row_idx']
@@ -46,24 +42,24 @@ def main():
 
     # ====================================================================
     # --- LUỒNG VIDEO DÀI (16:9) ---
-    # TẠM KHÓA: Mở lại bằng cách xóa dấu # ở đầu mỗi dòng
+    # KHÓA TẠM THỜI: Xóa dấu # ở đầu mỗi dòng để mở lại sản xuất FULL VIDEO
     # ====================================================================
     logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
     
-    # # BƯỚC 1: Tạo Script Dài
+    # # BƯỚC 1: Tạo Script Dài (Gọi AI)
     # script_long = generate_long_script(data)
     
     # # BƯỚC 2: TTS Dài & Mix Audio
     # if script_long:
     #     tts_long = create_tts(script_long, eid, "long")
     #     if tts_long:
-    #         audio_final = auto_music_sfx(tts_long, eid)
+    #         audio_final = auto_music_sfx(tts_long, eid) # Thêm nhạc nền và Outro
             
     # # BƯỚC 3: Tạo Video 16:9 & Upload
     #         if audio_final:
     #             vid_path = create_video(audio_final, eid)
     #             if vid_path:
-    #                 upload_video(vid_path, data)
+    #                 upload_video(vid_path, data) # Upload Video Dài
     # --------------------------------------------------------------------
 
 
@@ -72,7 +68,7 @@ def main():
     # ====================================================================
     logger.info("📱 --- LUỒNG SHORTS (9:16) ĐANG CHẠY TEST ---")
     
-    # 1. Generate Script Short (Trả về Script và Title Hook)
+    # 1. Generate Script Short (Tạo nội dung và Tiêu đề Hook)
     result_shorts = generate_short_script(data)
     
     if result_shorts:
@@ -95,13 +91,13 @@ def main():
             # 4. Upload Shorts (Nếu có file)
             if shorts_path:
                 shorts_data = data.copy()
-                # Thêm #Shorts vào tiêu đề
+                # Ghi đè Title và thêm tag #Shorts
                 shorts_data['Name'] = f"{data.get('Name')} | {hook_title} #Shorts" 
                 
-                # Hàm upload_video() sẽ tự xử lý việc upload lên YouTube
+                # Gọi hàm upload để đẩy Shorts lên YouTube
                 upload_video(shorts_path, shorts_data)
 
-    # 5. Update Sheet: Ghi Status khác để dễ dàng lọc kết quả test
+    # 5. Update Sheet: Dùng Status khác để dễ dàng lọc kết quả test
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
     logger.info("🎉 HOÀN TẤT LUỒNG TEST SHORTS")
 
