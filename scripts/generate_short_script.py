@@ -1,21 +1,22 @@
-# ./scripts/generate_short_script.py (Tạo kịch bản ngắn, hấp dẫn cho Shorts)
+# ./scripts/generate_short_script.py (Generate short, compelling script for Shorts)
 import os
 import logging
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - 관광-message)s')
+# Fixing the logging format error for consistency
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def generate_short_script(episode_data):
     """
-    Tạo kịch bản siêu ngắn, hấp dẫn (hook) cho video Shorts.
-    Độ dài mục tiêu: 100-120 từ (tương đương 45-60 giây đọc).
+    Generates an ultra-short, compelling hook script for YouTube Shorts.
+    Target length: 100-120 words (equivalent to 45-60 seconds of reading).
     """
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: 
-        logging.error("Thiếu OPENAI_API_KEY."); return None
+        logging.error("Missing OPENAI_API_KEY."); return None
 
     try:
         client = OpenAI(api_key=api_key)
@@ -25,47 +26,48 @@ def generate_short_script(episode_data):
         core_theme = episode_data['Core Theme']
         raw_content = episode_data['Content/Input']
         
-        # --- PROMPT MỚI: TẬP TRUNG VÀO HOOK VÀ SỰ NGẮN GỌN ---
-        # Yêu cầu kịch bản ngắn, gây bất ngờ, không cần chào/kết.
+        # --- NEW PROMPT: FOCUS ON HOOK AND CONCISENESS (IN ENGLISH) ---
+        # Request a short, surprising script without intro/outro.
         system_prompt = f"""
-        Bạn là **Chuyên gia tạo Content Hút Khách** cho TikTok/YouTube Shorts.
-        Nhiệm vụ của bạn là tạo ra một kịch bản audio **SIÊU NGẮN, GIẬT GÂN** (a powerful, surprising HOOK) để giữ chân người xem trong 5 giây đầu.
+        You are a **Viral Content Expert** for TikTok/YouTube Shorts.
+        Your mission is to generate an **ULTRA-SHORT, SENSATIONAL** audio script (a powerful, surprising HOOK) to retain viewers within the first 5 seconds.
 
-        QUY TẮC TẠO KỊCH BẢN (short_script):
-        1. **Thời lượng Cứng:** Độ dài tối đa **120 từ**. Đây là yêu cầu BẮT BUỘC.
-        2. **Nội dung:** Phải là một góc nhìn độc đáo, một bí mật, hoặc một câu hỏi gây sốc về nhân vật/chủ đề.
-        3. **Giọng văn:** Nhanh, kịch tính, dồn dập, kết thúc mở hoặc bằng một tuyên bố mạnh mẽ.
-        4. **Định dạng:** Chỉ văn bản cần được đọc (không chào/kết).
+        SCRIPT GENERATION RULES (short_script):
+        1. **Language:** The script MUST be written **ENTIRELY IN ENGLISH**.
+        2. **Hard Length Limit:** Maximum length is **120 words**. This is a STRICT requirement.
+        3. **Content:** Must be a unique angle, a secret, or a shocking question about the character/topic.
+        4. **Tone:** Fast-paced, dramatic, urgent, ending with an open conclusion or a powerful statement.
+        5. **Format:** Only include the text to be read (no intro/outro).
 
-        CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{core_theme}"
-        TÊN NHÂN VẬT/TIÊU ĐỀ: "{title}"
+        CORE THEME FOR THIS EPISODE: "{core_theme}"
+        CHARACTER/TOPIC NAME: "{title}"
         """
 
         user_prompt = f"""
-        NỘI DUNG THÔ ĐỂ LẤY Ý TƯỞNG HOOK:\n---\n{raw_content}\n---\n
-        Hãy tạo Kịch bản **NGẮN (dưới 120 từ)** và trả về dưới dạng JSON với 1 trường:
+        RAW CONTENT FOR HOOK IDEA GENERATION:\n---\n{raw_content}\n---\n
+        Generate the **SHORT SCRIPT (under 120 words)** and return it as a JSON with 1 field:
         {{
-            "short_script": "[Nội dung kịch bản siêu ngắn, kịch tính]"
+            "short_script": "[Sensational, ultra-short script content in English]"
         }}
         """
 
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.9, # Tăng nhiệt độ để nội dung bất ngờ hơn
+            temperature=0.9, # Increased temperature for more surprising content
             response_format={"type": "json_object"} 
         )
         
-        # --- XỬ LÝ VÀ LƯU KỊCH BẢN CUỐI CÙNG ---
+        # --- PROCESS AND SAVE THE FINAL SCRIPT ---
         try:
             json_response = json.loads(response.choices[0].message.content)
             short_script = json_response.get('short_script', '')
             
         except json.JSONDecodeError as e:
-            logging.error(f"Lỗi phân tích cú pháp JSON Shorts từ OpenAI: {e}")
+            logging.error(f"Error parsing Shorts JSON from OpenAI: {e}")
             return None
 
-        # LƯU SCRIPT NGẮN
+        # SAVE SHORT SCRIPT
         output_dir = os.path.join('data', 'episodes')
         os.makedirs(output_dir, exist_ok=True)
         script_filename = f"{episode_id}_short_script.txt"
@@ -74,10 +76,10 @@ def generate_short_script(episode_data):
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(short_script.strip())
         
-        logging.info(f"Đã tạo kịch bản Shorts thành công. Script lưu tại: {script_path}")
+        logging.info(f"Successfully created Shorts script. Script saved at: {script_path}")
         
         return {'short_script_path': script_path}
 
     except Exception as e:
-        logging.error(f"Lỗi tổng quát khi tạo kịch bản Shorts: {e}", exc_info=True)
+        logging.error(f"General error while creating Shorts script: {e}", exc_info=True)
         return None
