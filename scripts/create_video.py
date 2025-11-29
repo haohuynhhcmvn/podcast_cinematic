@@ -33,7 +33,7 @@ def create_video(audio_path, episode_id):
         out_path = get_path('outputs', 'video', f"{episode_id}_full_169.mp4")
         
         # Render
-        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='fast', logger=None)
+        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='fast', logger='bar')
         logger.info(f"🎬 Video 16:9 xong: {out_path}")
         return out_path
     except Exception as e:
