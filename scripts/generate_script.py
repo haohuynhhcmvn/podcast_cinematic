@@ -1,132 +1,214 @@
-# ./script/generate_script.py (ĐÃ CẬP NHẬT: Dùng GPT-4o-mini và rút ngắn kịch bản)
+# File: ./scripts/generate_script.py
+# Chức năng: Gọi API LLM (OpenAI) để tạo kịch bản đầy đủ và metadata từ dữ liệu đầu vào.
+
 import os
+import sys
+import json
 import logging
-import json 
-from openai import OpenAI
+import time
+import random 
+from openai import OpenAI, APIError
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- CONFIGURATION ---
-TARGET_WORD_COUNT = 1000 # Rút ngắn kịch bản xuống 800 - 1000 từ (khoảng 5-7 phút)
-MODEL = "gpt-4o-mini"    # Sử dụng mô hình tốc độ cao và chi phí thấp
+# Cấu hình API cho việc TẠO KỊCH BẢN (Sử dụng OPENAI)
+MODEL_NAME = "gpt-4o-mini" # Sử dụng mô hình OpenAI phù hợp
+MAX_RETRIES = 5
+INITIAL_DELAY = 2
 
-# --- KHAI BÁO HÀM ĐỂ KHỚP VỚI GLUE_PIPELINE.PY ---
-# Đã đổi tên hàm từ generate_script thành generate_full_script
-def generate_full_script(episode_data):
+# --- HÀM GỌI API OPENAI ---
+def call_openai_api(system_prompt: str, user_query: str) -> str:
+    """Gọi API OpenAI và xử lý exponential backoff."""
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: 
-        logging.error("Thiếu OPENAI_API_KEY."); return None
+    if not api_key:
+        logging.error("Thiếu OPENAI_API_KEY. Không thể gọi API tạo kịch bản.")
+        return None
 
-    try:
-        client = OpenAI(api_key=api_key)
-        
-        # SỬ DỤNG CÁC KEY ĐƯỢC CUNG CẤP TỪ fetch_content.py
-        episode_id = episode_data['ID']
-        title = episode_data.get('title', 'Unknown Title') # Sử dụng 'title' từ fetch_content
-        core_theme = episode_data.get('core_theme', 'Unknown Theme') # Sử dụng 'core_theme' từ fetch_content
-        text_hash = episode_data.get('text_hash', str(episode_id)) # Dùng hash để đặt tên file
-        
-        # --- 1. ĐỊNH NGHĨA CÂU CHÀO VÀ CÂU KẾT CỐ ĐỊNH ---
-        CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại" 
-        
-        PODCAST_INTRO = f"""
-Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
-Hôm nay, chúng ta sẽ đi sâu vào hành trình của: {title}.
-"""
-        
-        PODCAST_OUTRO = f"""
-Và đó là tất cả những gì chúng ta đã khám phá trong tập {CHANNEL_NAME} ngày hôm nay. 
-Nếu bạn thấy nội dung này hữu ích và truyền cảm hứng, đừng quên nhấn nút Đăng ký, chia sẻ và theo dõi để không bỏ lỡ những hành trình tri thức tiếp theo. 
-Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
-"""
-        
-        # --- 2. CẬP NHẬT PROMPT: YÊU CẦU ĐỘ DÀI KỊCH BẢN CHO GPT-4o-mini ---
-        system_prompt = f"""
-        Bạn là **Master Storyteller** (Người kể chuyện bậc thầy) với giọng văn **Nam Trầm, lôi cuốn, có chiều sâu và truyền cảm hứng**.
-        Nhiệm vụ của bạn là biến nội dung thô dưới đây thành một **đối tượng JSON** chứa Kịch bản Audio Cinematic (Chỉ phần nội dung chính) và Metadata YouTube đi kèm.
+    client = OpenAI(api_key=api_key)
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_query}
+    ]
 
-        QUY TẮC TẠO KỊCH BẢN (core_script):
-        1. **Giọng văn:** Lôi cuốn, sắc nét, rõ ràng, giàu hình ảnh.
-        2. **Thời lượng quan trọng (ĐÃ RÚT NGẮN):** Kịch bản **phần nội dung chính** nên có độ dài khoảng **800 - {TARGET_WORD_COUNT} từ**. Đây là yêu cầu cứng để đảm bảo video đạt tối thiểu 5-7 phút. Hãy viết chất lượng, cô đọng để đạt được độ dài này.
-        3. **Định dạng:** Chỉ văn bản cần được đọc, KHÔNG bao gồm lời chào/kết.
-
-        QUY TẮC TẠO METADATA YOUTUBE:
-        1. **youtube_title:** Tiêu đề hấp dẫn, tối đa 100 ký tự.
-        2. **youtube_description:** Mô tả đầy đủ (khoảng 300 từ), bao gồm tóm tắt, kêu gọi hành động (CTA), và hashtag.
-        3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, viết thường, ngăn cách bằng dấu phẩy.
-
-        CHỦ ĐỀ CỐT LÕI CỦA TẬP NÀY: "{core_theme}"
-        TÊN NHÂN VẬT/TIÊU ĐỀ: "{title}"
-        """
-
-        user_prompt = f"""
-        TẬP TRUNG VÀO: Chủ đề '{core_theme}' của tập '{title}'.
-        
-        Hãy tạo Kịch bản **NỘI DUNG CHÍNH** và Metadata YouTube, trả về dưới dạng JSON với 4 trường sau:
-        {{
-            "core_script": "[Nội dung kịch bản chính, KHÔNG BAO GỒM LỜI CHÀO/KẾT]",
-            "youtube_title": "[Tiêu đề video]",
-            "youtube_description": "[Mô tả video]",
-            "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy]"
-        }}
-        """
-
-        response = client.chat.completions.create(
-            model=MODEL, # Dùng GPT-4o-mini
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.7,
-            response_format={"type": "json_object"} 
-        )
-        
-        # --- 3. XỬ LÝ VÀ GHÉP KỊCH BẢN CUỐI CÙNG ---
+    for attempt in range(MAX_RETRIES):
         try:
-            json_response = json.loads(response.choices[0].message.content)
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.7 # Thiết lập nhiệt độ phù hợp cho kịch bản sáng tạo
+            )
             
-            core_script = json_response.get('core_script', '')
-            youtube_title = json_response.get('youtube_title', title)
-            youtube_description = json_response.get('youtube_description', '')
-            youtube_tags_raw = json_response.get('youtube_tags', '')
+            # Xử lý phản hồi thành công
+            text = response.choices[0].message.content.strip()
             
-        except json.JSONDecodeError as e:
-            logging.error(f"Lỗi phân tích cú pháp JSON từ OpenAI: {e}")
-            raise # Ném lỗi để bắt ở ngoài
+            if text:
+                return text
+            else:
+                logging.warning(f"API trả về nội dung trống. Thử lại sau.")
 
-        # GHÉP KỊCH BẢN CUỐI CÙNG: CÂU CHÀO + NỘI DUNG CHÍNH + CÂU KẾT
-        script_content = PODCAST_INTRO.replace("{title}", title).strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
-        
-        # --- 4. LƯU SCRIPT VÀ TRẢ VỀ DATA ---
-        output_dir = os.path.join('data', 'episodes')
-        os.makedirs(output_dir, exist_ok=True)
-        # Đổi tên file để dùng hash
-        script_json_path = os.path.join(output_dir, f"{text_hash}_full_script.json")
-        script_txt_path = os.path.join(output_dir, f"{text_hash}_full_script.txt")
-        
-        # Lưu toàn bộ JSON (metadata)
-        with open(script_json_path, 'w', encoding='utf-8') as f:
-            json_response['full_script_content'] = script_content
-            json.dump(json_response, f, ensure_ascii=False, indent=4)
-            
-        # Lưu toàn bộ kịch bản đã ghép (Intro + Core + Outro)
-        with open(script_txt_path, 'w', encoding='utf-8') as f:
+        except APIError as e:
+            # Lỗi API của OpenAI (ví dụ: Rate limit, Authentication error)
+            logging.warning(f"Lỗi API OpenAI (Lần {attempt+1}/{MAX_RETRIES}): {e}")
+        except Exception as e:
+            # Lỗi không xác định
+            logging.error(f"Lỗi không xác định khi gọi API: {e}")
+            break
+
+        if attempt < MAX_RETRIES - 1:
+            delay = INITIAL_DELAY * (2 ** attempt) + random.uniform(0, 1)
+            logging.info(f"Đang chờ {delay:.2f} giây trước khi thử lại...")
+            time.sleep(delay)
+        else:
+            logging.error("Đã thử lại tối đa. Thất bại khi tạo kịch bản.")
+            return None
+    return None
+
+# --- HÀM CHÍNH: TẠO KỊCH BẢN ĐẦY ĐỦ ---
+def generate_full_script(episode_data: dict) -> dict:
+    """
+    Tạo kịch bản đầy đủ (full script) và metadata bằng cách gọi API LLM (OpenAI).
+    """
+    
+    # Chuẩn bị dữ liệu đầu vào
+    title = episode_data.get('title', 'Câu chuyện hấp dẫn')
+    character = episode_data.get('character', 'Ngôi sao nhạc pop thế giới')
+    core_theme = episode_data.get('core_theme', 'Hành trình vượt qua thử thách để đạt được thành công')
+    text_hash = episode_data.get('text_hash')
+    episode_id = episode_data.get('ID')
+
+    if not text_hash:
+        logging.error("Không có hash để lưu file kịch bản.")
+        return {}
+    
+    # 1. Định nghĩa System Prompt và User Query
+    system_prompt = (
+        "Bạn là một biên kịch podcast chuyên nghiệp. Nhiệm vụ của bạn là viết một kịch bản podcast "
+        "dài, hấp dẫn, có tính giáo dục và truyền cảm hứng. Kịch bản phải có độ dài khoảng 1000-1200 từ, "
+        "sử dụng ngôn ngữ thân mật, gần gũi, giọng điệu kể chuyện cuốn hút. "
+        "Kịch bản phải được chia thành các đoạn văn ngắn, rõ ràng, phù hợp cho việc chuyển văn bản thành giọng nói (TTS). "
+        "Đảm bảo không đưa tiêu đề (TITLE) hay tiêu đề phụ (HEADING) vào nội dung kịch bản, chỉ là đoạn văn thuần túy."
+    )
+
+    user_query = (
+        f"Viết một kịch bản podcast hoàn chỉnh (khoảng 1000-1200 từ) dựa trên các thông tin sau:\n"
+        f"- Tên tập/Tiêu đề: {title}\n"
+        f"- Nhân vật chính: {character}\n"
+        f"- Chủ đề cốt lõi: {core_theme}\n"
+        f"Hãy đảm bảo nội dung hấp dẫn, truyền cảm hứng và không được vượt quá 1200 từ."
+    )
+
+    # 2. Gọi API để tạo kịch bản
+    logging.info(f"Đang gọi LLM (OpenAI) để tạo kịch bản DÀI cho ID {episode_id}...")
+    # Sửa tên hàm gọi API:
+    script_content = call_openai_api(system_prompt, user_query)
+    
+    if not script_content:
+        logging.error("LLM (OpenAI) không tạo được kịch bản.")
+        return {}
+
+    # 3. Lưu kịch bản vào file
+    output_dir = os.path.join('data', 'episodes')
+    os.makedirs(output_dir, exist_ok=True)
+    full_script_path = os.path.join(output_dir, f"{text_hash}_full_script.txt")
+    
+    try:
+        with open(full_script_path, 'w', encoding='utf-8') as f:
             f.write(script_content)
-        
-        logging.info(f"Đã tạo kịch bản (GPT-4o-mini, ~1000 từ) và metadata thành công. Script lưu tại: {script_txt_path}")
-        
-        # Trả về Dictionary chứa cả path và metadata
-        return {
-            'full_script_json_path': script_json_path,
-            'full_script_txt_path': script_txt_path,
-            'full_title': youtube_title,
-            'full_description': youtube_description,
-            'youtube_tags': [tag.strip() for tag in youtube_tags_raw.split(',')] 
-        }
-
+        logging.info(f"Kịch bản DÀI đã được lưu thành công tại: {full_script_path}")
     except Exception as e:
-        logging.error(f"Lỗi tổng quát khi tạo kịch bản: {e}", exc_info=True)
-        # Tạo file JSON thất bại để pipeline có artifact để kiểm tra
-        if 'text_hash' in locals() and not os.path.exists(script_json_path):
-             with open(script_json_path, 'w', encoding='utf-8') as f:
-                 json.dump({"error": str(e), "status": "failed", "model": MODEL}, f, ensure_ascii=False, indent=4)
-        raise # Ném lại lỗi để glue_pipeline bắt
+        logging.error(f"Lỗi khi lưu file kịch bản: {e}")
+        return {}
+        
+    # 4. Giả lập Metadata 
+    metadata = {
+        'title': title,
+        'description': f"Tóm tắt câu chuyện về {character}. Chủ đề: {core_theme}.",
+        'keywords': f"{character}, {title}, {core_theme}",
+    }
+    
+    # Lưu metadata (ví dụ: JSON)
+    metadata_path = os.path.join(output_dir, f"{text_hash}_metadata.json")
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=4)
+    
+    return {
+        'full_script_txt_path': full_script_path,
+        'metadata': metadata,
+        'metadata_json_path': metadata_path,
+    }
+
+# --- HÀM TẠO KỊCH BẢN NGẮN (SHORT SCRIPT) ---
+def generate_short_script(episode_data: dict) -> dict:
+    """
+    Tạo kịch bản ngắn (short script) tóm tắt nội dung chính bằng cách gọi API LLM (OpenAI).
+    """
+    
+    # Chuẩn bị dữ liệu đầu vào
+    title = episode_data.get('title', 'Tóm tắt câu chuyện hấp dẫn')
+    character = episode_data.get('character', 'Ngôi sao nhạc pop thế giới')
+    core_theme = episode_data.get('core_theme', 'Hành trình vượt qua thử thách để đạt được thành công')
+    text_hash = episode_data.get('text_hash')
+    episode_id = episode_data.get('ID')
+
+    if not text_hash:
+        logging.error("Không có hash để lưu file kịch bản ngắn.")
+        return {}
+    
+    # 1. Định nghĩa System Prompt và User Query
+    system_prompt = (
+        "Bạn là một biên kịch chuyên nghiệp. Nhiệm vụ của bạn là viết một tóm tắt kịch bản ngắn (short script) "
+        "khoảng 150-200 từ, có tính viral cao, dùng cho video dạng Shorts/TikTok. "
+        "Kịch bản phải tóm tắt được nội dung chính một cách hấp dẫn. "
+        "Kịch bản phải được chia thành các đoạn văn ngắn, rõ ràng, phù hợp cho việc chuyển văn bản thành giọng nói (TTS). "
+        "Đảm bảo không đưa tiêu đề (TITLE) hay tiêu đề phụ (HEADING) vào nội dung kịch bản, chỉ là đoạn văn thuần túy."
+    )
+
+    user_query = (
+        f"Viết một kịch bản ngắn (khoảng 150-200 từ) dựa trên các thông tin sau:\n"
+        f"- Tên tập/Tiêu đề: {title}\n"
+        f"- Nhân vật chính: {character}\n"
+        f"- Chủ đề cốt lõi: {core_theme}\n"
+        f"Hãy đảm bảo nội dung hấp dẫn, có tính lan truyền và không được vượt quá 200 từ."
+    )
+
+    # 2. Gọi API để tạo kịch bản
+    logging.info(f"Đang gọi LLM (OpenAI) để tạo kịch bản NGẮN cho ID {episode_id}...")
+    # Sửa tên hàm gọi API:
+    script_content = call_openai_api(system_prompt, user_query)
+    
+    if not script_content:
+        logging.error("LLM (OpenAI) không tạo được kịch bản ngắn.")
+        return {}
+
+    # 3. Lưu kịch bản vào file
+    output_dir = os.path.join('data', 'episodes')
+    os.makedirs(output_dir, exist_ok=True)
+    short_script_path = os.path.join(output_dir, f"{text_hash}_short_script.txt")
+    
+    try:
+        with open(short_script_path, 'w', encoding='utf-8') as f:
+            f.write(script_content)
+        logging.info(f"Kịch bản NGẮN đã được lưu thành công tại: {short_script_path}")
+    except Exception as e:
+        logging.error(f"Lỗi khi lưu file kịch bản ngắn: {e}")
+        return {}
+        
+    # Metadata (có thể đơn giản hơn cho short)
+    metadata = {
+        'short_title': title,
+        'summary': f"Tóm tắt ngắn về {character}. Chủ đề: {core_theme}.",
+    }
+    
+    # Lưu metadata (ví dụ: JSON)
+    metadata_path = os.path.join(output_dir, f"{text_hash}_short_metadata.json")
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=4)
+    
+    return {
+        'short_script_txt_path': short_script_path,
+        'metadata': metadata,
+        'metadata_json_path': metadata_path,
+    }
