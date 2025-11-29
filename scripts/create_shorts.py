@@ -14,7 +14,7 @@ def create_shorts(audio_path, title_text, episode_id):
     try:
         # 1. Load Voice (TTS)
         # Tăng âm lượng giọng đọc lên 1.3 lần
-        voice = AudioFileClip(audio_path).volumex(1.3) 
+        voice = AudioFileClip(audio_path).volumex(1.5) 
         duration = min(voice.duration, MAX_DURATION) 
         voice = voice.subclip(0, duration) 
         
