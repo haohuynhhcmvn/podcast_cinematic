@@ -3,20 +3,20 @@ import logging
 import sys
 import os
 
-# Setup Path (Dùng để import các file ngang hàng)
+# Setup Path 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 1. IMPORT CÁC MODULE CƠ BẢN VÀ DATA
 from utils import setup_environment
-from fetch_content import fetch_content, authenticate_google_sheet # Dùng authenticate_google_sheet cho hàm update status
-from generate_script import generate_long_script, generate_short_script # Tạo script
-from auto_music_sfx import auto_music_sfx # Trộn nhạc
+from fetch_content import fetch_content, authenticate_google_sheet 
+from generate_script import generate_long_script, generate_short_script 
+from auto_music_sfx import auto_music_sfx 
 
 # 2. IMPORT MODULE XUẤT BẢN & VIDEO
-from create_tts import create_tts # Tạo giọng nói
-from create_video import create_video # Dựng video 16:9
-from create_shorts import create_shorts # Dựng video 9:16 (BẬT)
-from upload_youtube import upload_video # Upload YouTube (BẬT)
+from create_tts import create_tts 
+from create_video import create_video 
+from create_shorts import create_shorts 
+from upload_youtube import upload_video 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def main():
 
     # ====================================================================
     # --- LUỒNG VIDEO DÀI (16:9) ---
-    # TẠM KHÓA: Mở lại bằng cách xóa dấu # ở đầu mỗi dòng
+    # TẠM KHÓA: Giữ nguyên trạng thái khóa để test shorts
     # ====================================================================
     logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
     
@@ -70,11 +70,11 @@ def main():
     #                 if vid_path:
     #                     # TRUYỀN METADATA MỚI CHO UPLOAD
     #                     upload_data = {
-    #                         'Name': metadata_long['youtube_title'],
-    #                         'Content/Input': metadata_long['youtube_description'],
-    #                         'Tags': metadata_long['youtube_tags']
+    #                         'Title': metadata_long.get('youtube_title', data.get('Name')),
+    #                         'Summary': metadata_long.get('youtube_description', 'Mô tả video dài.'),
+    #                         'Tags': metadata_long.get('youtube_tags', 'podcast, story, viral')
     #                     }
-    #                     upload_video(vid_path, upload_data) # Upload Video Dài
+    #                     upload_video(vid_path, upload_data) # Sử dụng metadata do AI tạo
     # --------------------------------------------------------------------
 
 
@@ -87,7 +87,6 @@ def main():
     result_shorts = generate_short_script(data)
     
     if result_shorts:
-        # Hứng 2 giá trị: đường dẫn script và đường dẫn tiêu đề
         script_short_path, title_short_path = result_shorts
         
         # Đọc nội dung Tiêu đề Hook
@@ -106,14 +105,24 @@ def main():
             
             # 4. UPLOAD SHORTS
             if shorts_path:
-                shorts_data = data.copy()
-                # Ghi đè Title và thêm tag #Shorts
-                shorts_data['Name'] = f"{data.get('Name')} | {hook_title} #Shorts" 
+                # TRUYỀN METADATA CHO UPLOAD (Sử dụng Title và Description lôi cuốn)
+                
+                # Tiêu đề: Lấy HOOK TITLE + Tên tập + #Shorts
+                short_title = f"{hook_title} | {data.get('Name')} #Shorts"
+                
+                # Mô tả: Lấy nội dung từ Content/Input để AI có thể dùng làm mô tả hook
+                short_description = data.get('Content/Input', 'Video Shorts hấp dẫn, xem ngay!')
+                
+                upload_data = {
+                    'Title': short_title, 
+                    'Summary': short_description, 
+                    'Tags': 'shorts, viral, podcast, storytelling'
+                }
                 
                 # Gọi hàm upload để đẩy Shorts lên YouTube
-                upload_video(shorts_path, shorts_data)
+                upload_video(shorts_path, upload_data)
 
-    # 5. Update Sheet: Ghi Status để đánh dấu quá trình test Shorts hoàn tất
+    # 5. Update Sheet: Ghi Status
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
     logger.info("🎉 HOÀN TẤT LUỒNG TEST SHORTS")
 
