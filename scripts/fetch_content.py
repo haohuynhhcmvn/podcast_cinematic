@@ -1,85 +1,149 @@
-# scripts/glue_pipeline.py
-# Đây là file điều phối (glue) các bước trong pipeline tự động hóa podcast.
+# /scripts/fetch_content.py
+# Chức năng: Kết nối Google Sheet, lấy bản ghi 'pending', TẠO HASH/THƯ MỤC,
+# và cập nhật trạng thái sang 'PROCESSING' một cách an toàn.
 
 import os
+import json
+import gspread
 import logging
-# Sửa lỗi Import: Import hàm fetch_content và đổi tên (alias) thành fetch_pending_episodes
-from fetch_content import fetch_content as fetch_pending_episodes, update_episode_status
-from upload_youtube import upload_youtube_video
-# Cần import các hàm từ các script tạo nội dung. Chúng ta sẽ giả lập chúng ở đây.
-# from generate_script import generate_script_and_audio
-# from create_video import create_podcast_video
-# from create_shorts import create_shorts_video
+import hashlib
+from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def mock_generate_and_create(data: dict) -> tuple[str | None, dict | None]:
-    """
-    Hàm mô phỏng việc tạo kịch bản, audio, và video.
-    Trong môi trường thực, các bước này sẽ được thay thế bằng các hàm gọi API
-    và xử lý MoviePy thực tế.
-    """
-    logging.info("BƯỚC 2 & 3: Bắt đầu tạo nội dung (Mô phỏng)...")
+# --- HÀM HỖ TRỢ ---
+
+def generate_hash(text: str) -> str:
+    """Tạo SHA256 hash 8 ký tự từ chuỗi văn bản."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:8]
+
+def authenticate_google_sheet():
+    """Xác thực gspread bằng Service Account JSON."""
+    load_dotenv()
+    service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON') 
     
-    # Định nghĩa các đường dẫn giả định cho các bước tiếp theo
-    video_output_path = os.path.join('outputs', 'video', f"{data['ID']}_full_podcast_169.mp4")
-    metadata = {
-        'title': f"Podcast: {data.get('Name')} | {data.get('Core Theme')}",
-        'description': f"Tập podcast mới nhất về chủ đề: {data.get('Core Theme')}. Hash: {data['text_hash']}",
-        'tags': ['podcast', 'podcastviet', data.get('Core Theme')]
-    }
-    
-    # Tạo file video giả để mô phỏng thành công
+    if not service_account_file or not os.path.exists(service_account_file):
+        logging.error(f"File Service Account JSON không tồn tại tại: {service_account_file}")
+        return None
+        
     try:
-        os.makedirs(os.path.dirname(video_output_path), exist_ok=True)
-        with open(video_output_path, 'w') as f:
-            f.write("Mô phỏng nội dung video đã tạo.")
-        logging.info(f"Đã tạo file video mô phỏng tại: {video_output_path}")
+        gc = gspread.service_account(filename=service_account_file)
+        logging.info("Xác thực Google Sheet thành công.")
+        return gc
     except Exception as e:
-        logging.error(f"Lỗi tạo file mô phỏng: {e}")
-        return None, None
-        
-    logging.info("Tạo nội dung mô phỏng thành công.")
-    return video_output_path, metadata
+        logging.error(f"Lỗi xác thực Google Sheet: {e}")
+        return None
 
-def run_pipeline():
-    """Chạy toàn bộ quy trình tự động hóa."""
+def get_column_index(worksheet, header_name):
+    """Tìm chỉ mục cột (1-based) dựa trên tiêu đề cột linh hoạt."""
     try:
-        # BƯỚC 1: LẤY BẢN GHI PENDING
-        logging.info("BẮT ĐẦU: Lấy bản ghi 'pending' từ Google Sheet...")
-        # Gọi hàm fetch_content, nhưng được alias thành fetch_pending_episodes
-        episode_data = fetch_pending_episodes()
-        
-        if not episode_data:
-            logging.info("KẾT THÚC: Không có tập nào cần xử lý.")
-            return
+        headers = worksheet.row_values(1) # Hàng 1 là headers
+        for idx, header in enumerate(headers, start=1):
+            if str(header).strip().lower() == header_name.lower():
+                return idx
+        return None
+    except Exception as e:
+        logging.error(f"Lỗi khi tìm chỉ mục cột '{header_name}': {e}")
+        return None
 
-        row_index = episode_data['Status_Row']
-        
-        # BƯỚC 2 & 3: TẠO VIDEO (Thay thế bằng các hàm thực tế)
-        video_path, metadata = mock_generate_and_create(episode_data)
-        
-        if not video_path:
-            logging.error("LỖI PIPELINE: Không tạo được video.")
-            update_episode_status(row_index, 'FAILED_VIDEO_CREATE')
-            return
+# --- HÀM CHÍNH ---
 
-        # BƯỚC 4: UPLOAD YOUTUBE
-        logging.info("BƯỚC 4: Bắt đầu Upload YouTube...")
-        # Giả định hàm upload_youtube_video được import từ upload_youtube.py
-        # upload_success = upload_youtube_video(video_path, metadata)
-        upload_success = True # Tạm thời giả định thành công
+def fetch_content(): # Tên hàm GỐC là fetch_content
+    """
+    Lấy bản ghi 'pending', tạo hash, tạo thư mục assets và chuyển trạng thái sang 'PROCESSING'.
+    """
+    load_dotenv()
+    gc = authenticate_google_sheet()
+    sheet_id = os.getenv('GOOGLE_SHEET_ID')
+    
+    if not gc or not sheet_id: 
+        return None
+
+    try:
+        sh = gc.open_by_key(sheet_id)
+        worksheet = sh.get_worksheet(0) # Lấy sheet đầu tiên
+        list_of_dicts = worksheet.get_all_records() 
         
-        # BƯỚC 5: CẬP NHẬT TRẠNG THÁI CUỐI CÙNG
-        if upload_success:
-            update_episode_status(row_index, 'COMPLETED')
-        else:
-            update_episode_status(row_index, 'FAILED_UPLOAD')
+        episode_to_process = None
+        row_to_update = None 
+        
+        # 1. TÌM KIẾM HÀNG 'PENDING' ĐÁNG TIN CẬY
+        for list_index, row in enumerate(list_of_dicts):
+            if row.get('Status', '').strip().lower() == 'pending':
+                episode_to_process = row
+                row_to_update = list_index + 2 # Hàng thực tế trên Sheet (Hàng 1 là header)
+                break
+        
+        if episode_to_process and row_to_update:
+            episode_id = episode_to_process.get('ID', row_to_update - 1)
+            episode_name = episode_to_process.get('Name')
             
-        logging.info("KẾT THÚC: Quy trình xử lý tập phim đã hoàn tất.")
+            # --- TẠO HASH VÀ THƯ MỤC ASSETS ---
+            hash_source = str(episode_to_process.get('Title', '')) + \
+                          str(episode_to_process.get('Character', '')) + \
+                          str(episode_to_process.get('Core Theme', ''))
+            
+            text_hash = generate_hash(hash_source)
+            episode_to_process['text_hash'] = text_hash
+            
+            # Tạo thư mục assets
+            folder_path = os.path.join('assets', text_hash)
+            os.makedirs(folder_path, exist_ok=True)
+            logging.info(f"Đã tạo hash: {text_hash} và folder assets tại: {folder_path}")
+            
+            # --- CẬP NHẬT TRẠNG THÁI VÀ HASH TRÊN SHEET ---
+            
+            status_col = get_column_index(worksheet, 'Status')
+            hash_col = get_column_index(worksheet, 'Hash') 
+
+            if status_col:
+                worksheet.update_cell(row_to_update, status_col, 'PROCESSING')
+                logging.info(f"Đã cập nhật trạng thái của tập {episode_id} ('{episode_name}') thành 'PROCESSING' tại hàng {row_to_update}.")
+            
+            if hash_col:
+                worksheet.update_cell(row_to_update, hash_col, text_hash)
+                logging.info(f"Đã cập nhật Hash {text_hash} tại hàng {row_to_update}.")
+
+            # Chuẩn bị dữ liệu trả về
+            processed_data = {
+                'ID': episode_id,
+                'Name': episode_name,
+                'Core Theme': episode_to_process.get('Core Theme', ''),
+                'Content/Input': episode_to_process.get('Content/Input', ''),
+                'ImageFolder': episode_to_process.get('ImageFolder', ''),
+                'text_hash': text_hash,        
+                'Status_Row': row_to_update    
+            }
+            return processed_data
+        else:
+            logging.info("Không có tập nào có Status là 'pending'.")
+            return None
 
     except Exception as e:
-        logging.error(f"LỖI KHÔNG XÁC ĐỊNH TRONG PIPELINE: {e}", exc_info=True)
+        logging.error(f"Lỗi trong quá trình lấy nội dung từ Sheet: {e}", exc_info=True)
+        return None
+
+def update_episode_status(row_index: int, status: str):
+    """Cập nhật trạng thái của tập trên Google Sheet dựa trên chỉ mục hàng (row_index)."""
+    gc = authenticate_google_sheet()
+    sheet_id = os.getenv('GOOGLE_SHEET_ID')
+    
+    if not gc or not sheet_id: return
+
+    try:
+        sh = gc.open_by_key(sheet_id)
+        worksheet = sh.get_worksheet(0)
+        
+        status_col = get_column_index(worksheet, 'Status')
+        
+        if status_col and row_index > 1:
+            worksheet.update_cell(row_index, status_col, status)
+            logging.info(f"Đã cập nhật trạng thái hàng {row_index} thành '{status}'.")
+        else:
+            logging.warning(f"Không thể cập nhật trạng thái '{status}' tại hàng {row_index}. Kiểm tra chỉ mục cột Status.")
+
+    except Exception as e:
+        logging.error(f"LỖI CẬP NHẬT TRẠNG THÁI GOOGLE SHEET cho hàng {row_index}: {e}", exc_info=True)
 
 if __name__ == '__main__':
-    run_pipeline()
+    pass
