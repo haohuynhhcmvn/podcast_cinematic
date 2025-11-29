@@ -13,12 +13,12 @@ VIDEO_WIDTH = 1920
 VIDEO_HEIGHT = 1080
 COLOR_BACKGROUND = (30, 30, 30)
 
-# --- HÀM TẢI ẢNH AN TOÀN --- (Giữ nguyên)
+# --- HÀM TẢI ẢNH AN TOÀN ---
 def load_asset_image(file_name, width=None, height=None, duration=None, position=('center', 'center')):
     """Tải ảnh từ thư mục assets/images, resize và đặt vị trí an toàn."""
     paths_to_check = [
         os.path.join('assets', 'images', file_name),
-        os.path.join('assets', 'image', file_name)
+        os.path.join('assets', 'image', file_name) # Tương thích với cấu trúc cũ
     ]
     
     image_path = None
@@ -45,7 +45,7 @@ def load_asset_image(file_name, width=None, height=None, duration=None, position
         logging.error(f"Lỗi khi tải ảnh {image_path}: {e}")
         return None
 
-# --- HÀM TẢI VIDEO LẶP NỀN --- (Giữ nguyên)
+# --- HÀM TẢI VIDEO LẶP NỀN ---
 def load_looping_background_video(file_name, target_duration, width, height):
     """Tải video nền và lặp lại cho đến khi đạt độ dài mong muốn."""
     video_path = os.path.join('assets', 'video', file_name)
