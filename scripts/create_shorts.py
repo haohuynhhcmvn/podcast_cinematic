@@ -1,3 +1,4 @@
+# scripts/create_shorts.py
 import logging
 import os
 import math 
@@ -10,7 +11,8 @@ logger = logging.getLogger(__name__)
 SHORTS_SIZE = (1080, 1920)
 MAX_DURATION = 60 
 
-def create_shorts(audio_path, title_text, episode_id): 
+# FIX: Thêm tham số character_name
+def create_shorts(audio_path, title_text, episode_id, character_name): 
     try:
         # 1. Load Voice (TTS)
         voice = AudioFileClip(audio_path).volumex(1.5) 
@@ -40,8 +42,8 @@ def create_shorts(audio_path, title_text, episode_id):
         elements = [clip]
 
         # 4. Thêm Text Tiêu Đề Cố Định (Tên nhân vật - Trắng Neon)
-        # Lấy tên nhân vật từ episode_id (giả định có dạng 'Name_short')
-        main_title_content = episode_id.split('_')[0]
+        # FIX: Sử dụng trực tiếp character_name
+        main_title_content = character_name 
         
         if main_title_content:
             try:
@@ -58,7 +60,7 @@ def create_shorts(audio_path, title_text, episode_id):
                                            stroke_width=5, 
                                            align='center')
                 
-                # SỬA VỊ TRÍ: Đặt ở Y=1280 (khoảng 2/3 màn hình)
+                # Vị trí 1/3 dưới màn hình (Y=1280)
                 main_title_clip = main_title_clip.set_pos(('center', 1280)).set_duration(duration)
                 elements.append(main_title_clip)
             except Exception as e:
