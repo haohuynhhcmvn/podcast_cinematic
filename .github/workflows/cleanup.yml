@@ -1,0 +1,33 @@
+name: 🧹 Dọn Dẹp Lịch Sử Chạy Của Workflow
+
+on:
+  schedule:
+    # Cron Job: Chạy mỗi tuần một lần vào Thứ Hai lúc 01:00 AM UTC (tương đương 8:00 AM VN)
+    - cron: '0 1 * * 1' 
+  workflow_dispatch: # Cho phép chạy thủ công khi cần
+
+jobs:
+  delete_runs:
+    runs-on: ubuntu-latest
+    
+    # RẤT QUAN TRỌNG: Cần quyền ghi (write) cho Actions để xóa lịch sử chạy
+    permissions:
+      actions: write 
+      contents: read
+
+    steps:
+      - name: 🗑️ Xóa Lịch Sử Chạy của Workflow Chính
+        # Sử dụng Action cộng đồng để xóa lịch sử chạy (Run History)
+        uses: action-get-file/delete-workflow-runs@main
+        with:
+          # Token cần thiết để cấp quyền xóa
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Chỉ giữ lại lịch sử chạy trong 7 ngày gần nhất (Xóa những cái cũ hơn)
+          retain_days: 7 
+          
+          # Tên chính xác của Workflow mà bạn muốn xóa lịch sử chạy
+          workflow: 'Podcast Generator - Full Pipeline (Final Fix)' 
+          
+          # Chỉ xóa các lần chạy đã hoàn thành (không xóa các lần đang chạy)
+          status: completed
