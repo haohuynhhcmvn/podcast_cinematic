@@ -7,7 +7,8 @@ on:
   
   #schedule:
    # - cron: '0 * * * *' 
-   #workflow_dispatch: 
+  
+  workflow_dispatch: #Cho phép chạy thủ công
 
 jobs:
   build_and_upload_podcast:
