@@ -86,18 +86,31 @@ def main():
             if shorts_path:
                 
                 # --- XÂY DỰNG METADATA CHUẨN ---
-                short_title = f"{hook_title} | {data.get('Name')} #Shorts"
-                short_description = f"🔥 Vén màn bí mật: {data.get('Core Theme', 'Huyền thoại')}\n\n{data.get('Content/Input', 'Video Shorts hấp dẫn, xem ngay!')}\n\nXem toàn bộ câu chuyện và nhiều huyền thoại khác trên kênh Podcast Theo Dấu Chân Huyền Thoại!\n#shorts #viral #podcast"
-                short_tags = 'shorts, viral, podcast, storytelling, ' + data.get('Core Theme', '')
-
-                # TẠO DICTIONARY VỚI KEY CHÍNH XÁC: Title, Summary, Tags
-                upload_data = {
-                    'Title': short_title, 
-                    'Summary': short_description, 
-                    'Tags': short_tags 
-                }
                 
-                upload_video(shorts_path, upload_data)
+               # --- XÂY DỰNG METADATA CHUẨN & VIRAL HƠN ---
+            short_title = f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts"
+            
+            short_description = (
+                f"⚠️ Câu chuyện bạn sắp nghe có thể thay đổi góc nhìn về {data.get('Name')}.\n"
+                f"🔥 Chủ đề: {data.get('Core Theme', 'Huyền thoại – Bí mật chưa kể')}\n\n"
+                f"{data.get('Content/Input', 'Một lát cắt ngắn từ lịch sử – nghe hết để hiểu!')}\n\n"
+                "👉 Nếu phần này làm bạn nổi da gà — HÃY FOLLOW KÊNH NGAY!\n"
+                "📌 Xem full story dài ngay trên channel.\n"
+                "#shorts #podcast #viral #legendary #storytelling"
+            )
+            
+            short_tags = [
+                "shorts", "viral", "podcast", "storytelling",
+                data.get("Core Theme", ""), data.get("Name", ""),
+                "history", "legend", "mysterious", "cinematic"
+            ]
+            
+            upload_data = {
+                'Title': short_title,
+                'Summary': short_description,
+                'Tags': short_tags
+            }
+            upload_video(shorts_path, upload_data)
 
     # 5. Update Sheet
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
