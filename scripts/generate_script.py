@@ -168,15 +168,27 @@ def generate_short_script(data):
 
     
     user_prompt = f"""
+    Bạn là chuyên gia viết YouTube Shorts phá trend.
+    
+    Trả về JSON hợp lệ tuyệt đối — KHÔNG THÊM LỜI GIẢI THÍCH.
+    
     DỮ LIỆU NGUỒN: {data['Content/Input']}
     
-    Trả về JSON chính xác:
+    YÊU CẦU OUTPUT:
+    
     {{
-        "hook_title": "[IN HOA – SỐC – TỪ GÂY NGHỊCH LÝ/BI KỊCH]",
-        "script_body": "[1 câu hook nổ tung, 150-200 từ — visual rõ, hành động nhanh]",
-        "dynamic_cta": "[Kết thúc chốt hạ – ép follow, ép xem tiếp]"
+        "hook_title": "10-50 ký tự — IN HOA — giật – gây mâu thuẫn/tò mò",
+        "script_body": "110-140 từ — nhịp nhanh, dồn dập, hình ảnh rõ",
+        "dynamic_cta": "1 câu chốt — buộc xem tiếp & follow"
     }}
+    
+    ⚠ BẮT BUỘC:
+    - Không xuống dòng trong JSON
+    - Không dùng ký tự đặc biệt ngoài chữ/số/dấu câu
+    - Nếu thiếu dữ liệu → tự suy luận
+    - Trả về JSON duy nhất
     """
+
     
     # 2. GỌI AI VỚI JSON MODE
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=600, response_format={"type": "json_object"}) 
