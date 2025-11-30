@@ -1,113 +1,123 @@
-# scripts/glue_pipeline.py
-import logging
-import sys
+# scripts/generate_script.py
 import os
+import logging
+import json
+from openai import OpenAI
+from utils import get_path
+from dotenv import load_dotenv
 
-# Thiết lập đường dẫn import (BẮT BUỘC ĐỂ GIẢI QUYẾT VẤN ĐỀ PATH)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-# --- IMPORT MODULE ---
-from utils import setup_environment
-from fetch_content import fetch_content, authenticate_google_sheet 
-#from generate_script import generate_long_script, generate_short_script 
-from auto_music_sfx import auto_music_sfx 
-from create_tts import create_tts 
-from create_video import create_video 
-from create_shorts import create_shorts 
-from upload_youtube import upload_video 
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- HÀM HỖ TRỢ: CẬP NHẬT TRẠNG THÁI ---
-def update_status_completed(worksheet, row_idx, status):
-    """Cập nhật trạng thái cuối cùng trên Google Sheet."""
+CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại"
+TARGET_WORD_COUNT = 1200
+TTS_VOICE_NAME = "Alloy"
+
+def _call_openai(system, user, max_tokens=1000, response_format=None):
+    """Hàm gọi OpenAI chung, cố định model GPT-4o-mini."""
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: 
+        logger.error("❌ Thiếu OPENAI_API_KEY. Không thể gọi AI.")
+        return None
     try:
-        worksheet.update_cell(row_idx, 6, status)  # Cột F = Status
-        logger.info(f"✅ Đã cập nhật hàng {row_idx}: {status}")
+        client = OpenAI(api_key=api_key)
+        config = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            config["response_format"] = response_format
+
+        response = client.chat.completions.create(**config)
+        return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"❌ Lỗi update sheet: {e}")
+        logger.error(f"❌ OpenAI Error: {e}")
+        return None
 
-# --- HÀM CHÍNH: ORCHESTRATOR ---
-def main():
-    setup_environment()
-    
-    # 1. Fetch dữ liệu từ Google Sheet
-    task = fetch_content() 
-    if not task: 
-        logger.info("Không có dữ liệu mới.")
-        return
-    
-    data = task['data']
-    eid = data['ID']
-    row_idx = task['row_idx']
-    worksheet = task['worksheet']
+# ================= HÀM LONG FORM =================
+def generate_long_script(data):
+    episode_id = data['ID']
+    title = data.get('Name', 'Unknown Title') 
+    core_theme = data.get('Core Theme', 'Unknown Theme')
+    raw_input = data.get('Content/Input', '')
+    script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
 
-    # ====================================================================
-    # --- LUỒNG VIDEO DÀI (16:9) --- (ĐANG TẠM KHÓA TEST)
-    # ====================================================================
-    logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
-    # # Block code video dài hiện comment
+    PODCAST_INTRO = f"""
+Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
+Hôm nay, chúng ta sẽ đi sâu vào hành trình của: {title}.
+"""
+    PODCAST_OUTRO = f"""
+Và đó là tất cả những gì chúng ta đã khám phá trong tập {CHANNEL_NAME} ngày hôm nay. 
+Nếu bạn thấy nội dung này hữu ích và truyền cảm hứng, đừng quên nhấn nút Đăng ký, chia sẻ và theo dõi để không bỏ lỡ những hành trình tri thức tiếp theo. 
+Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
+"""
 
-    # ====================================================================
-    # --- LUỒNG SHORTS (9:16) ---
-    # ====================================================================
-    logger.info("📱 --- LUỒNG SHORTS (9:16) ĐANG CHẠY VÀ UPLOAD YOUTUBE ---")
-    
-    # 1. Generate Script Short
-    result_shorts = generate_short_script(data)
-    
-    if result_shorts:
-        script_short_path, title_short_path = result_shorts
-        
-        # 2. Đọc nội dung Tiêu đề Hook
-        try:
-            with open(title_short_path, 'r', encoding='utf-8') as f:
-                hook_title = f.read().strip()
-        except:
-            hook_title = ""
+    sys_prompt = f"""
+Bạn là **Master Storyteller + ScriptWriter Cinematic** (giọng Nam Trầm – {TTS_VOICE_NAME}).  
+Tạo kịch bản Podcast dài – lôi cuốn – gây nghiện, giống phim tài liệu.  
+Chủ đề: "{core_theme}", Tên tập: "{title}"
+"""
+    user_prompt = f"""
+DỮ LIỆU GỐC: {raw_input}
+Trả về JSON chuẩn với 4 trường:
+{{
+    "core_script": "[Mở bằng HOOK – nội dung lôi cuốn – visual mạnh]",
+    "youtube_title": "[Tiêu đề TRIGGER CẢM XÚC + SEO + VIRAL]",
+    "youtube_description": "[Mô tả gây tò mò + CTA]",
+    "youtube_tags": "[10–15 tags, dấu phẩy]"
+}}
+"""
+    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
+    try:
+        data_json = json.loads(raw_json)
+        core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
+        full_script = PODCAST_INTRO.strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
+        with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
+        return {'script_path': script_path, 'metadata': data_json}
+    except Exception as e:
+        logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
+        return None
 
-        # 3. Tạo TTS cho phần nội dung
-        tts_short = create_tts(script_short_path, eid, "short")
-        
-        if tts_short:
-            # 4. Tạo Shorts
-            shorts_path = create_shorts(tts_short, hook_title, eid, data['Name']) 
-            
-            # 5. Upload nếu shorts_path tồn tại
-            if shorts_path:
+# ================= HÀM SHORTS =================
+def generate_short_script(data):
+    episode_id = data['ID']
+    script_path = get_path('data', 'episodes', f"{episode_id}_script_short.txt")
+    title_path = get_path('data', 'episodes', f"{episode_id}_title_short.txt")
 
-                # --- XÂY DỰNG METADATA CHUẨN & VIRAL ---
-                short_title = f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts"
-                
-                short_description = (
-                    f"⚠️ Câu chuyện bạn sắp nghe có thể thay đổi góc nhìn về {data.get('Name')}.\n"
-                    f"🔥 Chủ đề: {data.get('Core Theme', 'Huyền thoại – Bí mật chưa kể')}\n\n"
-                    f"{data.get('Content/Input', 'Một lát cắt ngắn từ lịch sử – nghe hết để hiểu!')}\n\n"
-                    "👉 Nếu phần này làm bạn nổi da gà — HÃY FOLLOW KÊNH NGAY!\n"
-                    "📌 Xem full story dài ngay trên channel.\n"
-                    "#shorts #podcast #viral #legendary #storytelling"
-                )
+    SHORTS_CTA = "Bạn đã sẵn sàng vén màn bí ẩn này? Hãy **nhấn nút Đăng ký, Theo dõi kênh** ngay!"
 
-                short_tags = [
-                    "shorts", "viral", "podcast", "storytelling",
-                    data.get("Core Theme", ""), data.get("Name", ""),
-                    "history", "legend", "mysterious", "cinematic"
-                ]
+    sys_prompt = f"""
+Bạn là **Video Shorts Script Architect** — nội dung <60s, gây giật mình 3s đầu.
+Quy tắc:
+1) hook_title: 3–10 từ, IN HOA, giật.
+2) script_body: 150–200 từ, tốc độ cao, hành động & hình ảnh rõ.
+3) Cuối nối với dynamic_cta.
+"""
+    user_prompt = f"""
+DỮ LIỆU NGUỒN: {data['Content/Input']}
+Trả về JSON tuyệt đối:
+{{
+    "hook_title": "10-50 ký tự – IN HOA – giật",
+    "script_body": "110-140 từ – nhịp nhanh, hình ảnh rõ",
+    "dynamic_cta": "1 câu chốt – buộc xem tiếp & follow"
+}}
+"""
+    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=600, response_format={"type": "json_object"})
+    hook_title_fallback = f"BÍ MẬT {data['Name'].upper()} VỪA ĐƯỢC VÉN MÀN!"
+    script_body_fallback = "Nội dung đang được cập nhật..."
+    try:
+        data_json = json.loads(raw_json)
+        hook_title = data_json.get('hook_title', hook_title_fallback).strip()
+        script_body_core = data_json.get('script_body', script_body_fallback).strip()
+    except:
+        hook_title = hook_title_fallback
+        script_body_core = script_body_fallback
 
-                upload_data = {
-                    'Title': short_title,
-                    'Summary': short_description,
-                    'Tags': short_tags
-                }
+    full_script_for_tts = script_body_core + "\n\n" + SHORTS_CTA
 
-                upload_video(shorts_path, upload_data)
+    with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script_for_tts)
+    with open(title_path, 'w', encoding='utf-8') as f: f.write(hook_title)
 
-    # 6. Update Sheet
-    update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
-    logger.info("🎉 HOÀN TẤT LUỒNG TEST SHORTS")
-
-if __name__ == "__main__":
-    main()
+    logger.info(f"✅ Kịch bản Shorts đã hoàn tất.")
+    return script_path, title_path
