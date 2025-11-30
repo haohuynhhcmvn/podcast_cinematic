@@ -12,18 +12,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- HẰNG SỐ GIỚI HẠN YOUTUBE API ---
 MAX_TITLE_LENGTH = 100
-MAX_DESCRIPTION_LENGTH = 5000 
+MAX_DESCRIPTION_LENGTH = 5000
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
 
 def get_authenticated_service():
     """Lấy dịch vụ YouTube đã xác thực từ token.pickle"""
     creds = None
-    # File token.pickle nằm ở thư mục gốc (nơi chạy lệnh python)
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
     
-    # Nếu không có token hợp lệ, pipeline sẽ thất bại
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
@@ -39,7 +37,7 @@ def get_authenticated_service():
 
 def upload_video(video_path: str, episode_data: dict):
     """
-    Hàm upload video lên YouTube, đã bao gồm kiểm tra giới hạn ký tự.
+    Upload video lên YouTube, xử lý Title, Description và Tags an toàn.
     """
     if not video_path or not os.path.exists(video_path):
         logging.error(f"File video không tồn tại: {video_path}")
@@ -50,24 +48,28 @@ def upload_video(video_path: str, episode_data: dict):
         return 'FAILED'
 
     try:
-        # Chuẩn bị Metadata
+        # Metadata
         title = episode_data.get('Title', 'New Podcast Episode')
         description = episode_data.get('Summary', 'Auto-generated podcast.')
-        tags = episode_data.get('Tags', '').split(',') if episode_data.get('Tags') else []
         
-        # --- FIX: TRUNCATE (CẮT NGẮN) DỮ LIỆU ĐỂ TRÁNH LỖI API ---
-        
-        # 1. Truncate Title (Tối đa 100 ký tự)
+        # --- FIX TAGS ---
+        tags_raw = episode_data.get('Tags', [])
+        if isinstance(tags_raw, list):
+            tags = tags_raw
+        elif isinstance(tags_raw, str):
+            tags = [t.strip() for t in tags_raw.split(',') if t.strip()]
+        else:
+            tags = []
+
+        # Truncate Title & Description
         if len(title) > MAX_TITLE_LENGTH:
-            # Cắt ngắn và thêm dấu '...' (giữ lại 97 ký tự + ...)
             title = title[:MAX_TITLE_LENGTH - 3] + "..."
             logging.warning(f"⚠️ Tiêu đề đã bị cắt ngắn do vượt quá {MAX_TITLE_LENGTH} ký tự.")
 
-        # 2. Truncate Description (Tối đa 5000 ký tự)
         if len(description) > MAX_DESCRIPTION_LENGTH:
             description = description[:MAX_DESCRIPTION_LENGTH]
             logging.warning(f"⚠️ Mô tả đã bị cắt ngắn do vượt quá {MAX_DESCRIPTION_LENGTH} ký tự.")
-        
+
         logging.info(f"Đang chuẩn bị upload: {title}")
 
         body = {
@@ -78,7 +80,7 @@ def upload_video(video_path: str, episode_data: dict):
                 'categoryId': '22'
             },
             'status': {
-                'privacyStatus': 'public', 
+                'privacyStatus': 'public',
                 'selfDeclaredMadeForKids': False
             }
         }
