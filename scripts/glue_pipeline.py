@@ -84,7 +84,7 @@ def main():
             
             # 4. UPLOAD SHORTS
             if shorts_path:
-                
+
             # --- XÂY DỰNG METADATA CHUẨN & VIRAL HƠN ---
             short_title = f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts"
         
@@ -110,6 +110,7 @@ def main():
             }
         
             upload_video(shorts_path, upload_data)
+
 
     # 5. Update Sheet
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
