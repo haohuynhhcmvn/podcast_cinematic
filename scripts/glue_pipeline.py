@@ -9,16 +9,14 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 # --- 1. IMPORT CÁC MODULE CHÍNH (SỬ DỤNG ABSOLUTE IMPORTS ĐÃ FIX) ---
-
 from utils import setup_environment
-from fetch_content import fetch_content, authenticate_google_sheet 
-from generate_script import generate_long_script, generate_short_script 
-from auto_music_sfx import auto_music_sfx 
-
-from create_tts import create_tts 
-from create_video import create_video 
-from create_shorts import create_shorts 
-from upload_youtube import upload_video 
+from fetch_content import fetch_content, authenticate_google_sheet
+from generate_script import generate_long_script, generate_short_script
+from auto_music_sfx import auto_music_sfx
+from create_tts import create_tts
+from create_video import create_video
+from create_shorts import create_shorts
+from upload_youtube import upload_video
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,19 +26,18 @@ def update_status_completed(worksheet, row_idx, status):
     """Cập nhật trạng thái cuối cùng trên Google Sheet."""
     try:
         # Giả định cột Status là cột 6 (F)
-        worksheet.update_cell(row_idx, 6, status) 
+        worksheet.update_cell(row_idx, 6, status)
         logger.info(f"✅ Đã cập nhật hàng {row_idx}: {status}")
     except Exception as e:
         logger.error(f"❌ Lỗi update sheet: {e}")
 
 # --- HÀM CHÍNH: ORCHESTRATOR ---
-
 def main():
     setup_environment()
     
     # 1. Fetch Dữ liệu từ Google Sheet
-    task = fetch_content() 
-    if not task: 
+    task = fetch_content()
+    if not task:
         logger.info("Không có dữ liệu mới.")
         return
     
@@ -53,9 +50,8 @@ def main():
     # --- LUỒNG VIDEO DÀI (16:9) --- (TẠM KHÓA ĐỂ TEST SHORTS)
     # ====================================================================
     logger.info("🎬 --- LUỒNG VIDEO DÀI (16:9) ĐANG TẠM KHÓA TEST ---")
-    
-    # # [Block code video dài bị comment]
-    
+    # [Block code video dài bị comment]
+
     # ====================================================================
     # --- LUỒNG SHORTS (9:16) --- (ĐANG HOẠT ĐỘNG VÀ UPLOAD)
     # ====================================================================
@@ -80,14 +76,13 @@ def main():
         if tts_short:
             # 3. TẠO SHORTS
             # FIX MỚI: Truyền data['Name'] (Tên nhân vật) để hiển thị lên Short
-            shorts_path = create_shorts(tts_short, hook_title, eid, data['Name']) 
+            shorts_path = create_shorts(tts_short, hook_title, eid, data['Name'])
             
             # 4. UPLOAD SHORTS
             if shorts_path:
-
-            # --- XÂY DỰNG METADATA CHUẨN & VIRAL HƠN ---
+                # --- XÂY DỰNG METADATA CHUẨN & VIRAL HƠN ---
                 short_title = f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts"
-            
+
                 short_description = (
                     f"⚠️ Câu chuyện bạn sắp nghe có thể thay đổi góc nhìn về {data.get('Name')}.\n"
                     f"🔥 Chủ đề: {data.get('Core Theme', 'Huyền thoại – Bí mật chưa kể')}\n\n"
@@ -96,21 +91,20 @@ def main():
                     "📌 Xem full story dài ngay trên channel.\n"
                     "#shorts #podcast #viral #legendary #storytelling"
                 )
-            
+
                 short_tags = [
                     "shorts", "viral", "podcast", "storytelling",
                     data.get("Core Theme", ""), data.get("Name", ""),
                     "history", "legend", "mysterious", "cinematic"
                 ]
-            
+
                 upload_data = {
                     'Title': short_title,
                     'Summary': short_description,
                     'Tags': short_tags
                 }
-            
-                upload_video(shorts_path, upload_data)
 
+                upload_video(shorts_path, upload_data)
 
     # 5. Update Sheet
     update_status_completed(worksheet, row_idx, 'COMPLETED_SHORTS_TEST')
