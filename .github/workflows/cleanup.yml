@@ -20,7 +20,8 @@ jobs:
     steps:
       - name: 🗑️ Xóa Lịch Sử Chạy của Workflow Chính
         # SỬ DỤNG ACTION ĐÃ ĐƯỢC XÁC MINH VÀ KHẮC PHỤC LỖI KHÔNG TÌM THẤY REPO
-        uses: peter-murray/workflow-run-cleanup-action@v2
+        uses: peter-murray/workflow-run-cleanup-action@v2 👈 ĐÃ THÊM PHIÊN BẢN V2
+        
         with:
           # Token cần thiết để cấp quyền xóa (Lưu ý: tham số là github_token)
           github_token: ${{ secrets.GITHUB_TOKEN }}
