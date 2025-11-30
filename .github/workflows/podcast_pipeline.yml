@@ -2,8 +2,12 @@ name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
   schedule:
-    - cron: '0 * * * *' 
-  workflow_dispatch: 
+       # Chạy 4 lần/ngày vào phút 45 của các giờ 23, 3, 11, 13 (UTC)
+    - cron: '45 3,11,13,23 * * *'
+  
+  #schedule:
+   # - cron: '0 * * * *' 
+   #workflow_dispatch: 
 
 jobs:
   build_and_upload_podcast:
