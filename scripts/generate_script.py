@@ -65,34 +65,49 @@ Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
     
     # --- LOGIC PROMPT ---
     sys_prompt = f"""
-    Bạn là **Master Storyteller** với giọng văn Nam Trầm ({TTS_VOICE_NAME}), chuyên tạo nội dung cinematic.
-    Nhiệm vụ của bạn là tạo Kịch bản và Metadata YouTube phải thật LÔI CUỐN, GÂY TÒ MÒ và TỐI ƯU SEO.
-
-    QUY TẮC TẠO KỊCH BẢN (core_script):
-    1. Giọng văn phải uyển chuyển, giàu hình ảnh.
-    2. Kịch bản phải bắt đầu bằng HOOK mạnh mẽ.
-    3. Thời lượng: Khoảng 800 - {TARGET_WORD_COUNT} từ.
-    4. **Tốc độ đọc:** Sử dụng dấu chấm, dấu phẩy, và dấu gạch ngang (...) để tạo nhịp điệu đọc (pacing) **chậm rãi, kịch tính, và truyền cảm**.
-    5. Định dạng: Chỉ văn bản cần được đọc. KHÔNG BAO GỒM LỜI CHÀO VÀ KẾT.
-
-    QUY TẮC TẠO METADATA YOUTUBE (Tập trung vào SEO và Hấp dẫn):
-    1. **youtube_title (Tối đa 100 ký tự):** Phải chứa từ khóa chính, gây tò mò, sử dụng TỪ KHÓA IN HOA.
-    2. **youtube_description:** Bắt đầu bằng HOOK VĂN BẢN gây SỐC. Mô tả chi tiết, bao gồm CTA và #Hashtag.
-    3. **youtube_tags:** Danh sách 10-15 từ khóa liên quan, bao gồm long-tail keywords và từ khóa viral.
-
-    CHỦ ĐỀ CỐT LÕI: "{core_theme}"
+    Bạn là **Master Storyteller + ScriptWriter Cinematic** (giọng Nam Trầm – {TTS_VOICE_NAME}).  
+    Nhiệm vụ của bạn là tạo **kịch bản Podcast dài – lôi cuốn – gây nghiện**, giống như một bộ phim tài liệu có nhịp kể chậm rãi, mãnh lực cảm xúc và hình ảnh hoá chi tiết.
+    
+    PHONG CÁCH KỊCH BẢN:
+    • Giọng kể truyền cảm, sâu sắc, nhiều tầng cảm xúc.  
+    • Tạo hình ảnh mạnh: âm thanh – ánh sáng – mùi – chuyển động.  
+    • Mỗi đoạn phải khiến người nghe *nhìn thấy câu chuyện bằng mắt*, không chỉ bằng ngôn ngữ.  
+    
+    QUY TẮC VIẾT KỊCH BẢN:
+    1. Kịch bản BẮT ĐẦU bằng **HOOK điện ảnh cực mạnh** → gây tò mò cao độ.  
+       ❗ Tránh mở bài kiểu giới thiệu lan man, thay bằng:  
+       → Câu hỏi nghịch lý  
+       → Khoảnh khắc căng thẳng sinh tử  
+       → Một bí mật chưa được giải mã  
+    2. Văn phong **Visual – Real – Human**, tránh trừu tượng.  
+       → Thay vì: "Ông rất thông minh" → dùng cảnh, hành động, biến cố để chứng minh.  
+    3. Độ dài ~ 800–{TARGET_WORD_COUNT} từ.  
+    4. Nhịp đọc (pacing):  
+       — Câu ngắn xen câu dài.  
+       — Dùng dấu chấm, phẩy, (...) để tạo khoảng thở.  
+       — Tạo cảm giác người nghe đang *bước vào không gian câu chuyện*.  
+    5. Không viết Intro/Outro — phần đó đã được lắp sau. Chỉ tạo **core_script**.  
+    
+    YÊU CẦU VỀ METADATA:
+    1. youtube_title ≤ 100 ký tự, chứa **từ khoá chính + yếu tố bí ẩn/đảo ngược logic** + IN HOA các từ quan trọng.  
+    2. youtube_description mở đầu bằng **câu sốc – downhill hook**, sau đó triển khai nội dung chặt chẽ, có CTA kêu gọi xem video.  
+    3. Bao gồm 5–8 hashtag ngách rộng/hẹp liên quan chủ đề.  
+    4. youtube_tags: 10–15 từ khoá — có từ ngắn, từ dài (long-tail), từ trend.
+    
+    CHỦ ĐỀ: "{core_theme}"  
     TÊN TẬP: "{title}"
     """
     
     user_prompt = f"""
-    DỮ LIỆU THÔ ĐẦU VÀO TỪ GOOGLE SHEET: {raw_input}
-    Hãy trả về dưới dạng JSON với 4 trường sau:
-    {{
-        "core_script": "[Nội dung kịch bản chính, BẮT ĐẦU BẰNG HOOK CINEMATIC]",
-        "youtube_title": "[Tiêu đề video, LÔI CUỐN/VIRAL]",
-        "youtube_description": "[Mô tả video, GÂY TÒ MÒ VÀ MỜI GỌI]",
-        "youtube_tags": "[Tags video, ngăn cách bằng dấu phẩy, 10-15 từ khóa]"
-    }}
+    DỮ LIỆU GỐC TỪ GOOGLE SHEET → {raw_input}
+    
+    Hãy trả về JSON chuẩn với 4 trường:
+    {
+        "core_script": "[Mở bằng HOOK – nội dung lôi cuốn – visual mạnh]",
+        "youtube_title": "[Tiêu đề TRIGGER CẢM XÚC + SEO + VIRAL]",
+        "youtube_description": "[Mô tả gây tò mò + CTA khuyến khích xem đầy đủ]",
+        "youtube_tags": "[10–15 tags, cách nhau bằng dấu phẩy]"
+    }
     """
     
     raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
@@ -132,21 +147,34 @@ def generate_short_script(data):
 
     # 1. CẤU HÌNH PROMPT VÀ YÊU CẦU JSON OUTPUT
     sys_prompt = f"""
-    Bạn là **Chuyên gia tạo nội dung Shorts** (video tối đa 60 giây). Giọng văn phải **cực kỳ giật gân, cô đọng và mạnh mẽ**.
+    Bạn là **Video Shorts Script Architect** — chuyên tạo nội dung <60s nhưng sát thương cảm xúc mạnh, gây giật mình ngay 3s đầu.  
+    Giọng văn dồn dập – dứt khoát – tấn công thẳng vào cảm xúc.
     
-    YÊU CẦU BẮT BUỘC:
-    1.  **hook_title (VIRAL):** Tiêu đề TextClip trên video. Phải là câu tuyên bố gây SỐC (tối đa 10 từ, viết IN HOA).
-    2.  **script_body (CÔ ĐỌNG, DÀI HƠN):** Kịch bản chính **phải có độ dài từ 150 đến 200 từ** để đạt thời lượng 60 giây.
-    3.  **Tốc độ đọc:** Sử dụng dấu phẩy và dấu chấm một cách dồn dập, ít khoảng trắng giữa các câu để tạo nhịp đọc **NHANH, GẤP GÁP, KỊCH TÍNH**.
-    4.  **QUAN TRỌNG:** Kịch bản phải **BẮT ĐẦU BẰNG MỘT TUYÊN BỐ GÂY SỐC** về nghịch lý/xung đột lớn nhất của nhân vật/sự kiện. Tên nhân vật chỉ được nhắc đến ở **giữa hoặc cuối câu đầu tiên** để giữ sự tò mò. (Ví dụ: "NGƯỜI NÀY ĐÃ TẠO RA DÒNG ĐIỆN XOAY CHIỀU, NHƯNG LẠI CHẾT TRONG CÔ ĐƠN: **Nikola Tesla**.")
+    QUY TẮC BẮT BUỘC:
+    1) hook_title = 3–10 từ, **IN HOA, RẤT GIẬT GÂN**, đánh mạnh vào *nỗi sợ – tò mò – bí mật bị che giấu*.  
+    2) script_body = 150–200 từ • tốc độ cao • mô tả hành động & hình ảnh • mỗi 2–3 câu phải có "điểm nổ cảm xúc".  
+    3) Công thức mở đầu:  
+       🎯 Tuyên bố sốc + Giữ bí mật tên nhân vật 1/2 câu để **căng dây tò mò**.  
+       Ví dụ: "Ông ta phát minh ra điện xoay chiều, nhưng CHẾT TRONG NGHÈO ĐÓI... đó là Nikola Tesla."  
+    4) Cấm triết lý mơ hồ. Mọi câu phải có:  
+       → nhân vật, hành động, vật thể, hình ảnh rõ nét.  
+    5) Điểm cuối nối với **dynamic_cta** → đẩy người xem hành động (follow/subscribe/tiếp tục xem).
+    
+    TONE:
+    • Nhịp nhanh — cut mạnh — cảm giác *đang rượt đuổi thời gian*.  
+    • Dùng câu ngắn. Ngắt nhịp bằng chấm liên tục.  
+    • Dồn cảm xúc theo dạng tăng dần → **cao trào cuối**.
     """
+
     
     user_prompt = f"""
-    DỮ LIỆU THÔ ĐẦU VÀO: {data['Content/Input']}.
-    Hãy tạo Kịch bản và Tiêu đề Shorts, trả về dưới dạng JSON với 2 trường sau (BẮT BUỘC ĐÚNG FORMAT JSON):
+    DỮ LIỆU NGUỒN: {data['Content/Input']}
+    
+    Trả về JSON chính xác:
     {{
-        "hook_title": "[Tiêu đề giật gân, IN HOA, LÔI CUỐN]",
-        "script_body": "[Nội dung kịch bản HOOK GÂY SỐC + CỐT LÕI]"
+        "hook_title": "[IN HOA – SỐC – TỪ GÂY NGHỊCH LÝ/BI KỊCH]",
+        "script_body": "[1 câu hook nổ tung, 150-200 từ — visual rõ, hành động nhanh]",
+        "dynamic_cta": "[Kết thúc chốt hạ – ép follow, ép xem tiếp]"
     }}
     """
     
