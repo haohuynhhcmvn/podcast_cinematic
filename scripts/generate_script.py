@@ -11,7 +11,7 @@ if current_dir not in sys.path:
 # --- IMPORT MODULE ---
 from utils import setup_environment
 from fetch_content import fetch_content, authenticate_google_sheet 
-from generate_script import generate_long_script, generate_short_script 
+#from generate_script import generate_long_script, generate_short_script 
 from auto_music_sfx import auto_music_sfx 
 from create_tts import create_tts 
 from create_video import create_video 
