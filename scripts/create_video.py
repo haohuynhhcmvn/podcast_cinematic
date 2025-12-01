@@ -45,7 +45,7 @@ def create_video(audio_path, episode_id):
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
         logger.info("🎬 Đang render Video 16:9...")
         
-        final.write_videofile(output, fps=24, codec='libx264', audio_codec='aac', preset='fast', logger=None)
+        final.write_videofile(output, fps=24, codec='libx264', audio_codec='aac', preset='superfast', logger=None)
         
         logger.info(f"✅ Video 16:9 hoàn tất: {output}")
         return output
