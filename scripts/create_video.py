@@ -1,3 +1,4 @@
+# scripts/create_video.py
 import logging
 import os
 from moviepy.editor import AudioFileClip, VideoFileClip, ImageClip, ColorClip, CompositeVideoClip
