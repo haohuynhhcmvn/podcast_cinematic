@@ -2,8 +2,10 @@ name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
   schedule:
-       # Chạy 4 lần/ngày vào phút 45 của các giờ 23, 3, 11, 13 (UTC)
-    - cron: '45 3,11,13,23 * * *'
+    # Chạy 6 lần/ngày vào phút 40 của các giờ sau (UTC):
+    # Nội địa: 3, 11
+    # Quốc tế: 14, 16, 18, 21
+    - cron: '40 3,11,14,16,18,21 * * *'
   
   #schedule:
    # - cron: '0 * * * *' 
