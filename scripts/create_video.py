@@ -13,7 +13,7 @@ def create_video(audio_path, episode_id):
         duration = audio.duration
         
         # 2. Load Background Video (TẮT AUDIO NGUỒN)
-        bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
+        bg_video_path = get_path('assets', 'video', 'pp-podcast_loop_bg_long.mp4') #tạm ngắt video nền
         bg_image_path = get_path('assets', 'images', 'default_background.png')
 
         if os.path.exists(bg_video_path):
