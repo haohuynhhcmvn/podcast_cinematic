@@ -60,7 +60,7 @@ def try_update_youtube_id(ws, row_idx, video_id):
     except Exception as e:
         logger.debug(f"Không thể ghi YouTube ID: {e}")
 
-
+'''
 def process_long_video(data, task_meta):
     """
     Luồng FULL VIDEO PODCAST 16:9
@@ -158,7 +158,7 @@ def process_long_video(data, task_meta):
         logger.error(f"❌ Lỗi luồng FULL VIDEO: {e}", exc_info=True)
         safe_update_status(ws, row_idx, col_idx, 'ERROR_LONG')
         return False
-
+'''
 
 def process_shorts(data, task_meta):
     """Thực hiện luồng Shorts (script -> tts -> render -> upload)."""
