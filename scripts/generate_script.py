@@ -35,55 +35,132 @@ def _call_openai(system, user, max_tokens=1000, response_format=None):
         logger.error(f"❌ OpenAI Error: {e}")
         return None
 
-# ================= HÀM LONG FORM (ĐÃ CHỈNH SỬA) =================
+
+#================= HÀM LONG FORM =================
 def generate_long_script(data):
     episode_id = data['ID']
-    title = data.get('Name', 'Unknown Title') 
+    title = data.get('Name', 'Unknown Title')
     core_theme = data.get('Core Theme', 'Unknown Theme')
     raw_input = data.get('Content/Input', '')
     script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
 
-    # (Giữ nguyên PODCAST_INTRO và PODCAST_OUTRO)
-
-    # ----------------------------------------------------
-    #           ĐIỀU CHỈNH: Yêu cầu Độ dài trong Prompt
-    # ----------------------------------------------------
+    # ===================== PROMPT MỚI – TỐI ƯU CHO GPT-4o MINI =====================
     sys_prompt = f"""
-Bạn là **Master Storyteller + ScriptWriter Cinematic** (giọng Nam Trầm – {TTS_VOICE_NAME}). 
-Bạn đang sử dụng mô hình GPT-4o mini.
-Tạo kịch bản Podcast dài – lôi cuốn – gây nghiện, giống phim tài liệu.
-**YÊU CẦU ĐỘ DÀI: Kịch bản phải dài từ 10 đến 12 phút trình bày, tương đương 1500 đến 2000 từ.**
-Chủ đề: "{core_theme}", Tên tập: "{title}"
+Bạn là Master Storyteller & Scriptwriter Cinematic (giọng Nam trầm – {TTS_VOICE_NAME}).
+
+Nhiệm vụ của bạn:
+- Viết kịch bản podcast dài phong cách phim tài liệu, giàu cảm xúc và hình ảnh.
+- Ngôn ngữ trôi chảy, không dùng bullet list.
+- Ưu tiên hoàn chỉnh phần core_script trước.
+- Đảm bảo JSON hợp lệ tuyệt đối (không có text ngoài JSON).
+
+📌 ĐỘ DÀI BẮT BUỘC:
+- core_script phải từ 1500 đến 2000 từ.
+- Nếu có nguy cơ bị cắt, ưu tiên viết core_script trước, metadata sau.
+
+Chủ đề: "{core_theme}"
+Tựa đề tập: "{title}"
 """
+
     user_prompt = f"""
-DỮ LIỆU GỐC: {raw_input}
+DỮ LIỆU GỐC:
+{raw_input}
 
-LƯU Ý CỰC KỲ QUAN TRỌNG: **Phần "core_script" bắt buộc phải tạo ra nội dung dài, chi tiết, phân đoạn rõ ràng để đảm bảo đạt được 1500 đến 2000 từ.** Nếu không đủ độ dài, kịch bản sẽ bị từ chối.
+Hãy trả về DUY NHẤT một JSON theo đúng cấu trúc:
 
-Trả về JSON chuẩn với 4 trường:
 {{
-    "core_script": "[Mở bằng HOOK mạnh mẽ, sau đó phát triển nội dung chi tiết, sử dụng ngôn ngữ giàu hình ảnh và cảm xúc. PHẢI ĐỦ DÀI 1500–2000 TỪ.]",
-    "youtube_title": "[Tiêu đề TRIGGER CẢM XÚC + SEO + VIRAL]",
-    "youtube_description": "[Mô tả gây tò mò + CTA]",
-    "youtube_tags": "[10–15 tags, dấu phẩy]"
+    "core_script": "[Kịch bản 1500–2000 từ, cinematic, mở hook mạnh, không bullet, không markdown.]",
+    "youtube_title": "[SEO + Viral]",
+    "youtube_description": "[Mô tả hấp dẫn + CTA]",
+    "youtube_tags": "[10–15 tags, cách nhau bằng dấu phẩy]"
+}}
+
+⚠️ QUY TẮC BẮT BUỘC:
+- core_script >= 1500 từ.
+- Không thêm bất kỳ text nào bên ngoài JSON.
+- Không dùng ký tự markdown (#, *, -, >)
+"""
+
+    
+
+    # ===================== GỌI OPENAI + XỬ LÝ JSON AN TOÀN ============================
+    raw_json = None
+    data_json = None
+
+    for attempt in range(3):  # Retry tối đa 3 lần nếu JSON lỗi
+        try:
+            raw_json = _call_openai(
+                sys_prompt,
+                user_prompt,
+                max_tokens=16000,
+                response_format={"type": "json_object"}
+            )
+            data_json = json.loads(raw_json)
+            break
+        except Exception as e:
+            logger.warning(f"❗ JSON lỗi, thử lại ({attempt+1}/3)… {e}")
+            if attempt == 2:
+                logger.error("❌ GPT 4o mini trả JSON lỗi 3 lần → dừng.")
+                return None
+    # ==================================================================================
+
+    core_script = data_json.get("core_script", "")
+
+    # ===================== KIỂM TRA ĐỘ DÀI – AUTOFIX ================================
+    word_count = len(core_script.split())
+
+    if word_count < 1500:
+        logger.warning(f"⚠️ Core script quá ngắn ({word_count} từ). Đang mở rộng thêm...")
+
+        extend_prompt = f"""
+Kịch bản hiện tại chỉ có {word_count} từ.
+Hãy mở rộng thành phiên bản hoàn chỉnh 1800–2000 từ, văn xuôi cinematic.
+
+Yêu cầu: trả về DUY NHẤT JSON:
+{{
+  "core_script": "[bản mở rộng]"
 }}
 """
-    # ----------------------------------------------------
-    #            Giữ nguyên: max_tokens và Xử lý
-    # ----------------------------------------------------
-    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
-    try:
-        data_json = json.loads(raw_json)
-        core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
-        full_script = PODCAST_INTRO.strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
-        with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
-        return {'script_path': script_path, 'metadata': data_json}
-    except Exception as e:
-        logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
-        return None
 
-'''
-# ================= HÀM LONG FORM =================
+        try:
+            extend_raw = _call_openai(
+                sys_prompt,
+                extend_prompt,
+                max_tokens=10000,
+                response_format={"type": "json_object"}
+            )
+            extend_json = json.loads(extend_raw)
+            core_script = extend_json.get("core_script", core_script)
+        except:
+            logger.error("❌ Lỗi mở rộng script — dùng bản gốc.")
+    # ==================================================================================
+
+    # ===================== GHÉP INTRO + OUTRO ========================================
+    full_script = (
+        PODCAST_INTRO.strip()
+        + "\n\n"
+        + core_script.strip()
+        + "\n\n"
+        + PODCAST_OUTRO.strip()
+    )
+    # ==================================================================================
+
+    # ===================== LƯU FILE ===================================================
+    with open(script_path, 'w', encoding='utf-8') as f:
+        f.write(full_script)
+
+    data_json["core_script"] = core_script
+
+    return {
+        'script_path': script_path,
+        'metadata': data_json
+    }
+
+
+
+
+
+'''# ================= HÀM LONG FORM =================
 def generate_long_script(data):
     episode_id = data['ID']
     title = data.get('Name', 'Unknown Title') 
@@ -126,9 +203,9 @@ Trả về JSON chuẩn với 4 trường:
     except Exception as e:
         logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
         return None 
-'''        
+''' 
 
-# ================= HÀM SHORTS =================
+================= HÀM SHORTS =================
 def generate_short_script(data):
     episode_id = data['ID']
     script_path = get_path('data', 'episodes', f"{episode_id}_script_short.txt")
