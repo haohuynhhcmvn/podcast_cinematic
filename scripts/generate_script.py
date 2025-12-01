@@ -1,249 +1,213 @@
 # scripts/generate_script.py
 import os
-import logging
 import json
+import logging
 from openai import OpenAI
-from utils import get_path
 from dotenv import load_dotenv
+from utils import get_path
 
 logger = logging.getLogger(__name__)
 
+# -----------------------
+# CẤU HÌNH CHUNG
+# -----------------------
 CHANNEL_NAME = "Podcast Theo Dấu Chân Huyền Thoại"
-TARGET_WORD_COUNT = 1200
+TARGET_WORD_COUNT = 1800          # Long Script ~ 10–12 phút
+MODEL_NAME = "gpt-4o-mini"
 TTS_VOICE_NAME = "Alloy"
 
-def _call_openai(system, user, max_tokens=1000, response_format=None):
-    """Hàm gọi OpenAI chung, cố định model GPT-4o-mini."""
+
+# -----------------------
+# OPENAI HELPER
+# -----------------------
+def _call_openai(system, user, max_tokens=4000, response_format=None):
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: 
-        logger.error("❌ Thiếu OPENAI_API_KEY. Không thể gọi AI.")
+    if not api_key:
+        logger.error("❌ Thiếu OPENAI_API_KEY.")
         return None
+
     try:
         client = OpenAI(api_key=api_key)
+
         config = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "model": MODEL_NAME,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user}
+            ],
             "max_tokens": max_tokens
         }
+
         if response_format:
             config["response_format"] = response_format
 
         response = client.chat.completions.create(**config)
         return response.choices[0].message.content
+
     except Exception as e:
         logger.error(f"❌ OpenAI Error: {e}")
         return None
 
 
-#================= HÀM LONG FORM =================
+# ============================================================
+# 1️⃣ TẠO KỊCH BẢN DÀI – CINEMATIC (10–12 phút)
+# ============================================================
 def generate_long_script(data):
-    episode_id = data['ID']
-    title = data.get('Name', 'Unknown Title')
-    core_theme = data.get('Core Theme', 'Unknown Theme')
-    raw_input = data.get('Content/Input', '')
-    script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
+    episode_id = data["ID"]
+    title = data.get("Name", "Không tên")
+    core_theme = data.get("Core Theme", "Chưa có chủ đề")
+    raw_input = data.get("Content/Input", "")
 
-    # ===================== PROMPT MỚI – TỐI ƯU CHO GPT-4o MINI =====================
+    script_path = get_path("data", "episodes", f"{episode_id}_script_long.txt")
+
+    # GIỌNG DẪN / INTRO
+    PODCAST_INTRO = f"""
+Chào mừng bạn đến với {CHANNEL_NAME}. 
+Hôm nay, chúng ta sẽ cùng bước vào một hành trình đầy cảm xúc để khám phá nhân vật: {title}.
+"""
+
+    # GIỌNG KẾT / OUTRO
+    PODCAST_OUTRO = f"""
+Cảm ơn bạn đã theo dõi hành trình này cùng {CHANNEL_NAME}. 
+Đừng quên nhấn Đăng ký & Theo dõi để khám phá thêm nhiều câu chuyện ly kỳ và ý nghĩa.
+Hẹn gặp lại bạn trong tập tiếp theo.
+"""
+
+    # ---------------------------
+    # PROMPT GỌI AI
+    # ---------------------------
     sys_prompt = f"""
-Bạn là Master Storyteller & Scriptwriter Cinematic (giọng Nam trầm – {TTS_VOICE_NAME}).
+Bạn là **Master Storyteller – ScriptWriter Cinematic**.
+Viết kịch bản podcast GIỌNG NAM TRẦM ({TTS_VOICE_NAME}), 
+cảm xúc – điện ảnh – dẫn chuyện như phim tài liệu Netflix.
 
-Nhiệm vụ của bạn:
-- Viết kịch bản podcast dài phong cách phim tài liệu, giàu cảm xúc và hình ảnh.
-- Ngôn ngữ trôi chảy, không dùng bullet list.
-- Ưu tiên hoàn chỉnh phần core_script trước.
-- Đảm bảo JSON hợp lệ tuyệt đối (không có text ngoài JSON).
-
-📌 ĐỘ DÀI BẮT BUỘC:
-- core_script phải từ 1500 đến 2000 từ.
-- Nếu có nguy cơ bị cắt, ưu tiên viết core_script trước, metadata sau.
-
-Chủ đề: "{core_theme}"
-Tựa đề tập: "{title}"
+YÊU CẦU:
+- Độ dài: ~{TARGET_WORD_COUNT} từ (bắt buộc gần đúng)
+- Chia thành 5 chương rõ ràng:
+  1) HOOK mở đầu
+  2) Xuất thân – khởi điểm
+  3) Xung đột / bước ngoặt lớn
+  4) Cao trào – sự kiện quan trọng nhất
+  5) Di sản / kết luận
+- Văn phong: kể chuyện – hình ảnh mạnh – đầy cảm xúc.
+- Tuyệt đối KHÔNG dùng liệt kê khô khan.
 """
 
     user_prompt = f"""
-DỮ LIỆU GỐC:
-{raw_input}
+DỮ LIỆU ĐẦU VÀO:
+Tên nhân vật: {title}
+Chủ đề: {core_theme}
+Nội dung gốc: {raw_input}
 
-Hãy trả về DUY NHẤT một JSON theo đúng cấu trúc:
-
+TRẢ VỀ JSON CHUẨN GỒM:
 {{
-    "core_script": "[Kịch bản 1500–2000 từ, cinematic, mở hook mạnh, không bullet, không markdown.]",
-    "youtube_title": "[SEO + Viral]",
-    "youtube_description": "[Mô tả hấp dẫn + CTA]",
-    "youtube_tags": "[10–15 tags, cách nhau bằng dấu phẩy]"
-}}
-
-⚠️ QUY TẮC BẮT BUỘC:
-- core_script >= 1500 từ.
-- Không thêm bất kỳ text nào bên ngoài JSON.
-- Không dùng ký tự markdown (#, *, -, >)
-"""
-
-    
-
-    # ===================== GỌI OPENAI + XỬ LÝ JSON AN TOÀN ============================
-    raw_json = None
-    data_json = None
-
-    for attempt in range(3):  # Retry tối đa 3 lần nếu JSON lỗi
-        try:
-            raw_json = _call_openai(
-                sys_prompt,
-                user_prompt,
-                max_tokens=16000,
-                response_format={"type": "json_object"}
-            )
-            data_json = json.loads(raw_json)
-            break
-        except Exception as e:
-            logger.warning(f"❗ JSON lỗi, thử lại ({attempt+1}/3)… {e}")
-            if attempt == 2:
-                logger.error("❌ GPT 4o mini trả JSON lỗi 3 lần → dừng.")
-                return None
-    # ==================================================================================
-
-    core_script = data_json.get("core_script", "")
-
-    # ===================== KIỂM TRA ĐỘ DÀI – AUTOFIX ================================
-    word_count = len(core_script.split())
-
-    if word_count < 1500:
-        logger.warning(f"⚠️ Core script quá ngắn ({word_count} từ). Đang mở rộng thêm...")
-
-        extend_prompt = f"""
-Kịch bản hiện tại chỉ có {word_count} từ.
-Hãy mở rộng thành phiên bản hoàn chỉnh 1800–2000 từ, văn xuôi cinematic.
-
-Yêu cầu: trả về DUY NHẤT JSON:
-{{
-  "core_script": "[bản mở rộng]"
+  "core_script": "... kịch bản hoàn chỉnh 1500–2200 từ ...",
+  "youtube_title": "... tiêu đề SEO + cảm xúc ...",
+  "youtube_description": "... mô tả thu hút ...",
+  "youtube_tags": "... danh sách tags, phân tách bằng dấu phẩy ..."
 }}
 """
 
-        try:
-            extend_raw = _call_openai(
-                sys_prompt,
-                extend_prompt,
-                max_tokens=10000,
-                response_format={"type": "json_object"}
-            )
-            extend_json = json.loads(extend_raw)
-            core_script = extend_json.get("core_script", core_script)
-        except:
-            logger.error("❌ Lỗi mở rộng script — dùng bản gốc.")
-    # ==================================================================================
+    raw_json = _call_openai(
+        sys_prompt,
+        user_prompt,
+        max_tokens=8000,
+        response_format={"type": "json_object"}
+    )
 
-    # ===================== GHÉP INTRO + OUTRO ========================================
+    if raw_json is None:
+        logger.error("❌ Không nhận được phản hồi khi tạo long script.")
+        return None
+
+    # Parse JSON
+    try:
+        data_json = json.loads(raw_json)
+    except:
+        logger.error("❌ Lỗi JSON khi parse long script.")
+        return None
+
+    core_script = data_json.get("core_script", "").strip()
+    if len(core_script) < 500:
+        logger.warning("⚠️ Script quá ngắn, AI có thể trả về thiếu nội dung.")
+
+    # Lắp intro + outro
     full_script = (
         PODCAST_INTRO.strip()
         + "\n\n"
-        + core_script.strip()
+        + core_script
         + "\n\n"
         + PODCAST_OUTRO.strip()
     )
-    # ==================================================================================
 
-    # ===================== LƯU FILE ===================================================
-    with open(script_path, 'w', encoding='utf-8') as f:
+    with open(script_path, "w", encoding="utf-8") as f:
         f.write(full_script)
 
-    data_json["core_script"] = core_script
-
+    logger.info(f"✅ Kịch bản LONG đã tạo xong: {script_path}")
     return {
-        'script_path': script_path,
-        'metadata': data_json
+        "script_path": script_path,
+        "metadata": data_json
     }
 
 
+# ============================================================
+# 2️⃣ TẠO KỊCH BẢN SHORTS (< 30s)
+# ============================================================
 
-
-
-'''# ================= HÀM LONG FORM =================
-def generate_long_script(data):
-    episode_id = data['ID']
-    title = data.get('Name', 'Unknown Title') 
-    core_theme = data.get('Core Theme', 'Unknown Theme')
-    raw_input = data.get('Content/Input', '')
-    script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
-
-    PODCAST_INTRO = f"""
-Chào mừng bạn đến với {CHANNEL_NAME}. Đây là nơi chúng ta cùng khám phá những câu chuyện lôi cuốn, những bí ẩn chưa được giải mã, và những góc khuất lịch sử ít người biết đến. 
-Hôm nay, chúng ta sẽ đi sâu vào hành trình của: {title}.
-"""
-    PODCAST_OUTRO = f"""
-Và đó là tất cả những gì chúng ta đã khám phá trong tập {CHANNEL_NAME} ngày hôm nay. 
-Nếu bạn thấy nội dung này hữu ích và truyền cảm hứng, đừng quên nhấn nút Đăng ký, chia sẻ và theo dõi để không bỏ lỡ những hành trình tri thức tiếp theo. 
-Cảm ơn bạn đã lắng nghe. Hẹn gặp lại bạn trong tập sau!
-"""
-
-    sys_prompt = f"""
-Bạn là **Master Storyteller + ScriptWriter Cinematic** (giọng Nam Trầm – {TTS_VOICE_NAME}).  
-Tạo kịch bản Podcast dài – lôi cuốn – gây nghiện, giống phim tài liệu.  
-Chủ đề: "{core_theme}", Tên tập: "{title}"
-"""
-    user_prompt = f"""
-DỮ LIỆU GỐC: {raw_input}
-Trả về JSON chuẩn với 4 trường:
-{{
-    "core_script": "[Mở bằng HOOK – nội dung lôi cuốn – visual mạnh]",
-    "youtube_title": "[Tiêu đề TRIGGER CẢM XÚC + SEO + VIRAL]",
-    "youtube_description": "[Mô tả gây tò mò + CTA]",
-    "youtube_tags": "[10–15 tags, dấu phẩy]"
-}}
-"""
-    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
-    try:
-        data_json = json.loads(raw_json)
-        core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
-        full_script = PODCAST_INTRO.strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
-        with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
-        return {'script_path': script_path, 'metadata': data_json}
-    except Exception as e:
-        logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
-        return None 
-''' 
-
-================= HÀM SHORTS =================
 def generate_short_script(data):
-    episode_id = data['ID']
-    script_path = get_path('data', 'episodes', f"{episode_id}_script_short.txt")
-    title_path = get_path('data', 'episodes', f"{episode_id}_title_short.txt")
+    episode_id = data["ID"]
+    short_path = get_path("data", "episodes", f"{episode_id}_script_short.txt")
+    title_path = get_path("data", "episodes", f"{episode_id}_title_short.txt")
 
-    SHORTS_CTA = "Bạn đã sẵn sàng vén màn bí ẩn này? Hãy **nhấn nút Đăng ký, Theo dõi kênh** ngay!"
-
-    sys_prompt = f"""
-Bạn là **Video Shorts Script Architect** — nội dung <60s, gây giật mình 3s đầu.
+    sys_prompt = """
+Bạn là chuyên gia viết video SHORTS siêu gọn – 25 đến 30 giây.
 Quy tắc:
-1) hook_title: 3–10 từ, IN HOA, giật.
-2) script_body: 150–200 từ, tốc độ cao, hành động & hình ảnh rõ.
-3) Cuối nối với dynamic_cta.
+- Độ dài: chỉ 55–70 từ.
+- Hook 3 giây đầu phải gây sốc, tò mò hoặc bật cảm xúc.
+- Nhịp nhanh, không lan man.
+- Văn phong cảm xúc – cinematic – tóm tắt dạng teaser.
+- Kết thúc bằng một câu CTA duy nhất để kích thích follow hoặc xem full video.
 """
+
     user_prompt = f"""
-DỮ LIỆU NGUỒN: {data['Content/Input']}
-Trả về JSON tuyệt đối:
+Dữ liệu nguồn cho câu chuyện: {data.get('Content/Input')}
+Trả về JSON bắt buộc đúng định dạng:
 {{
-    "hook_title": "10-50 ký tự – IN HOA – giật",
-    "script_body": "110-140 từ – nhịp nhanh, hình ảnh rõ",
-    "dynamic_cta": "1 câu chốt – buộc xem tiếp & follow"
+  "hook_title": "Tiêu đề ngắn – 3 đến 8 từ – IN HOA",
+  "script_body": "Nội dung 55–70 từ – kể nhanh và giàu hình ảnh",
+  "cta": "Một câu duy nhất kêu gọi follow hoặc xem bản full"
 }}
 """
-    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=600, response_format={"type": "json_object"})
-    hook_title_fallback = f"BÍ MẬT {data['Name'].upper()} VỪA ĐƯỢC VÉN MÀN!"
-    script_body_fallback = "Nội dung đang được cập nhật..."
+
+    raw_json = _call_openai(
+        sys_prompt,
+        user_prompt,
+        max_tokens=500,
+        response_format={"type": "json_object"}
+    )
+
+    if raw_json is None:
+        logger.error("❌ Lỗi khi tạo kịch bản shorts.")
+        return None
+
     try:
         data_json = json.loads(raw_json)
-        hook_title = data_json.get('hook_title', hook_title_fallback).strip()
-        script_body_core = data_json.get('script_body', script_body_fallback).strip()
     except:
-        hook_title = hook_title_fallback
-        script_body_core = script_body_fallback
+        logger.error("❌ JSON shorts lỗi, không parse được.")
+        return None
 
-    full_script_for_tts = script_body_core + "\n\n" + SHORTS_CTA
+    # fallback
+    hook = data_json.get("hook_title", f"BÍ MẬT {data['Name'].upper()}!")
+    body = data_json.get("script_body", "Nội dung đang cập nhật.")
+    cta = data_json.get("cta", "Hãy theo dõi để xem phần tiếp theo!")
 
-    with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script_for_tts)
-    with open(title_path, 'w', encoding='utf-8') as f: f.write(hook_title)
+    full_short = body + "\n\n" + cta
 
-    logger.info(f"✅ Kịch bản Shorts đã hoàn tất.")
-    return script_path, title_path
+    with open(short_path, "w", encoding="utf-8") as f:
+        f.write(full_short)
+
+    with open(title_path, "w", encoding="utf-8") as f:
+        f.write(hook)
+
+    logger.info("🎬 Kịch bản SHORTS 25–30 giây đã hoàn tất.")
+    return short_path, title_path
