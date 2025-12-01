@@ -35,6 +35,54 @@ def _call_openai(system, user, max_tokens=1000, response_format=None):
         logger.error(f"❌ OpenAI Error: {e}")
         return None
 
+# ================= HÀM LONG FORM (ĐÃ CHỈNH SỬA) =================
+def generate_long_script(data):
+    episode_id = data['ID']
+    title = data.get('Name', 'Unknown Title') 
+    core_theme = data.get('Core Theme', 'Unknown Theme')
+    raw_input = data.get('Content/Input', '')
+    script_path = get_path('data', 'episodes', f"{episode_id}_script_long.txt")
+
+    # (Giữ nguyên PODCAST_INTRO và PODCAST_OUTRO)
+
+    # ----------------------------------------------------
+    #           ĐIỀU CHỈNH: Yêu cầu Độ dài trong Prompt
+    # ----------------------------------------------------
+    sys_prompt = f"""
+Bạn là **Master Storyteller + ScriptWriter Cinematic** (giọng Nam Trầm – {TTS_VOICE_NAME}). 
+Bạn đang sử dụng mô hình GPT-4o mini.
+Tạo kịch bản Podcast dài – lôi cuốn – gây nghiện, giống phim tài liệu.
+**YÊU CẦU ĐỘ DÀI: Kịch bản phải dài từ 10 đến 12 phút trình bày, tương đương 1500 đến 2000 từ.**
+Chủ đề: "{core_theme}", Tên tập: "{title}"
+"""
+    user_prompt = f"""
+DỮ LIỆU GỐC: {raw_input}
+
+LƯU Ý CỰC KỲ QUAN TRỌNG: **Phần "core_script" bắt buộc phải tạo ra nội dung dài, chi tiết, phân đoạn rõ ràng để đảm bảo đạt được 1500 đến 2000 từ.** Nếu không đủ độ dài, kịch bản sẽ bị từ chối.
+
+Trả về JSON chuẩn với 4 trường:
+{{
+    "core_script": "[Mở bằng HOOK mạnh mẽ, sau đó phát triển nội dung chi tiết, sử dụng ngôn ngữ giàu hình ảnh và cảm xúc. PHẢI ĐỦ DÀI 1500–2000 TỪ.]",
+    "youtube_title": "[Tiêu đề TRIGGER CẢM XÚC + SEO + VIRAL]",
+    "youtube_description": "[Mô tả gây tò mò + CTA]",
+    "youtube_tags": "[10–15 tags, dấu phẩy]"
+}}
+"""
+    # ----------------------------------------------------
+    #            Giữ nguyên: max_tokens và Xử lý
+    # ----------------------------------------------------
+    raw_json = _call_openai(sys_prompt, user_prompt, max_tokens=16000, response_format={"type": "json_object"})
+    try:
+        data_json = json.loads(raw_json)
+        core_script = data_json.get('core_script', "Nội dung đang cập nhật...")
+        full_script = PODCAST_INTRO.strip() + "\n\n" + core_script.strip() + "\n\n" + PODCAST_OUTRO.strip()
+        with open(script_path, 'w', encoding='utf-8') as f: f.write(full_script)
+        return {'script_path': script_path, 'metadata': data_json}
+    except Exception as e:
+        logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
+        return None
+
+'''
 # ================= HÀM LONG FORM =================
 def generate_long_script(data):
     episode_id = data['ID']
@@ -77,7 +125,8 @@ Trả về JSON chuẩn với 4 trường:
         return {'script_path': script_path, 'metadata': data_json}
     except Exception as e:
         logger.error(f"❌ Lỗi JSON hoặc lắp ráp kịch bản dài: {e}")
-        return None
+        return None 
+'''        
 
 # ================= HÀM SHORTS =================
 def generate_short_script(data):
