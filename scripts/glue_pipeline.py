@@ -1,4 +1,3 @@
-# scripts/glue_pipeline_v3.py
 import logging
 import sys
 import os
@@ -23,8 +22,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+# =========================================================
+#  SAFE UPDATE STATUS
+# =========================================================
 def safe_update_status(ws, row_idx, col_idx, status):
-    """Cập nhật trạng thái lên Google Sheet (bảo vệ lỗi)."""
     try:
         if not ws:
             logger.warning("Không có worksheet để update status.")
@@ -32,40 +33,34 @@ def safe_update_status(ws, row_idx, col_idx, status):
         if col_idx and isinstance(col_idx, int):
             ws.update_cell(row_idx, col_idx, status)
         else:
-            # fallback: tìm cột "Status" ở header
-            try:
-                header = ws.row_values(1)
-                idx = header.index("Status") + 1
-            except Exception:
-                idx = 6
+            header = ws.row_values(1)
+            idx = header.index("Status") + 1 if "Status" in header else 6
             ws.update_cell(row_idx, idx, status)
         logger.info(f"Đã cập nhật row {row_idx} -> {status}")
     except Exception as e:
-        logger.error(f"Lỗi khi cập nhật status lên sheet: {e}")
+        logger.error(f"Lỗi khi cập nhật status: {e}")
 
 
 def try_update_youtube_id(ws, row_idx, video_id):
-    """Nếu sheet có cột YouTubeID (hoặc VideoID), ghi video id vào."""
     if not ws or not video_id:
         return
     try:
         header = ws.row_values(1)
-        candidate_cols = ['YouTubeID', 'VideoID', 'youtube_id', 'video_id']
-        for name in candidate_cols:
+        cols = ['YouTubeID', 'VideoID', 'youtube_id', 'video_id']
+        for name in cols:
             if name in header:
                 col = header.index(name) + 1
                 ws.update_cell(row_idx, col, video_id)
-                logger.info(f"Ghi YouTube ID vào cột '{name}' (col {col}).")
+                logger.info(f"Ghi YouTube ID vào cột {name}")
                 return
-    except Exception as e:
-        logger.debug(f"Không thể ghi YouTube ID: {e}")
+    except Exception:
+        pass
 
-'''
+
+# =========================================================
+#  FULL VIDEO PROCESSING (LONG)
+# =========================================================
 def process_long_video(data, task_meta):
-    """
-    Luồng FULL VIDEO PODCAST 16:9
-    Script dài → TTS → Mix audio → Render Video → Upload → Update Sheet
-    """
     row_idx = task_meta.get('row_idx')
     col_idx = task_meta.get('col_idx')
     ws = task_meta.get('worksheet')
@@ -73,213 +68,167 @@ def process_long_video(data, task_meta):
     eid = data.get('ID')
     name = data.get('Name')
 
-    logger.info(f"🎬 BẮT ĐẦU LUỒNG VIDEO DÀI CHO TẬP {eid} – {name}")
+    logger.info(f"🎬 BẮT ĐẦU VIDEO DÀI: {eid} – {name}")
 
     try:
         # 1) Generate Script Long
-        long_result = generate_long_script(data)
-        if not long_result:
+        long_res = generate_long_script(data)
+        if not long_res:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_GEN_LONG')
             return False
 
-        script_path = long_result.get('script_path')
-        meta_json = long_result.get('metadata', {})
+        script_path = long_res["script_path"]
+        meta = long_res.get("metadata", {})
 
-        # Dữ liệu upload (fallback hợp lý)
-        youtube_title = meta_json.get("youtube_title") or f"{name} – Podcast Huyền Thoại"
-        youtube_description = meta_json.get("youtube_description") or ""
-        yt_tags_raw = meta_json.get("youtube_tags") or ""
-        if isinstance(yt_tags_raw, str):
-            youtube_tags = [t.strip() for t in yt_tags_raw.split(',') if t.strip()]
-        elif isinstance(yt_tags_raw, list):
-            youtube_tags = yt_tags_raw
-        else:
-            youtube_tags = []
+        youtube_title = meta.get("youtube_title", f"{name} – The Untold Story")
+        youtube_description = meta.get("youtube_description", "")
+        yt_tags = meta.get("youtube_tags", "")
+        youtube_tags = yt_tags.split(",") if isinstance(yt_tags, str) else yt_tags
 
-        # 2) TTS LONG (retry nhỏ)
-        tts_long = None
-        for attempt in range(3):
-            tts_long = create_tts(script_path, eid, "long")
-            if tts_long:
+        # 2) TTS Long
+        tts = None
+        for i in range(3):
+            tts = create_tts(script_path, eid, "long")
+            if tts:
                 break
-            logger.warning(f"TTS long attempt {attempt+1} failed, retrying...")
+            logger.warning(f"TTS long attempt {i+1} failed.")
             sleep(2)
-
-        if not tts_long:
+        if not tts:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_LONG')
             return False
 
-        # 3) Mix nhạc + voice
-        mixed_audio = auto_music_sfx(tts_long, eid)
-        if not mixed_audio:
+        # 3) Mix audio
+        mixed = auto_music_sfx(tts, eid)
+        if not mixed:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_MIX_LONG')
             return False
 
-        # 4) Render Video 16:9
-        video_path = create_video(mixed_audio, eid)
+        # 4) Make full video
+        video_path = create_video(mixed, eid)
         if not video_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_LONG')
             return False
 
         # 5) Upload YouTube
-        upload_info = {
+        upload_payload = {
             "Title": youtube_title,
             "Summary": youtube_description,
             "Tags": youtube_tags
         }
 
         upload_result = None
-        for attempt in range(2):
-            upload_result = upload_video(video_path, upload_info)
-            if upload_result and upload_result != 'FAILED':
+        for i in range(2):
+            upload_result = upload_video(video_path, upload_payload)
+            if upload_result and upload_result != "FAILED":
                 break
-            logger.warning(f"Upload long attempt {attempt+1} failed, retrying...")
+            logger.warning(f"Upload long attempt {i+1} failed.")
             sleep(3)
 
-        if not upload_result or upload_result == 'FAILED':
+        if not upload_result or upload_result == "FAILED":
             safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_LONG')
             return False
 
-        # If upload returns dict with video_id, write it
+        # Ghi YouTube ID
         if isinstance(upload_result, dict):
-            vid = upload_result.get('video_id') or upload_result.get('id')
-            safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
-            if vid:
-                try_update_youtube_id(ws, row_idx, vid)
-        elif isinstance(upload_result, str) and upload_result.upper() == 'UPLOADED':
-            safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
-        else:
-            safe_update_status(ws, row_idx, col_idx, 'UNKNOWN_UPLOAD_LONG')
+            vid = upload_result.get("video_id") or upload_result.get("id")
+            try_update_youtube_id(ws, row_idx, vid)
 
-        logger.info(f"🎉 HOÀN TẤT VIDEO DÀI: {eid}")
+        safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
+        logger.info("🎉 LONG VIDEO OK")
         return True
 
     except Exception as e:
-        logger.error(f"❌ Lỗi luồng FULL VIDEO: {e}", exc_info=True)
+        logger.error(f"ERROR LONG VIDEO: {e}", exc_info=True)
         safe_update_status(ws, row_idx, col_idx, 'ERROR_LONG')
         return False
-'''
 
+
+# =========================================================
+#  SHORTS
+# =========================================================
 def process_shorts(data, task_meta):
-    """Thực hiện luồng Shorts (script -> tts -> render -> upload)."""
     row_idx = task_meta.get('row_idx')
     col_idx = task_meta.get('col_idx')
     ws = task_meta.get('worksheet')
 
     eid = data.get('ID')
+
+    logger.info(f"🎬 BẮT ĐẦU SHORTS: {eid}")
+
     try:
-        result = generate_short_script(data)
-        if not result:
-            safe_update_status(ws, row_idx, col_idx, 'FAILED_GEN_SHORT')
-            return False
-        script_short_path, title_short_path = result
+        script_path, title_path = generate_short_script(data)
+        with open(title_path, "r", encoding="utf-8") as f:
+            hook_title = f.read().strip()
 
-        try:
-            with open(title_short_path, 'r', encoding='utf-8') as f:
-                hook_title = f.read().strip()
-        except Exception:
-            hook_title = ""
-
-        # TTS (với retry nhỏ)
-        tts_short = None
-        for attempt in range(3):
-            tts_short = create_tts(script_short_path, eid, "short")
-            if tts_short:
+        # TTS
+        tts = None
+        for i in range(3):
+            tts = create_tts(script_path, eid, "short")
+            if tts:
                 break
-            logger.warning(f"TTS short attempt {attempt+1} failed, retrying...")
             sleep(2)
-
-        if not tts_short:
+        if not tts:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_SHORT')
             return False
 
-        # Render Shorts
-        shorts_path = create_shorts(tts_short, hook_title, eid, data.get('Name', ''))
+        # Render
+        shorts_path = create_shorts(tts, hook_title, eid, data.get("Name", ""))
         if not shorts_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_SHORTS')
             return False
 
-        # Prepare upload metadata
-        short_title = f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts"
-        short_description = (
-            f"⚠️ Câu chuyện: {data.get('Name')}\n"
-            f"🔥 Chủ đề: {data.get('Core Theme', 'Huyền thoại')}\n\n"
-            f"{data.get('Content/Input', '')}\n\n"
-            "👉 Follow kênh để xem full story."
-        )
-        short_tags = [
-            "shorts", "viral", "podcast", "storytelling",
-            data.get("Core Theme", ""), data.get("Name", ""),
-        ]
-        upload_data = {'Title': short_title, 'Summary': short_description, 'Tags': short_tags}
+        # Upload
+        upload_data = {
+            "Title": f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts",
+            "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
+            "Tags": ["shorts", "podcast", "history"]
+        }
 
-        # Upload (cố gắng 2 lần nếu gặp lỗi tạm thời)
-        upload_result = None
-        for attempt in range(2):
-            upload_result = upload_video(shorts_path, upload_data)
-            if upload_result and upload_result != 'FAILED':
-                break
-            logger.warning(f"Upload short attempt {attempt+1} failed, retrying...")
-            sleep(3)
-
+        upload_result = upload_video(shorts_path, upload_data)
         if not upload_result or upload_result == 'FAILED':
             safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_SHORTS')
             return False
 
-        # Nếu upload trả về dict với video_id, ghi vào sheet; nếu chỉ trả về 'UPLOADED' thì đánh dấu thành công.
-        if isinstance(upload_result, dict):
-            vid = upload_result.get('video_id') or upload_result.get('id')
-            safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
-            if vid:
-                try_update_youtube_id(ws, row_idx, vid)
-        elif isinstance(upload_result, str) and upload_result.upper() == 'UPLOADED':
-            safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
-        else:
-            safe_update_status(ws, row_idx, col_idx, 'UNKNOWN_UPLOAD_RESULT')
-
+        safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
+        logger.info("🎉 SHORTS OK")
         return True
 
     except Exception as e:
-        logger.error(f"Lỗi luồng Shorts: {e}", exc_info=True)
+        logger.error(f"ERROR SHORTS: {e}", exc_info=True)
         safe_update_status(ws, row_idx, col_idx, 'ERROR_SHORTS')
         return False
 
 
+# =========================================================
+#  MAIN
+# =========================================================
 def main():
     setup_environment()
     task = fetch_content()
     if not task:
-        logger.info("Không có task pending. Kết thúc.")
+        logger.info("Không có task pending.")
         return
 
-    data = task.get('data', {})
+    data = task["data"]
     task_meta = {
-        'row_idx': task.get('row_idx'),
-        'col_idx': task.get('col_idx'),
-        'worksheet': task.get('worksheet')
+        "row_idx": task["row_idx"],
+        "col_idx": task["col_idx"],
+        "worksheet": task["worksheet"]
     }
 
-    logger.info("Bắt đầu xử lý task ID=%s, Name=%s", data.get('ID'), data.get('Name'))
+    logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={data.get('ID')} – {data.get('Name')}")
 
-    # 1) Chạy Full Video
     long_ok = process_long_video(data, task_meta)
-
-    # 2) Nếu Full Video OK thì hoặc dù sao vẫn chạy Shorts theo yêu cầu (bạn chọn 3: both)
-    # Chúng ta sẽ cố gắng chạy Shorts bất kể long_ok hay không — nhưng sẽ đánh dấu trạng thái khác nhau.
-    if not long_ok:
-        logger.warning("Luồng Full Video gặp lỗi — vẫn cố gắng chạy Shorts.")
-
     short_ok = process_shorts(data, task_meta)
 
-    # Kết luận trạng thái tổng quan
     if long_ok and short_ok:
-        logger.info("🎉 Hoàn tất cả hai luồng (LONG + SHORTS) cho task %s", data.get('ID'))
-    elif long_ok and not short_ok:
-        logger.info("✅ LONG thành công, SHORTS gặp lỗi.")
-    elif not long_ok and short_ok:
-        logger.info("✅ SHORTS thành công, LONG gặp lỗi.")
+        logger.info("🎉 FULL SUCCESS!")
+    elif long_ok:
+        logger.info("⚠️ Long OK – Shorts FAILED")
+    elif short_ok:
+        logger.info("⚠️ Shorts OK – Long FAILED")
     else:
-        logger.info("❌ Cả hai luồng đều gặp lỗi cho task %s", data.get('ID'))
+        logger.info("❌ BOTH FAILED")
 
 
 if __name__ == "__main__":
