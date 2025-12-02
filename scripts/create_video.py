@@ -14,43 +14,52 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------
 # ⭐ 1) Waveform Generator
 # ------------------------------------------
-def make_waveform(audio_clip, duration, width=1920, height=200):
-    """
-    Tạo waveform động chạy theo audio (dạng sóng đơn giản, clean).
-    """
-    fps = 30
-    samples = audio_clip.to_soundarray(fps=fps)
-    # Convert stereo → mono
-    if len(samples.shape) == 2:
-        samples = samples.mean(axis=1)
 
-    # Chuẩn hóa amplitude
-    max_amp = np.max(np.abs(samples))
-    samples = samples / (max_amp + 1e-7)
+# ------------------------------------------
+# ⭐ FIXED WAVEFORM (AN TOÀN - KHÔNG LỖI INDEX)
+# ------------------------------------------
+def make_waveform(audio_clip, duration, width=1920, height=200):
+    fps = 30
+
+    # Lấy samples dạng mono ổn định
+    samples = audio_clip.to_soundarray(fps=fps)
+    samples = samples.mean(axis=1) if samples.ndim == 2 else samples
+
+    # chuẩn hóa
+    if np.max(np.abs(samples)) > 0:
+        samples = samples / np.max(np.abs(samples))
+
+    num_frames = int(duration * fps)
+
+    # Tạo mảng amplitude có cùng số frame với video
+    # dùng interpolation → không bao giờ lỗi index
+    sample_idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
+    safe_amp = samples[sample_idx]
 
     def make_frame(t):
-        index = int(t * fps)
-        if index >= len(samples):
-            amp = 0
-        else:
-            amp = samples[index]
+        # clamp t
+        if t < 0:
+            t = 0
+        if t >= duration:
+            t = duration - 0.0001
 
-        # tạo ảnh waveform
+        idx = int(t * fps)
+        idx = max(0, min(idx, len(safe_amp) - 1))
+
+        amp = safe_amp[idx]
+
         img = np.zeros((height, width, 3), dtype=np.uint8)
-
         mid = height // 2
-        amp_px = int(amp * (height * 0.4))
+        amp_px = int(abs(amp) * (height * 0.45))
 
-        color = (255, 255, 255)  # white waveform
+        color = (255, 255, 255)
 
-        # vẽ vertical line
         for x in range(width):
-            img[mid - amp_px : mid + amp_px, x] = color
+            img[mid - amp_px: mid + amp_px, x] = color
 
         return img
 
     return VideoClip(make_frame, duration=duration).set_fps(fps)
-
 
 # ------------------------------------------
 # ⭐ 2) Light Glow Overlay
