@@ -12,42 +12,45 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# 🌟 HIỆU ỨNG WAVEFORM DẠNG VÒNG TRÒN LAN RỘNG (RIPPLE)
-# ============================================================
-# ============================================================
-# 🔥 WAVEFORM RIPPLE – FULL TRANSPARENT + KHÔNG BAO GIỜ LỖI
+# 🌟 CIRCULAR AUDIO WAVE – MÀU TRẮNG BẠC, LAN TỎA THEO ÂM THANH
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=1920, height=1080):
     fps = 30
-    pulse_interval = 0.35
+    pulse_interval = 0.33       # tần suất sóng
     max_radius = min(width, height) // 2
-    speed = 420
+    speed = 420                 # tốc độ lan sóng
 
+    # Load audio
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
+    # Stereo → Mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
+    # Chuẩn hóa
     max_val = np.max(np.abs(samples))
     if max_val > 0:
         samples /= max_val
 
     sample_rate = audio.frame_rate
 
-    def get_amp(t):
+    # Lấy amplitude tại thời điểm t
+    def get_amplitude(t):
         idx = int(t * sample_rate)
         if idx < 0 or idx >= len(samples):
-            return 0
-        return abs(samples[idx])
+            return 0.0
+        # dùng RMS để sóng mạnh – mượt hơn
+        win = samples[max(0, idx-500):min(len(samples), idx+500)]
+        return float(np.sqrt(np.mean(win**2))) if len(win) > 0 else 0
 
     cx, cy = width // 2, height // 2
 
-    # ⭐ Frame RGB: nền đen (không quan trọng, vì mask sẽ quyết định opacity)
+    # Frame RGB (nền trống)
     def make_rgb_frame(t):
         return np.zeros((height, width, 3), dtype=np.uint8)
 
-    # ⭐ Frame MASK: grayscale float (0–1)
+    # Frame MASK → tạo sóng
     def make_mask_frame(t):
         mask = np.zeros((height, width), dtype=np.float32)
 
@@ -63,32 +66,37 @@ def make_circular_waveform(audio_path, duration, width=1920, height=1080):
             if r > max_radius:
                 continue
 
-            amp = get_amp(pulse_t)
-            alpha = (1 - age / (max_radius / speed)) * amp
-            alpha = max(0, min(alpha, 1))
+            amp = get_amplitude(pulse_t)
 
-            if alpha < 0.002:
+            # Màu trắng bạc → alpha cao hơn một chút
+            alpha = amp * (1 - age / (max_radius / speed))
+            alpha = max(0, min(alpha, 1.0))
+
+            if alpha < 0.005:
                 continue
 
-            thickness = 4
+            thickness = 12  # sóng mập – mềm kiểu podcast luxury
 
             yy, xx = np.ogrid[:height, :width]
             dist = np.sqrt((xx - cx)**2 + (yy - cy)**2)
-            ring = np.logical_and(dist >= r - thickness, dist <= r + thickness)
 
-            mask[ring] = alpha
+            # Vòng tròn "dày" + fade edges
+            ring = np.abs(dist - r) <= thickness
+            fade = 1 - (np.abs(dist - r) / thickness)
+
+            mask[ring] = np.maximum(mask[ring], alpha * fade[ring])
 
         return mask
 
-    # Tạo clip + mask
     clip = VideoClip(make_rgb_frame, duration=duration).set_fps(fps)
+
     mask = VideoClip(make_mask_frame, duration=duration).set_fps(fps)
+    mask.ismask = True   # ⭐ BẮT BUỘC
 
-    # ⭐ BẮT BUỘC — nếu không sẽ bị AssertionError
-    mask.ismask = True
-
-    # Gắn mask
     clip = clip.set_mask(mask)
+
+    # Thêm màu trắng bạc cho sóng
+    clip = clip.set_opacity(1).set_color((235, 235, 235))
 
     return clip
 
