@@ -13,15 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# 🌟 CIRCULAR AUDIO WAVE – MÀU TRẮNG BẠC, LAN TỎA THEO ÂM THANH
+# 🌟 CIRCULAR WAVEFORM – Sóng tròn lan tỏa (màu trắng bạc)
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=1920, height=1080):
     fps = 30
-    pulse_interval = 0.33       # tần suất sóng
-    max_radius = min(width, height) // 2
-    speed = 420                 # tốc độ lan sóng
 
-    # Load audio
+    # Load audio via pydub
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
@@ -32,74 +29,49 @@ def make_circular_waveform(audio_path, duration, width=1920, height=1080):
     # Chuẩn hóa
     max_val = np.max(np.abs(samples))
     if max_val > 0:
-        samples /= max_val
+        samples = samples / max_val
 
-    sample_rate = audio.frame_rate
+    # Số sóng lan tỏa
+    waves = 35  
+    center = (width // 2, height // 2)
 
-    # Lấy amplitude tại thời điểm t
-    def get_amplitude(t):
-        idx = int(t * sample_rate)
-        if idx < 0 or idx >= len(samples):
-            return 0.0
-        # dùng RMS để sóng mạnh – mượt hơn
-        win = samples[max(0, idx-500):min(len(samples), idx+500)]
-        return float(np.sqrt(np.mean(win**2))) if len(win) > 0 else 0
+    # Màu trắng bạc
+    color = np.array([235, 235, 235, 255], dtype=np.uint8)
 
-    cx, cy = width // 2, height // 2
+    # Tạo frame
+    def make_frame(t):
+        # Canvas RGBA trong suốt
+        frame = np.zeros((height, width, 4), dtype=np.uint8)
+        frame[:, :, 3] = 0
 
-    # Frame RGB (nền trống)
-    def make_rgb_frame(t):
-        return np.zeros((height, width, 3), dtype=np.uint8)
+        # Lấy amplitude tại thời điểm t
+        idx = int((t / duration) * len(samples))
+        idx = max(0, min(idx, len(samples) - 1))
+        amp = abs(samples[idx])
 
-    # Frame MASK → tạo sóng
-    def make_mask_frame(t):
-        mask = np.zeros((height, width), dtype=np.float32)
+        # Biên độ cho sóng
+        base_radius = 80 + amp * 60
 
-        pulse_count = int(t / pulse_interval)
+        # Vẽ nhiều vòng tròn lan tỏa
+        for i in range(waves):
+            radius = base_radius + i * 18
+            opacity = max(0, 1.0 - i * 0.035)
 
-        for i in range(pulse_count):
-            pulse_t = i * pulse_interval
-            age = t - pulse_t
-            if age < 0:
+            if opacity <= 0:
                 continue
 
-            r = int(speed * age)
-            if r > max_radius:
-                continue
-
-            amp = get_amplitude(pulse_t)
-
-            # Màu trắng bạc → alpha cao hơn một chút
-            alpha = amp * (1 - age / (max_radius / speed))
-            alpha = max(0, min(alpha, 1.0))
-
-            if alpha < 0.005:
-                continue
-
-            thickness = 12  # sóng mập – mềm kiểu podcast luxury
-
+            # Vẽ vòng tròn trên canvas (RGBA)
             yy, xx = np.ogrid[:height, :width]
-            dist = np.sqrt((xx - cx)**2 + (yy - cy)**2)
+            dist = np.sqrt((xx - center[0]) ** 2 + (yy - center[1]) ** 2)
 
-            # Vòng tròn "dày" + fade edges
-            ring = np.abs(dist - r) <= thickness
-            fade = 1 - (np.abs(dist - r) / thickness)
+            mask = np.logical_and(dist >= radius - 2, dist <= radius + 2)
 
-            mask[ring] = np.maximum(mask[ring], alpha * fade[ring])
+            # Apply màu + opacity
+            frame[mask] = (color * np.array([1, 1, 1, opacity])).astype(np.uint8)
 
-        return mask
+        return frame
 
-    clip = VideoClip(make_rgb_frame, duration=duration).set_fps(fps)
-
-    mask = VideoClip(make_mask_frame, duration=duration).set_fps(fps)
-    mask.ismask = True   # ⭐ BẮT BUỘC
-
-    clip = clip.set_mask(mask)
-
-    # Thêm màu trắng bạc cho sóng
-    clip = clip.set_opacity(1).set_color((235, 235, 235))
-
-    return clip
+    return VideoClip(make_frame, duration=duration).set_fps(fps)
 
 
 # ============================================================
@@ -160,7 +132,7 @@ def create_video(audio_path, episode_id):
         # -----------------------------------------------------
         # ⭐ Circular Ripple Waveform – hiệu ứng vòng tròn
         # -----------------------------------------------------
-        waveform = make_circular_waveform(audio_path, duration)
+        wwaveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
 
         # -----------------------------------------------------
