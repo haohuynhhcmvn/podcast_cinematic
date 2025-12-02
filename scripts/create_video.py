@@ -86,7 +86,7 @@ def create_video(audio_path, episode_id):
         logger.info(f"🎧 Audio duration = {duration:.2f}s (video sẽ đúng bằng thời gian này)")
 
         # Background
-        bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
+        bg_video_path = get_path('assets', 'video', 'pppodcast_loop_bg_long.mp4')
         bg_image_path = get_path('assets', 'images', 'default_background.png')
 
         if os.path.exists(bg_video_path):
