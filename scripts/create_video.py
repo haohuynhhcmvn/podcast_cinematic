@@ -132,7 +132,7 @@ def create_video(audio_path, episode_id):
         # -----------------------------------------------------
         # ⭐ Circular Ripple Waveform – hiệu ứng vòng tròn
         # -----------------------------------------------------
-        wwaveform = make_circular_waveform(audio_path, duration)
+        waveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
 
         # -----------------------------------------------------
