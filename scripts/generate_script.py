@@ -87,13 +87,13 @@ Write the full script now.
 
 
 # ============================================================
-#  SHORT SCRIPT GENERATOR (ENGLISH • 25–30 SECONDS)
+#  SHORT SCRIPT GENERATOR (ENGLISH • 35–40 SECONDS)
 # ============================================================
 def generate_short_script(data):
     """
-    Generate a SHORT English script for YouTube Shorts (25–30s)
-    - 45–65 words
-    - Viral, cinematic, punchy hook
+    Generate a SHORT English script for YouTube Shorts (35–40s)
+    - 60–85 words
+    - Viral, cinematic, dramatic, with call-to-action
     - Uses Vietnamese input but outputs English
     """
     try:
@@ -106,7 +106,7 @@ def generate_short_script(data):
 
         # Prompt for SHORT script
         prompt = f"""
-Write a **45–65 word English script** for a **25–30 second viral cinematic hook** for YouTube Shorts.
+Write a **60–85 word English script** for a **35–40 second cinematic YouTube Short**.
 
 Topic:
 - Name: {data.get("Name")}
@@ -114,17 +114,19 @@ Topic:
 - Input Notes (Vietnamese): {data.get("Content/Input")}
 
 Requirements:
-- Start immediately with a shock or mystery.
-- No greetings, no "Imagine this", no explanations.
+- Start instantly with shock, awe, or intrigue.
+- No greetings, no filler, no “Imagine this”.
 - Tone: legendary, dramatic, mysterious.
-- Build rising tension.
-- End with a cliffhanger.
+- Build tension progressively.
+- Final 10% must include a subtle, cinematic call-to-action:
+  “Follow to watch the full story about {data.get("Name")}.”
+- No explanation. No hashtags.
 """
 
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
+            max_tokens=400,
             temperature=0.9,
         )
 
@@ -138,7 +140,7 @@ Requirements:
         # Short title prompt
         title_prompt = f"""
 Write a **5–8 word** CINEMATIC English title for a viral YouTube Short.
-It must be mysterious and punchy.
+It must be mysterious, powerful, and emotionally charged.
 Topic name: {data.get("Name")}
 """
 
