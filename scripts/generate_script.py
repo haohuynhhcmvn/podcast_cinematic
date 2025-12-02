@@ -1,3 +1,4 @@
+# scripts/generate_script.py
 import os
 import logging
 from openai import OpenAI
@@ -8,15 +9,16 @@ logger = logging.getLogger(__name__)
 MODEL = "gpt-4o-mini"
 
 
-# ===================================================================
-#  LONG SCRIPT (TIẾNG ANH) — 550–650 WORDS (~3500–3900 ký tự)
-# ===================================================================
+# ============================================================
+#  LONG SCRIPT GENERATOR (ENGLISH • 600–700 words)
+# ============================================================
 def generate_long_script(data):
     """
-    Generate LONG SCRIPT in English (550–650 words)
-    Guaranteed length < 4096 chars to avoid TTS errors.
+    Generate an English long-form script (600–700 words)
+    based on Vietnamese input → translated + rewritten cinematically.
+    Ensures <4000 characters for TTS compatibility.
+    Returns dict: {script_path, metadata}
     """
-
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -25,27 +27,26 @@ def generate_long_script(data):
 
         client = OpenAI(api_key=api_key)
 
-        # --- PROMPT TỐI ƯU ---
+        # --- Prompt cho nội dung dài (ENGLISH) ---
         prompt = f"""
-Write a **cinematic English storytelling script** about the legendary figure below.
+You are a storytelling expert.
 
-NAME: {data.get("Name")}
-THEME: {data.get("Core Theme")}
-INPUT NOTES: {data.get("Content/Input")}
+Using the information below (written in Vietnamese), create a **cinematic English long-form podcast script**.
 
-Requirements:
-- 550–650 words total  
-- Style: cinematic, emotional, dramatic, legendary  
-- 5 chapter structure:
-  1. Hook  
-  2. Origin  
-  3. Conflict  
-  4. Climax  
-  5. Legacy / Ending  
-- No bullet points
-- Must read like a narrative podcast
-- No Vietnamese
-- No markdown, no headings with symbols (** ### ** etc.) — use plain text only
+DATA:
+- Name: {data.get("Name")}
+- Core Theme: {data.get("Core Theme")}
+- Story Input (Vietnamese notes): {data.get("Content/Input")}
+
+REQUIREMENTS:
+- Length: **600–700 words**
+- Tone: cinematic, mysterious, legendary, emotional
+- No introduction such as "In this podcast we will...". Start directly with atmosphere.
+- Must read like a documentary + emotional narration
+- Smooth, natural English (no translation artifacts)
+- Do NOT exceed **4000 characters**
+
+Write the full script now.
 """
 
         response = client.chat.completions.create(
@@ -57,22 +58,26 @@ Requirements:
 
         script_text = response.choices[0].message.content.strip()
 
-        # Safety trimming (max 3900 chars)
-        safe_text = script_text[:3900]
+        # Safety trimming
+        safe_text = script_text[:4000]
 
+        # Output path
         out_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(safe_text)
 
-        logger.info(f"📝 Long script created safely (<4000 chars): {out_path}")
+        logger.info(f"📝 Long EN script created: {out_path}")
+
+        # Metadata for YouTube
+        metadata = {
+            "youtube_title": f"{data.get('Name')} – The Untold Story",
+            "youtube_description": f"A cinematic deep-dive into the mysterious story of {data.get('Name')}.",
+            "youtube_tags": ["podcast", "cinematic", "legend", "storytelling"]
+        }
 
         return {
             "script_path": out_path,
-            "metadata": {
-                "youtube_title": f"{data.get('Name')} – The Untold Story",
-                "youtube_description": f"Cinematic storytelling about {data.get('Name')}.",
-                "youtube_tags": "podcast,storytelling,legend,history"
-            }
+            "metadata": metadata
         }
 
     except Exception as e:
@@ -81,14 +86,16 @@ Requirements:
 
 
 
-# ===================================================================
-#  SHORT SCRIPT (25–30s) — 45–65 WORDS
-# ===================================================================
+# ============================================================
+#  SHORT SCRIPT GENERATOR (ENGLISH • 25–30 SECONDS)
+# ============================================================
 def generate_short_script(data):
     """
-    Create a 25–30 second English hook script (45–65 words)
+    Generate a SHORT English script for YouTube Shorts (25–30s)
+    - 45–65 words
+    - Viral, cinematic, punchy hook
+    - Uses Vietnamese input but outputs English
     """
-
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -97,48 +104,48 @@ def generate_short_script(data):
 
         client = OpenAI(api_key=api_key)
 
-        # ---------------- SHORT SCRIPT ----------------
+        # Prompt for SHORT script
         prompt = f"""
-Write a SHORT English script for a **25–30 second viral YouTube Shorts hook**.
+Write a **45–65 word English script** for a **25–30 second viral cinematic hook** for YouTube Shorts.
 
 Topic:
-Name: {data.get("Name")}
-Theme: {data.get("Core Theme")}
-Notes: {data.get("Content/Input")}
+- Name: {data.get("Name")}
+- Theme: {data.get("Core Theme")}
+- Input Notes (Vietnamese): {data.get("Content/Input")}
 
 Requirements:
-- 45–65 words total
-- Start instantly with a shocking or dramatic moment
-- Very fast-paced and emotional
-- Legendary tone, cinematic tension
-- Ends with a cliffhanger
-- NO instructions, NO hashtags, NO commentary
+- Start immediately with a shock or mystery.
+- No greetings, no "Imagine this", no explanations.
+- Tone: legendary, dramatic, mysterious.
+- Build rising tension.
+- End with a cliffhanger.
 """
 
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.95,
+            max_tokens=300,
+            temperature=0.9,
         )
 
-        script = response.choices[0].message.content.strip()
+        short_script = response.choices[0].message.content.strip()
 
+        # Save short script
         out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
         with open(out_script, "w", encoding="utf-8") as f:
-            f.write(script)
+            f.write(short_script)
 
-        # ---------------- SHORT TITLE ----------------
+        # Short title prompt
         title_prompt = f"""
-Write a **5–8 word viral cinematic title**.
-Should feel mysterious, powerful, dramatic.
-Topic: {data.get("Name")}
+Write a **5–8 word** CINEMATIC English title for a viral YouTube Short.
+It must be mysterious and punchy.
+Topic name: {data.get("Name")}
 """
 
         title_res = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": title_prompt}],
-            max_tokens=30,
+            max_tokens=50,
             temperature=0.9,
         )
 
@@ -148,7 +155,7 @@ Topic: {data.get("Name")}
         with open(out_title, "w", encoding="utf-8") as f:
             f.write(title)
 
-        logger.info(f"✨ Short script + title created for {data['ID']}")
+        logger.info(f"✨ Short EN script + title created for {data['ID']}")
 
         return out_script, out_title
 
