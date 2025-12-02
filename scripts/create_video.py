@@ -9,7 +9,7 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-'''
+
 # ============================================================
 # 🌟 SPOTIFY WAVEFORM – Dạng thanh bar đều, nhảy theo âm lượng
 # ============================================================
@@ -49,50 +49,6 @@ def make_spotify_waveform(audio_path, duration, width=1920, height=220):
             x1 = i * bar_width
             x2 = x1 + bar_width - 1
             img[mid - h//2 : mid + h//2, x1:x2] = (255, 255, 255)
-
-        return img
-
-    return VideoClip(make_frame, duration=duration).set_fps(fps)
-'''
-def make_waveform_safe(audio_path, duration, width=1920, height=220):
-    fps = 30
-
-    # Load audio bằng pydub
-    audio = AudioSegment.from_file(audio_path)
-    samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-
-    # Stereo → mono
-    if audio.channels == 2:
-        samples = samples.reshape((-1, 2)).mean(axis=1)
-
-    # Chuẩn hóa biên độ
-    if np.max(np.abs(samples)) > 0:
-        samples = samples / np.max(np.abs(samples))
-
-    # Tạo samples mapping theo frame
-    num_frames = int(duration * fps)
-    idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
-    waveform = samples[idx]
-
-    # 🎯 Tạo frame RGBA để trong suốt
-    def make_frame(t):
-        frame_id = int(t * fps)
-        if frame_id < 0: frame_id = 0
-        if frame_id >= len(waveform): frame_id = len(waveform) - 1
-
-        amp = abs(waveform[frame_id])
-
-        # 4 channels → RGBA
-        img = np.zeros((height, width, 4), dtype=np.uint8)
-
-        mid = height // 2
-        amp_px = int(amp * (height * 0.45))
-
-        # 🎨 White waveform (alpha = 255)
-        color = (255, 255, 255, 255)
-
-        # Vẽ waveform dạng vertical bar
-        img[mid - amp_px: mid + amp_px, :] = color
 
         return img
 
@@ -141,13 +97,9 @@ def create_video(audio_path, episode_id):
 
         # Light glow
         glow = make_glow_layer(duration)
-'''
         # Spotify Waveform
         waveform = make_spotify_waveform(audio_path, duration, width=1920, height=200)
         waveform = waveform.set_position(("center", "bottom"))
-'''
-        waveform_clip = make_waveform_safe(audio_path, duration, 1920, 220)
-        waveform_clip = waveform_clip.set_position(("center", "bottom"))
         
         # Micro icon (optional)
         mic_path = get_path('assets', 'images', 'microphone.png')
