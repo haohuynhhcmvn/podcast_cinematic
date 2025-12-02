@@ -11,42 +11,44 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# 🌟 WAVEFORM SAFE — Không dùng MoviePy để đọc âm thanh
+# 🌟 SPOTIFY WAVEFORM – Dạng thanh bar đều, nhảy theo âm lượng
 # ============================================================
-def make_waveform_safe(audio_path, duration, width=1920, height=220):
+def make_spotify_waveform(audio_path, duration, width=1920, height=220):
     fps = 30
+    bars = 120  # số lượng cột giống Spotify
+    bar_width = width // bars
 
-    # Load audio bằng pydub → an toàn
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # Stereo → Mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
-    # Normal hóa
     max_val = np.max(np.abs(samples))
     if max_val > 0:
         samples = samples / max_val
 
-    # Resample theo khung waveform
-    num_frames = int(duration * fps)
-    idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
-    waveform = samples[idx]
+    # Chia audio thành "bars" đoạn
+    chunk_len = len(samples) // bars
+    bar_heights = []
 
-    # Precompute pixel array để vẽ nhanh
+    for i in range(bars):
+        chunk = samples[i * chunk_len: (i + 1) * chunk_len]
+        amp = float(np.mean(np.abs(chunk)))
+        bar_heights.append(amp)
+
+    bar_heights = np.array(bar_heights)
+
     mid = height // 2
 
     def make_frame(t):
-        t = max(0, min(t, duration))
-        frame_id = int(t * fps)
-        frame_id = max(0, min(frame_id, len(waveform) - 1))
-
-        amp = abs(waveform[frame_id])
-        amp_px = int(amp * (height * 0.45))
-
         img = np.zeros((height, width, 3), dtype=np.uint8)
-        img[mid - amp_px: mid + amp_px, :] = (255, 255, 255)
+
+        for i, amp in enumerate(bar_heights):
+            h = int(amp * (height * 0.9))
+            x1 = i * bar_width
+            x2 = x1 + bar_width - 1
+            img[mid - h//2 : mid + h//2, x1:x2] = (255, 255, 255)
 
         return img
 
@@ -54,7 +56,7 @@ def make_waveform_safe(audio_path, duration, width=1920, height=220):
 
 
 # ============================================================
-# 🌟 Hiệu ứng LIGHT GLOW — tối ưu bản nhanh
+# 🌟 Light Glow – minimal sexy
 # ============================================================
 def make_glow_layer(duration, width=1920, height=1080):
     y = np.linspace(0, height - 1, height)
@@ -64,71 +66,62 @@ def make_glow_layer(duration, width=1920, height=1080):
     cx, cy = width // 2, int(height * 0.45)
     radius = int(min(width, height) * 0.45)
 
-    distance = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-    intensity = np.clip(255 - (distance / radius) * 255, 0, 255)
+    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
 
     glow = np.zeros((height, width, 3), dtype=np.uint8)
-    glow[:, :, 0] = (intensity * 0.3).astype(np.uint8)
-    glow[:, :, 1] = (intensity * 0.3).astype(np.uint8)
-    glow[:, :, 2] = (intensity * 0.3).astype(np.uint8)
+    glow[:, :, :] = (intensity * 0.25).astype(np.uint8).reshape(height, width, 1)
 
-    clip = ImageClip(glow).set_duration(duration)
-    return clip.set_opacity(0.22)
+    return ImageClip(glow).set_duration(duration).set_opacity(0.18)
 
 
 # ============================================================
-# 🎬 FUNCTION TẠO VIDEO
+# 🎬 CREATE VIDEO – KHÔNG BAO GIỜ TỰ KÉO DÀI VIDEO
 # ============================================================
 def create_video(audio_path, episode_id):
     try:
-        # 1. Load audio
+        # 🔥 Video chỉ được dài bằng TTS
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-        logger.info(f"🎧 Audio final length: {duration:.2f}s")
+        logger.info(f"🎧 Audio duration = {duration:.2f}s (video sẽ đúng bằng thời gian này)")
 
-        # 2. Load background asset
+        # Background
         bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
         bg_image_path = get_path('assets', 'images', 'default_background.png')
 
         if os.path.exists(bg_video_path):
-            logger.info("🎥 Using background VIDEO")
             clip = VideoFileClip(bg_video_path).set_audio(None).resize((1920, 1080)).loop(duration=duration)
         elif os.path.exists(bg_image_path):
-            logger.info("📷 Using background image")
             clip = ImageClip(bg_image_path).set_duration(duration).resize((1920, 1080))
         else:
-            logger.warning("⚠ No BG asset → black screen")
-            clip = ColorClip(size=(1920, 1080), color=(0, 0, 0), duration=duration)
+            clip = ColorClip(size=(1920, 1080), color=(0,0,0), duration=duration)
 
-        # 3. Light Glow
+        # Light glow
         glow = make_glow_layer(duration)
 
-        # 4. Micro icon
+        # Spotify Waveform
+        waveform = make_spotify_waveform(audio_path, duration, width=1920, height=200)
+        waveform = waveform.set_position(("center", "bottom"))
+
+        # Micro icon (optional)
         mic_path = get_path('assets', 'images', 'microphone.png')
         mic = None
         if os.path.exists(mic_path):
             mic = (
                 ImageClip(mic_path)
                 .set_duration(duration)
-                .resize(height=280)
+                .resize(height=260)
                 .set_pos(("center", "bottom"))
             )
 
-        # 5. Waveform SAFE
-        logger.info("📈 Rendering SAFE WAVEFORM…")
-        waveform = make_waveform_safe(audio_path, duration, width=1920, height=200)
-        waveform = waveform.set_position(("center", "bottom"))
-
-        # 6. Composite layers
         layers = [clip, glow, waveform]
         if mic:
             layers.append(mic)
 
         final = CompositeVideoClip(layers).set_audio(audio)
 
-        # 7. Export
+        # Export
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
-        logger.info("🎬 Rendering final video…")
 
         final.write_videofile(
             output,
