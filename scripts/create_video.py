@@ -19,11 +19,10 @@ def make_spotify_waveform(audio_path, duration, width=1920, height=200, color=(2
     bars = 120
     bar_width = width // bars
 
-    # load audio
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # stereo -> mono
+    # stereo → mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
@@ -32,36 +31,38 @@ def make_spotify_waveform(audio_path, duration, width=1920, height=200, color=(2
     if max_val > 0:
         samples /= max_val
 
-    # compute bar amps
     chunk_len = len(samples) // bars
     amps = [
         float(np.mean(np.abs(samples[i*chunk_len:(i+1)*chunk_len])))
         for i in range(bars)
     ]
-    amps = np.array(amps)
 
+    amps = np.array(amps)
     mid = height // 2
 
-    # Mask clip (white bars on black)
+    # ⭐ MASK FRAME RGB — 3 CHANNELS (CHUẨN MOVIEPY)
     def make_mask_frame(t):
-        frame = np.zeros((height, width), dtype=np.uint8)
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+
         for i, amp in enumerate(amps):
             h = int(amp * (height * 0.9))
             x1 = i * bar_width
             x2 = x1 + bar_width - 1
             frame[mid - h//2 : mid + h//2, x1:x2] = 255
+
         return frame
 
-    mask_clip = VideoClip(lambda t: make_mask_frame(t), duration=duration).set_fps(fps)
-    mask_clip = mask_clip.to_mask()
+    # tạo mask clip dạng RGB → convert sang mask
+    mask_rgb_clip = VideoClip(lambda t: make_mask_frame(t), duration=duration).set_fps(fps)
+    mask_clip = mask_rgb_clip.to_mask()
 
-    # Color clip (full solid waveform)
+    # Tạo waveform màu
     color_clip = ColorClip(size=(width, height), color=color).set_duration(duration)
 
-    # Apply mask to color clip → waveform transparent
-    final_wave = color_clip.set_mask(mask_clip)
+    # Gắn mask → waveform TRONG SUỐT HOÀN HẢO
+    waveform_final = color_clip.set_mask(mask_clip)
 
-    return final_wave
+    return waveform_final
 
 
 # ============================================================
