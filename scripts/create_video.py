@@ -1,59 +1,57 @@
-# scripts/create_video.py  (PRO EDITION)
 import logging
 import os
 import numpy as np
+from pydub import AudioSegment
 from moviepy.editor import (
-    AudioFileClip, VideoFileClip, ImageClip, ColorClip,
-    CompositeVideoClip, vfx, VideoClip
+    AudioFileClip, VideoFileClip, ImageClip, ColorClip, CompositeVideoClip, VideoClip
 )
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------
-# ⭐ 1) Waveform Generator
-# ------------------------------------------
-
-# ------------------------------------------
-# ⭐ FIXED WAVEFORM (AN TOÀN - KHÔNG LỖI INDEX)
-# ------------------------------------------
-def make_waveform(audio_clip, duration, width=1920, height=200):
+# ------------------------------------------------------------
+# 🌟 WAVEFORM SAFE — không dùng MoviePy (tránh lỗi index âm)
+# ------------------------------------------------------------
+def make_waveform_safe(audio_path, duration, width=1920, height=220):
     fps = 30
 
-    # Lấy samples dạng mono ổn định
-    samples = audio_clip.to_soundarray(fps=fps)
-    samples = samples.mean(axis=1) if samples.ndim == 2 else samples
+    # 1. Load audio bằng pydub → luôn an toàn
+    audio = AudioSegment.from_file(audio_path)
+    samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # chuẩn hóa
+    # Stereo → mono
+    if audio.channels == 2:
+        samples = samples.reshape((-1, 2)).mean(axis=1)
+
+    # Chuẩn hóa
     if np.max(np.abs(samples)) > 0:
         samples = samples / np.max(np.abs(samples))
 
+    # Resample theo frame video
     num_frames = int(duration * fps)
+    idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
+    waveform = samples[idx]
 
-    # Tạo mảng amplitude có cùng số frame với video
-    # dùng interpolation → không bao giờ lỗi index
-    sample_idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
-    safe_amp = samples[sample_idx]
-
+    # Vẽ waveform theo thời gian
     def make_frame(t):
-        # clamp t
         if t < 0:
             t = 0
         if t >= duration:
             t = duration - 0.0001
 
-        idx = int(t * fps)
-        idx = max(0, min(idx, len(safe_amp) - 1))
-
-        amp = safe_amp[idx]
+        frame_id = int(t * fps)
+        frame_id = max(0, min(frame_id, len(waveform) - 1))
+        amp = waveform[frame_id]
 
         img = np.zeros((height, width, 3), dtype=np.uint8)
+
         mid = height // 2
         amp_px = int(abs(amp) * (height * 0.45))
 
         color = (255, 255, 255)
 
+        # Vẽ vertical line waveform
         for x in range(width):
             img[mid - amp_px: mid + amp_px, x] = color
 
@@ -61,67 +59,59 @@ def make_waveform(audio_clip, duration, width=1920, height=200):
 
     return VideoClip(make_frame, duration=duration).set_fps(fps)
 
-# ------------------------------------------
-# ⭐ 2) Light Glow Overlay
-# ------------------------------------------
-def make_light_glow(duration):
-    glow = ColorClip(size=(1920, 1080), color=(255, 255, 255))
-    glow = glow.set_opacity(0.065)          # ánh sáng rất nhẹ
-    glow = glow.set_duration(duration)
-    glow = glow.fx(vfx.fadein, 1).fx(vfx.fadeout, 1)
-    return glow
+
+# ------------------------------------------------------------
+# 🌟 Hiệu ứng LIGHT GLOW cho nền
+# ------------------------------------------------------------
+def make_glow_layer(duration, width=1920, height=1080):
+    import cv2
+
+    glow = np.zeros((height, width, 3), dtype=np.uint8)
+
+    # Vòng tròn ánh sáng ở giữa, mờ dần
+    center = (width // 2, int(height * 0.45))
+    radius = int(min(width, height) * 0.45)
+
+    for y in range(height):
+        for x in range(width):
+            dist = ((x - center[0]) ** 2 + (y - center[1]) ** 2) ** 0.5
+            intensity = max(0, 255 - (dist / radius) * 255)
+            glow[y, x] = (intensity * 0.3, intensity * 0.3, intensity * 0.3)
+
+    clip = ImageClip(glow).set_duration(duration)
+    return clip.set_opacity(0.2)  # nhẹ nhàng, sang trọng
 
 
-# ------------------------------------------
-# ⭐ 3) Main Video Render
-# ------------------------------------------
+# ------------------------------------------------------------
+# 🎬 FUNCTION TẠO VIDEO
+# ------------------------------------------------------------
 def create_video(audio_path, episode_id):
     try:
-        # Load Audio
+        # 1. Load audio
         audio = AudioFileClip(audio_path)
         duration = audio.duration
+        logger.info(f"🎧 Audio final length: {duration:.2f}s")
 
-        # Background
-        bg_video_path = get_path('assets', 'video', 'pp-podcast_loop_bg_long.mp4')
+        # 2. Load background
+        bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
         bg_image_path = get_path('assets', 'images', 'default_background.png')
 
         if os.path.exists(bg_video_path):
-            logger.info(f"🎥 Background video: {bg_video_path}")
-
-            clip = (
-                VideoFileClip(bg_video_path)
-                .set_audio(None)
-                .resize((1920, 1080))
-                .fx(vfx.loop, duration=duration)         # fix chính
-            )
+            logger.info("🎥 Using background VIDEO")
+            clip = VideoFileClip(bg_video_path).set_audio(None).resize((1920, 1080)).loop(duration=duration)
         elif os.path.exists(bg_image_path):
             logger.info("📷 Using background image")
             clip = ImageClip(bg_image_path).set_duration(duration).resize((1920, 1080))
         else:
-            logger.warning("⚠ No background asset → black screen")
-            clip = ColorClip(size=(1920, 1080), color=(0,0,0), duration=duration)
+            logger.warning("⚠ No BG asset found → using BLACK screen")
+            clip = ColorClip(size=(1920, 1080), color=(0, 0, 0), duration=duration)
 
+        # 3. Hiệu ứng Light Glow
+        glow = make_glow_layer(duration)
 
-        # ------------------------------------------
-        # ⭐ ADD light glow layer
-        # ------------------------------------------
-        glow = make_light_glow(duration)
-
-        # ------------------------------------------
-        # ⭐ ADD waveform động phía dưới cùng
-        # ------------------------------------------
-        waveform = (
-            make_waveform(audio, duration, width=1920, height=220)
-            .set_position(("center", 780))  # dưới đáy video
-            .set_opacity(0.85)
-        )
-
-        # ------------------------------------------
-        # ⭐ Micro overlay (nếu có)
-        # ------------------------------------------
+        # 4. Microphone Icon
         mic_path = get_path('assets', 'images', 'microphone.png')
-        overlays = [clip, glow, waveform]
-
+        mic = None
         if os.path.exists(mic_path):
             mic = (
                 ImageClip(mic_path)
@@ -129,25 +119,34 @@ def create_video(audio_path, episode_id):
                 .resize(height=300)
                 .set_pos(("center", "bottom"))
             )
-            overlays.append(mic)
 
-        # Composite
-        final = CompositeVideoClip(overlays).set_audio(audio)
+        # 5. Waveform SAFE
+        logger.info("📈 Rendering WAVEFORM…")
+        waveform_clip = make_waveform_safe(audio_path, duration, width=1920, height=220)
+        waveform_clip = waveform_clip.set_position(("center", "bottom"))
 
-        # Output
-        output = get_path("outputs", "video", f"{episode_id}_video.mp4")
+        # 6. Composite final video
+        layers = [clip, glow, waveform_clip]
+        if mic:
+            layers.append(mic)
 
-        logger.info("🎬 Rendering enhanced video...")
+        final = CompositeVideoClip(layers).set_audio(audio)
+
+        # 7. Output
+        output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
+        logger.info("🎬 Rendering final video…")
+
         final.write_videofile(
             output,
-            fps=30,
+            fps=24,
             codec="libx264",
             audio_codec="aac",
-            preset="medium",
-            logger=None
+            preset="superfast",
+            threads=4,
+            logger=None,
         )
 
-        logger.info(f"✅ Video ready: {output}")
+        logger.info(f"✅ DONE: {output}")
         return output
 
     except Exception as e:
