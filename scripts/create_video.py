@@ -11,18 +11,18 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM – Sóng tròn lan tỏa (màu trắng bạc)
+# 🌟 CIRCULAR WAVEFORM – Sóng tròn lan tỏa
+# [ĐÃ SỬA LỖI]: Dùng phương pháp Mask (Mặt nạ) để tránh lỗi RGBA vs RGB
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=1920, height=1080):
-    fps = 30
+    fps = 24  # Giảm xuống 24 để render nhanh hơn và khớp với output
 
-    # Load audio via pydub
+    # 1. Xử lý Audio
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # Stereo → Mono
+    # Stereo -> Mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
@@ -31,47 +31,57 @@ def make_circular_waveform(audio_path, duration, width=1920, height=1080):
     if max_val > 0:
         samples = samples / max_val
 
-    # Số sóng lan tỏa
-    waves = 35  
+    # Cấu hình sóng
+    waves = 35
     center = (width // 2, height // 2)
+    
+    # 2. Tạo hàm Mask (Trả về mảng 2D Grayscale thay vì 4D RGBA)
+    def make_mask_frame(t):
+        # Tạo mảng mask đen (float từ 0.0 đến 1.0)
+        mask_frame = np.zeros((height, width), dtype=np.float32)
 
-    # Màu trắng bạc
-    color = np.array([235, 235, 235, 255], dtype=np.uint8)
-
-    # Tạo frame
-    def make_frame(t):
-        # Canvas RGBA trong suốt
-        frame = np.zeros((height, width, 4), dtype=np.uint8)
-        frame[:, :, 3] = 0
-
-        # Lấy amplitude tại thời điểm t
+        # Lấy biên độ tại thời điểm t
         idx = int((t / duration) * len(samples))
         idx = max(0, min(idx, len(samples) - 1))
         amp = abs(samples[idx])
 
-        # Biên độ cho sóng
+        # Bán kính cơ sở
         base_radius = 80 + amp * 60
 
-        # Vẽ nhiều vòng tròn lan tỏa
+        # Vẽ các vòng tròn lên mask
+        yy, xx = np.ogrid[:height, :width]
+        # Tính khoảng cách một lần để tối ưu
+        dist_sq = (xx - center[0]) ** 2 + (yy - center[1]) ** 2
+        dist = np.sqrt(dist_sq)
+
         for i in range(waves):
             radius = base_radius + i * 18
-            opacity = max(0, 1.0 - i * 0.035)
+            opacity = max(0.0, 1.0 - i * 0.035)
 
             if opacity <= 0:
                 continue
 
-            # Vẽ vòng tròn trên canvas (RGBA)
-            yy, xx = np.ogrid[:height, :width]
-            dist = np.sqrt((xx - center[0]) ** 2 + (yy - center[1]) ** 2)
+            # Tạo vành khuyên (ring)
+            # Độ dày vòng tròn khoảng 4 pixel (+/- 2)
+            ring_mask = np.logical_and(dist >= radius - 2, dist <= radius + 2)
+            
+            # Gán độ mờ (opacity) vào mask
+            # Dùng np.maximum để các vòng chồng lên nhau không bị mất
+            mask_frame[ring_mask] = np.maximum(mask_frame[ring_mask], opacity)
 
-            mask = np.logical_and(dist >= radius - 2, dist <= radius + 2)
+        return mask_frame
 
-            # Apply màu + opacity
-            frame[mask] = (color * np.array([1, 1, 1, opacity])).astype(np.uint8)
+    # 3. Tạo Mask Clip từ hàm trên
+    mask_clip = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
 
-        return frame
+    # 4. Tạo Color Clip (Màu trắng bạc) và áp dụng Mask
+    # Màu trắng bạc: (235, 235, 235)
+    color_clip = ColorClip(size=(width, height), color=(235, 235, 235), duration=duration)
+    
+    # Kết hợp: Color + Mask = Video trong suốt
+    final_waveform = color_clip.set_mask(mask_clip)
 
-    return VideoClip(make_frame, duration=duration).set_fps(fps)
+    return final_waveform
 
 
 # ============================================================
@@ -95,16 +105,16 @@ def make_glow_layer(duration, width=1920, height=1080):
 
 
 # ============================================================
-# 🎬 HÀM TẠO VIDEO CHÍNH (KHÔNG BAO GIỜ KÉO DÀI VIDEO)
+# 🎬 HÀM TẠO VIDEO CHÍNH
 # ============================================================
 def create_video(audio_path, episode_id):
     try:
         # -----------------------------------------------------
-        # 🔥 Video phải có thời lượng = thời lượng audio
+        # 🔥 Setup Duration
         # -----------------------------------------------------
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-        logger.info(f"🎧 Audio duration = {duration:.2f}s (video sẽ bằng đúng thời gian này)")
+        logger.info(f"🎧 Audio duration = {duration:.2f}s")
 
         # -----------------------------------------------------
         # ⭐ Load background
@@ -130,13 +140,14 @@ def create_video(audio_path, episode_id):
         glow = make_glow_layer(duration)
 
         # -----------------------------------------------------
-        # ⭐ Circular Ripple Waveform – hiệu ứng vòng tròn
+        # ⭐ Circular Ripple Waveform
         # -----------------------------------------------------
+        # [QUAN TRỌNG] Hàm này giờ trả về RGB clip có mask, an toàn cho việc ghép
         waveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
 
         # -----------------------------------------------------
-        # ⭐ Optional microphone icon
+        # ⭐ Microphone icon
         # -----------------------------------------------------
         mic_path = get_path('assets', 'images', 'microphone.png')
         mic = None
@@ -149,18 +160,20 @@ def create_video(audio_path, episode_id):
             )
 
         # -----------------------------------------------------
-        # ⭐ Ghép các layer vào nhau
+        # ⭐ Ghép layers
         # -----------------------------------------------------
+        # Thứ tự: Nền -> Glow -> Sóng -> Mic
         layers = [clip, glow, waveform]
         if mic:
             layers.append(mic)
 
-        final = CompositeVideoClip(layers).set_audio(audio)
+        final = CompositeVideoClip(layers, size=(1920, 1080)).set_audio(audio)
 
         # -----------------------------------------------------
         # ⭐ Xuất video
         # -----------------------------------------------------
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
+        os.makedirs(os.path.dirname(output), exist_ok=True)
 
         final.write_videofile(
             output,
@@ -169,7 +182,7 @@ def create_video(audio_path, episode_id):
             audio_codec="aac",
             preset="superfast",
             threads=4,
-            logger=None,
+            logger=None, # Tắt logger để đỡ rối, hoặc dùng 'bar'
         )
 
         logger.info(f"✅ DONE: {output}")
