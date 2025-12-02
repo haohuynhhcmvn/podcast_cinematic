@@ -10,81 +10,75 @@ from utils import get_path
 logger = logging.getLogger(__name__)
 
 
-# ------------------------------------------------------------
-# 🌟 WAVEFORM SAFE — không dùng MoviePy (tránh lỗi index âm)
-# ------------------------------------------------------------
+# ============================================================
+# 🌟 WAVEFORM SAFE — Không dùng MoviePy để đọc âm thanh
+# ============================================================
 def make_waveform_safe(audio_path, duration, width=1920, height=220):
     fps = 30
 
-    # 1. Load audio bằng pydub → luôn an toàn
+    # Load audio bằng pydub → an toàn
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # Stereo → mono
+    # Stereo → Mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
-    # Chuẩn hóa
-    if np.max(np.abs(samples)) > 0:
-        samples = samples / np.max(np.abs(samples))
+    # Normal hóa
+    max_val = np.max(np.abs(samples))
+    if max_val > 0:
+        samples = samples / max_val
 
-    # Resample theo frame video
+    # Resample theo khung waveform
     num_frames = int(duration * fps)
     idx = np.linspace(0, len(samples) - 1, num_frames).astype(int)
     waveform = samples[idx]
 
-    # Vẽ waveform theo thời gian
-    def make_frame(t):
-        if t < 0:
-            t = 0
-        if t >= duration:
-            t = duration - 0.0001
+    # Precompute pixel array để vẽ nhanh
+    mid = height // 2
 
+    def make_frame(t):
+        t = max(0, min(t, duration))
         frame_id = int(t * fps)
         frame_id = max(0, min(frame_id, len(waveform) - 1))
-        amp = waveform[frame_id]
+
+        amp = abs(waveform[frame_id])
+        amp_px = int(amp * (height * 0.45))
 
         img = np.zeros((height, width, 3), dtype=np.uint8)
-
-        mid = height // 2
-        amp_px = int(abs(amp) * (height * 0.45))
-
-        color = (255, 255, 255)
-
-        # Vẽ vertical line waveform
-        for x in range(width):
-            img[mid - amp_px: mid + amp_px, x] = color
+        img[mid - amp_px: mid + amp_px, :] = (255, 255, 255)
 
         return img
 
     return VideoClip(make_frame, duration=duration).set_fps(fps)
 
 
-# ------------------------------------------------------------
-# 🌟 Hiệu ứng LIGHT GLOW cho nền
-# ------------------------------------------------------------
+# ============================================================
+# 🌟 Hiệu ứng LIGHT GLOW — tối ưu bản nhanh
+# ============================================================
 def make_glow_layer(duration, width=1920, height=1080):
-    import cv2
+    y = np.linspace(0, height - 1, height)
+    x = np.linspace(0, width - 1, width)
+    xx, yy = np.meshgrid(x, y)
 
-    glow = np.zeros((height, width, 3), dtype=np.uint8)
-
-    # Vòng tròn ánh sáng ở giữa, mờ dần
-    center = (width // 2, int(height * 0.45))
+    cx, cy = width // 2, int(height * 0.45)
     radius = int(min(width, height) * 0.45)
 
-    for y in range(height):
-        for x in range(width):
-            dist = ((x - center[0]) ** 2 + (y - center[1]) ** 2) ** 0.5
-            intensity = max(0, 255 - (dist / radius) * 255)
-            glow[y, x] = (intensity * 0.3, intensity * 0.3, intensity * 0.3)
+    distance = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    intensity = np.clip(255 - (distance / radius) * 255, 0, 255)
+
+    glow = np.zeros((height, width, 3), dtype=np.uint8)
+    glow[:, :, 0] = (intensity * 0.3).astype(np.uint8)
+    glow[:, :, 1] = (intensity * 0.3).astype(np.uint8)
+    glow[:, :, 2] = (intensity * 0.3).astype(np.uint8)
 
     clip = ImageClip(glow).set_duration(duration)
-    return clip.set_opacity(0.2)  # nhẹ nhàng, sang trọng
+    return clip.set_opacity(0.22)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # 🎬 FUNCTION TẠO VIDEO
-# ------------------------------------------------------------
+# ============================================================
 def create_video(audio_path, episode_id):
     try:
         # 1. Load audio
@@ -92,7 +86,7 @@ def create_video(audio_path, episode_id):
         duration = audio.duration
         logger.info(f"🎧 Audio final length: {duration:.2f}s")
 
-        # 2. Load background
+        # 2. Load background asset
         bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
         bg_image_path = get_path('assets', 'images', 'default_background.png')
 
@@ -103,36 +97,36 @@ def create_video(audio_path, episode_id):
             logger.info("📷 Using background image")
             clip = ImageClip(bg_image_path).set_duration(duration).resize((1920, 1080))
         else:
-            logger.warning("⚠ No BG asset found → using BLACK screen")
+            logger.warning("⚠ No BG asset → black screen")
             clip = ColorClip(size=(1920, 1080), color=(0, 0, 0), duration=duration)
 
-        # 3. Hiệu ứng Light Glow
+        # 3. Light Glow
         glow = make_glow_layer(duration)
 
-        # 4. Microphone Icon
+        # 4. Micro icon
         mic_path = get_path('assets', 'images', 'microphone.png')
         mic = None
         if os.path.exists(mic_path):
             mic = (
                 ImageClip(mic_path)
                 .set_duration(duration)
-                .resize(height=300)
+                .resize(height=280)
                 .set_pos(("center", "bottom"))
             )
 
         # 5. Waveform SAFE
-        logger.info("📈 Rendering WAVEFORM…")
-        waveform_clip = make_waveform_safe(audio_path, duration, width=1920, height=220)
-        waveform_clip = waveform_clip.set_position(("center", "bottom"))
+        logger.info("📈 Rendering SAFE WAVEFORM…")
+        waveform = make_waveform_safe(audio_path, duration, width=1920, height=200)
+        waveform = waveform.set_position(("center", "bottom"))
 
-        # 6. Composite final video
-        layers = [clip, glow, waveform_clip]
+        # 6. Composite layers
+        layers = [clip, glow, waveform]
         if mic:
             layers.append(mic)
 
         final = CompositeVideoClip(layers).set_audio(audio)
 
-        # 7. Output
+        # 7. Export
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
         logger.info("🎬 Rendering final video…")
 
