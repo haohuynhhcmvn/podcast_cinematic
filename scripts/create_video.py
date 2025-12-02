@@ -3,7 +3,8 @@ import os
 import numpy as np
 from pydub import AudioSegment
 from moviepy.editor import (
-    AudioFileClip, VideoFileClip, ImageClip, ColorClip, CompositeVideoClip, VideoClip
+    AudioFileClip, VideoFileClip, ImageClip, ColorClip,
+    CompositeVideoClip, VideoClip
 )
 from utils import get_path
 
@@ -11,61 +12,60 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# 🌟 SPOTIFY WAVEFORM – Dạng thanh bar đều, nhảy theo âm lượng
+# 🌟 SPOTIFY WAVEFORM – TRONG SUỐT DẠNG BAR
 # ============================================================
-def make_spotify_waveform(audio_path, duration, width=1920, height=220):
+def make_spotify_waveform(audio_path, duration, width=1920, height=200, color=(255,255,255)):
     fps = 30
     bars = 120
     bar_width = width // bars
 
+    # load audio
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
-    # Stereo → mono
+    # stereo -> mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
-    # Chuẩn hóa
+    # normalize
     max_val = np.max(np.abs(samples))
     if max_val > 0:
-        samples = samples / max_val
+        samples /= max_val
 
-    # Chia audio thành 120 bar
+    # compute bar amps
     chunk_len = len(samples) // bars
-    bar_heights = []
+    amps = [
+        float(np.mean(np.abs(samples[i*chunk_len:(i+1)*chunk_len])))
+        for i in range(bars)
+    ]
+    amps = np.array(amps)
 
-    for i in range(bars):
-        chunk = samples[i * chunk_len: (i + 1) * chunk_len]
-        amp = float(np.mean(np.abs(chunk)))
-        bar_heights.append(amp)
-
-    bar_heights = np.array(bar_heights)
     mid = height // 2
 
-    # ⭐⭐ FRAME RGBA — nền trong suốt ⭐⭐
-    def make_frame(t):
-        # tạo frame nền trong suốt
-        img = np.zeros((height, width, 4), dtype=np.uint8)
-        # alpha 0 (transparent background)
-        img[:, :, 3] = 0  
-
-        # màu waveform trắng
-        color = np.array([255, 255, 255, 255], dtype=np.uint8)  
-
-        for i, amp in enumerate(bar_heights):
+    # Mask clip (white bars on black)
+    def make_mask_frame(t):
+        frame = np.zeros((height, width), dtype=np.uint8)
+        for i, amp in enumerate(amps):
             h = int(amp * (height * 0.9))
             x1 = i * bar_width
             x2 = x1 + bar_width - 1
+            frame[mid - h//2 : mid + h//2, x1:x2] = 255
+        return frame
 
-            # vẽ bar với FULL ALPHA
-            img[mid - h // 2 : mid + h // 2, x1:x2] = color
+    mask_clip = VideoClip(lambda t: make_mask_frame(t), duration=duration).set_fps(fps)
+    mask_clip = mask_clip.to_mask()
 
-        return img
+    # Color clip (full solid waveform)
+    color_clip = ColorClip(size=(width, height), color=color).set_duration(duration)
 
-    return VideoClip(make_frame, duration=duration).set_fps(fps)
+    # Apply mask to color clip → waveform transparent
+    final_wave = color_clip.set_mask(mask_clip)
+
+    return final_wave
+
 
 # ============================================================
-# 🌟 Light Glow – minimal sexy
+# 🌟 Light Glow Layer
 # ============================================================
 def make_glow_layer(duration, width=1920, height=1080):
     y = np.linspace(0, height - 1, height)
@@ -75,7 +75,7 @@ def make_glow_layer(duration, width=1920, height=1080):
     cx, cy = width // 2, int(height * 0.45)
     radius = int(min(width, height) * 0.45)
 
-    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    dist = np.sqrt((xx - cx)**2 + (yy - cy)**2)
     intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
 
     glow = np.zeros((height, width, 3), dtype=np.uint8)
@@ -85,42 +85,35 @@ def make_glow_layer(duration, width=1920, height=1080):
 
 
 # ============================================================
-# 🎬 CREATE VIDEO – KHÔNG BAO GIỜ TỰ KÉO DÀI VIDEO
+# 🎬 CREATE VIDEO – CHUẨN KHÔNG DÀI THÊM
 # ============================================================
 def create_video(audio_path, episode_id):
     try:
-        # 🔥 Video chỉ được dài bằng TTS
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-        logger.info(f"🎧 Audio duration = {duration:.2f}s (video sẽ đúng bằng thời gian này)")
+        logger.info(f"🎧 Audio duration = {duration:.2f}s")
 
-        # Background
-        bg_video_path = get_path('assets', 'video', 'pppodcast_loop_bg_long.mp4')
-        bg_image_path = get_path('assets', 'images', 'default_background.png')
+        bg_video_path = get_path("assets", "video", "pppodcast_loop_bg_long.mp4")
+        bg_image_path = get_path("assets", "images", "default_background.png")
 
         if os.path.exists(bg_video_path):
-            clip = VideoFileClip(bg_video_path).set_audio(None).resize((1920, 1080)).loop(duration=duration)
+            clip = VideoFileClip(bg_video_path).set_audio(None).resize((1920,1080)).loop(duration=duration)
         elif os.path.exists(bg_image_path):
-            clip = ImageClip(bg_image_path).set_duration(duration).resize((1920, 1080))
+            clip = ImageClip(bg_image_path).set_duration(duration).resize((1920,1080))
         else:
-            clip = ColorClip(size=(1920, 1080), color=(0,0,0), duration=duration)
+            clip = ColorClip((1920,1080), color=(0,0,0), duration=duration)
 
-        # Light glow
         glow = make_glow_layer(duration)
-        # Spotify Waveform
-        waveform = make_spotify_waveform(audio_path, duration, width=1920, height=200)
+
+        # 🎵 Spotify waveform TRONG SUỐT
+        waveform = make_spotify_waveform(audio_path, duration)
         waveform = waveform.set_position(("center", "bottom"))
-        
-        # Micro icon (optional)
-        mic_path = get_path('assets', 'images', 'microphone.png')
+
+        # Mic icon (optional)
+        mic_path = get_path("assets", "images", "microphone.png")
         mic = None
         if os.path.exists(mic_path):
-            mic = (
-                ImageClip(mic_path)
-                .set_duration(duration)
-                .resize(height=260)
-                .set_pos(("center", "bottom"))
-            )
+            mic = ImageClip(mic_path).set_duration(duration).resize(height=260).set_pos(("center", "bottom"))
 
         layers = [clip, glow, waveform]
         if mic:
@@ -128,8 +121,7 @@ def create_video(audio_path, episode_id):
 
         final = CompositeVideoClip(layers).set_audio(audio)
 
-        # Export
-        output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
+        output = get_path("outputs", "video", f"{episode_id}_video.mp4")
 
         final.write_videofile(
             output,
@@ -138,7 +130,7 @@ def create_video(audio_path, episode_id):
             audio_codec="aac",
             preset="superfast",
             threads=4,
-            logger=None,
+            logger=None
         )
 
         logger.info(f"✅ DONE: {output}")
