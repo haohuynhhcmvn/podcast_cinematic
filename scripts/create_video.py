@@ -15,20 +15,22 @@ logger = logging.getLogger(__name__)
 # ============================================================
 def make_spotify_waveform(audio_path, duration, width=1920, height=220):
     fps = 30
-    bars = 120  # số lượng cột giống Spotify
+    bars = 120
     bar_width = width // bars
 
     audio = AudioSegment.from_file(audio_path)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
 
+    # Stereo → mono
     if audio.channels == 2:
         samples = samples.reshape((-1, 2)).mean(axis=1)
 
+    # Chuẩn hóa
     max_val = np.max(np.abs(samples))
     if max_val > 0:
         samples = samples / max_val
 
-    # Chia audio thành "bars" đoạn
+    # Chia audio thành 120 bar
     chunk_len = len(samples) // bars
     bar_heights = []
 
@@ -38,17 +40,25 @@ def make_spotify_waveform(audio_path, duration, width=1920, height=220):
         bar_heights.append(amp)
 
     bar_heights = np.array(bar_heights)
-
     mid = height // 2
 
+    # ⭐⭐ FRAME RGBA — nền trong suốt ⭐⭐
     def make_frame(t):
-        img = np.zeros((height, width, 3), dtype=np.uint8)
+        # tạo frame nền trong suốt
+        img = np.zeros((height, width, 4), dtype=np.uint8)
+        # alpha 0 (transparent background)
+        img[:, :, 3] = 0  
+
+        # màu waveform trắng
+        color = np.array([255, 255, 255, 255], dtype=np.uint8)  
 
         for i, amp in enumerate(bar_heights):
             h = int(amp * (height * 0.9))
             x1 = i * bar_width
             x2 = x1 + bar_width - 1
-            img[mid - h//2 : mid + h//2, x1:x2] = (255, 255, 255)
+
+            # vẽ bar với FULL ALPHA
+            img[mid - h // 2 : mid + h // 2, x1:x2] = color
 
         return img
 
