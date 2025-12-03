@@ -5,7 +5,7 @@ on:
     # Chạy 6 lần/ngày vào phút 40 của các giờ sau (UTC):
     # Nội địa: 3, 11
     # Quốc tế: 14, 16, 18, 21
-    - cron: '40 3,11,14,16,18,21 * * *'
+    - cron: '40 11,14,21 * * *'
   
   #schedule:
    # - cron: '0 * * * *' 
