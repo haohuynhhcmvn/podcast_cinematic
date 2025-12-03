@@ -1,16 +1,13 @@
-name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
+Name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
   schedule:
-    # Chạy 6 lần/ngày vào phút 40 của các giờ sau (UTC):
-    # Nội địa: 3, 11
-    # Quốc tế: 14, 16, 18, 21
+    # Chạy 3 lần/ngày vào các khung giờ vàng đã tối ưu chiến lược (UTC):
+    # 11:40 (18:40 VN), 14:40 (09:40 Sáng Mỹ), 21:40 (04:40 Chiều Mỹ)
+    # Lịch này giúp bảo vệ Quota API và GitHub Minutes.
     - cron: '40 11,14,21 * * *'
   
-  #schedule:
-   # - cron: '0 * * * *' 
-  
-  workflow_dispatch: #Cho phép chạy thủ công
+  workflow_dispatch: # Cho phép chạy thủ công
 
 jobs:
   build_and_upload_podcast:
@@ -27,12 +24,20 @@ jobs:
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      - name: 🐍 Thiết lập môi trường Python
+      # --- [TỐI ƯU HÓA] CACHING PYTHON ---
+      - name: 🐍 Thiết lập môi trường Python (Có Cache)
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          # [CHIẾN LƯỢC TỐI ƯU] 
+          # Dòng 'cache: pip' kích hoạt bộ nhớ đệm. 
+          # Nó giúp bỏ qua việc tải lại các thư viện nặng (numpy, moviepy...) nếu file requirements.txt không đổi.
+          # Tiết kiệm 2-5 phút mỗi lần chạy.
+          cache: 'pip' 
+          cache-dependency-path: 'requirements.txt'
 
       # --- Cài đặt System Dependencies (FFmpeg + ImageMagick) ---
+      # Lưu ý: FFmpeg cài bằng apt-get khá nhanh nên không cần cache phức tạp.
       - name: ⚙️ Cài đặt FFmpeg & ImageMagick
         run: |
           sudo apt-get update
@@ -41,7 +46,9 @@ jobs:
           sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
       - name: 📦 Cài đặt các thư viện Python
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
         
       # --- Giải mã Khóa ---
       - name: 🔑 Giải mã Khóa Xác thực
@@ -61,8 +68,8 @@ jobs:
       # 💾 --- Lưu trữ Output (Artifact) ---
       - name: 💾 Lưu trữ TOÀN BỘ Output (Artifacts)
         uses: actions/upload-artifact@v4
-        if: always() # Đảm bảo chạy ngay cả khi Pipeline thất bại
+        if: always() # Đảm bảo chạy ngay cả khi Pipeline thất bại để debug
         with:
-          name: episode-output-artifacts # Đặt tên chung hơn
-          path: outputs/ # LƯU TOÀN BỘ THƯ MỤC OUTPUTS
-          retention-days: 7 # Lưu trữ trong 7 ngày
+          name: episode-output-artifacts
+          path: outputs/ 
+          retention-days: 7 
