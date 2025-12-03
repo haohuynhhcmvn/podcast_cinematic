@@ -1,3 +1,5 @@
+#=== script/glue_pipeline.py==
+
 import logging
 import sys
 import os
