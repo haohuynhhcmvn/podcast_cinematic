@@ -1,18 +1,18 @@
-Name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
+name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
   schedule:
-    # Chạy 3 lần/ngày vào các khung giờ vàng đã tối ưu chiến lược (UTC):
-    # 11:40 (18:40 VN), 14:40 (09:40 Sáng Mỹ), 21:40 (04:40 Chiều Mỹ)
-    # Lịch này giúp bảo vệ Quota API và GitHub Minutes.
+    # Chạy vào các khung giờ vàng (UTC): 
+    # 11:40 (18:40 VN), 14:40, 21:40
     - cron: '40 11,14,21 * * *'
   
-  workflow_dispatch: # Cho phép chạy thủ công
+  workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
 
 jobs:
   build_and_upload_podcast:
     runs-on: ubuntu-latest
 
+    # Khai báo biến môi trường từ Secrets
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -21,54 +21,55 @@ jobs:
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
     steps:
+      # 1. Tải mã nguồn về máy ảo
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      # --- [TỐI ƯU HÓA] CACHING PYTHON ---
-      - name: 🐍 Thiết lập môi trường Python (Có Cache)
+      # 2. Cài đặt Python (CÓ CACHE TỐI ƯU)
+      - name: 🐍 Thiết lập môi trường Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          # [CHIẾN LƯỢC TỐI ƯU] 
-          # Dòng 'cache: pip' kích hoạt bộ nhớ đệm. 
-          # Nó giúp bỏ qua việc tải lại các thư viện nặng (numpy, moviepy...) nếu file requirements.txt không đổi.
-          # Tiết kiệm 2-5 phút mỗi lần chạy.
-          cache: 'pip' 
+          cache: 'pip' # Kích hoạt cache để không phải tải lại thư viện cũ
           cache-dependency-path: 'requirements.txt'
 
-      # --- Cài đặt System Dependencies (FFmpeg + ImageMagick) ---
-      # Lưu ý: FFmpeg cài bằng apt-get khá nhanh nên không cần cache phức tạp.
+      # 3. Cài đặt phần mềm hệ thống (FFmpeg + ImageMagick)
       - name: ⚙️ Cài đặt FFmpeg & ImageMagick
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
-          # QUAN TRỌNG: Sửa lỗi bảo mật của ImageMagick để cho phép tạo TextClip
+          # Sửa lỗi bảo mật ImageMagick để cho phép viết chữ lên ảnh
           sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
+      # 4. Cài đặt thư viện Python
       - name: 📦 Cài đặt các thư viện Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
         
-      # --- Giải mã Khóa ---
+      # 5. Giải mã các file bí mật (Credentials)
       - name: 🔑 Giải mã Khóa Xác thực
         run: |
+          # Tạo file service-account.json từ secret
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
+          
+          # Giải mã file client_secret và token youtube từ base64
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
+          # Tạo file .env để code Python đọc
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
-      # --- Chạy Pipeline ---
+      # 6. Chạy chương trình chính
       - name: 🚀 Chạy Podcast Generator Pipeline
         run: python scripts/glue_pipeline.py
 
-      # 💾 --- Lưu trữ Output (Artifact) ---
+      # 7. Lưu lại kết quả (Video/Log) để kiểm tra nếu cần
       - name: 💾 Lưu trữ TOÀN BỘ Output (Artifacts)
         uses: actions/upload-artifact@v4
-        if: always() # Đảm bảo chạy ngay cả khi Pipeline thất bại để debug
+        if: always() # Luôn chạy bước này kể cả khi code lỗi
         with:
           name: episode-output-artifacts
           path: outputs/ 
