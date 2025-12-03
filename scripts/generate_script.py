@@ -7,38 +7,23 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# Giữ nguyên model bạn đang dùng
+# Giữ nguyên model
 MODEL = "gpt-4o-mini" 
 
 # ============================================================
-#  HÀM LÀM SẠCH KỊCH BẢN CHO TTS (AN TOÀN & KHÔNG GÂY LỖI)
+#  HÀM LÀM SẠCH KỊCH BẢN (GIỮ NGUYÊN)
 # ============================================================
 def clean_text_for_tts(text):
-    """
-    Hàm này loại bỏ các chỉ dẫn kỹ thuật để TTS không đọc nhầm.
-    """
-    if not text:
-        return ""
-
-    # 1. Xóa các ký tự Markdown in đậm/nghiêng
+    if not text: return ""
     text = text.replace('**', '').replace('__', '')
-
-    # 2. Xóa toàn bộ nội dung trong ngoặc vuông [ ] 
     text = re.sub(r'\[.*?\]', '', text)
-
-    # 3. Xóa các tiêu đề phân đoạn
     text = re.sub(r'(?i)^\s*(SECTION|PART|SEGMENT)\s+\d+.*$', '', text, flags=re.MULTILINE)
-
-    # 4. Xóa các từ khóa chỉ dẫn đứng đầu dòng
     text = re.sub(r'(?i)^\s*(Visual|Sound|Scene|Instruction|Voiceover|Narrator)\s*:', '', text, flags=re.MULTILINE)
-
-    # 5. Xóa các dòng trống dư thừa
     text = re.sub(r'\n\s*\n', '\n\n', text).strip()
-    
     return text
 
 # ============================================================
-#  LONG SCRIPT GENERATOR
+#  LONG SCRIPT GENERATOR (PHIÊN BẢN 8-10 PHÚT)
 # ============================================================
 def generate_long_script(data):
     try:
@@ -49,16 +34,16 @@ def generate_long_script(data):
 
         client = OpenAI(api_key=api_key)
 
-        # Mapping dữ liệu
         char_name = data.get("Name", "Historical Figure")
         core_theme = data.get("Core Theme", "Biography")
         input_notes = data.get("Content/Input", "")
 
-        # Prompt chuẩn cho Long-Form
+        # --- NÂNG CẤP PROMPT ĐỂ VIẾT DÀI HƠN (DEEP DIVE) ---
         prompt = f"""
 ROLE:
 You are the Head Scriptwriter for "Legendary Footsteps".
-Write a viral, high-retention biography script (600-800 words).
+Write a **DEEP DIVE, LONG-FORM** biography script (Minimum **1500-1800 words**).
+Target Video Length: **8 to 12 minutes**.
 
 INPUT DATA:
 - Character: {char_name}
@@ -66,45 +51,50 @@ INPUT DATA:
 - Notes: {input_notes}
 
 CRITICAL RULES:
-1. NO POETIC FLUFF (No "tapestry", "echoes", "shadows linger").
-2. NO CLICHÉ INTROS. Start "In Medias Res".
-3. TONE: Gritty, fast-paced, psychological.
-4. VISUALS: Use [Visual: description] for every scene.
+1. **LENGTH IS KING:** Do NOT summarize. Expand on details. Describe the weather, the smell of the battlefield, the specific emotions.
+2. **NO POETIC FLUFF:** No "tapestry", "echoes", "unfold". Use gritty, real-world descriptions.
+3. **DIALOGUE:** Reconstruct specific conversations or monologues based on historical records to add length and drama.
+4. **VISUALS:** Use [Visual: description] tags frequently.
 
-STRUCTURE:
-[SECTION 1: THE HOOK] Start with a shock/death/betrayal.
-[SECTION 2: THE ORIGIN] The trauma/why.
-[SECTION 3: THE RISE] Strategy & genius.
-[SECTION 4: THE DOWNFALL] Hubris & mistake.
-[SECTION 5: CONCLUSION] Philosophical truth.
+EXTENDED STRUCTURE (7 SECTIONS):
+[SECTION 1: THE HOOK - 2 Mins] Start with a detailed, slow-motion description of a critical moment (Death or Victory).
+[SECTION 2: THE CONTEXT] The world before them. The family struggles. (Go deep into childhood trauma).
+[SECTION 3: THE FIRST STRUGGLE] The early failures. The specific moment they almost gave up.
+[SECTION 4: THE TURNING POINT] The strategy that changed everything. Explain the tactics in detail.
+[SECTION 5: THE CLIMAX] The biggest battle or conflict. Describe it minute-by-minute.
+[SECTION 6: THE BETRAYAL/DOWNFALL] The specific people who turned against them.
+[SECTION 7: LEGACY & PHILOSOPHY] A long, reflective conclusion on human nature.
 
-OUTPUT: English only. Include [Visual: ...] tags.
+OUTPUT: English only.
 """
 
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2500,
+            max_tokens=4000, # Tăng token cho câu trả lời
             temperature=0.85,
         )
 
         raw_script = response.choices[0].message.content.strip()
 
-        # --- ÁP DỤNG HÀM CLEAN TTS ---
+        # --- CLEAN TTS ---
         clean_script = clean_text_for_tts(raw_script)
 
-        # Cắt ngắn nếu quá dài
-        safe_text = clean_script[:4000]
+        # -------------------------------------------------------
+        # 🔓 MỞ KHÓA GIỚI HẠN (QUAN TRỌNG NHẤT)
+        # -------------------------------------------------------
+        # Cũ: [:4000] -> Mới: [:15000]
+        # 15,000 ký tự ~ 2500 từ ~ 15 phút nói.
+        safe_text = clean_script[:15000] 
 
-        # Lưu file
         out_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(safe_text)
 
-        logger.info(f"📝 Long EN script created & cleaned: {out_path}")
+        logger.info(f"📝 Long EN script created ({len(safe_text)} chars): {out_path}")
 
         # Metadata Generation
-        meta_prompt = f"Write 1 Clickbait YouTube Title and a Short Description for {char_name}. Format:\nTitle: ...\nDescription: ..."
+        meta_prompt = f"Write 1 Clickbait YouTube Title and a Short Description for {char_name}."
         meta_res = client.chat.completions.create(
             model=MODEL, messages=[{"role": "user", "content": meta_prompt}], max_tokens=200
         )
@@ -120,7 +110,7 @@ OUTPUT: English only. Include [Visual: ...] tags.
         metadata = {
             "youtube_title": yt_title.replace('"', ''),
             "youtube_description": yt_desc,
-            "youtube_tags": ["history", "biography", "legendary footsteps", char_name.lower()]
+            "youtube_tags": ["history", "biography", char_name.lower()]
         }
 
         return {
@@ -134,7 +124,7 @@ OUTPUT: English only. Include [Visual: ...] tags.
 
 
 # ============================================================
-#  SHORT SCRIPT GENERATOR
+#  SHORT SCRIPT GENERATOR (GIỮ NGUYÊN)
 # ============================================================
 def generate_short_script(data):
     try:
@@ -148,24 +138,18 @@ def generate_short_script(data):
         char_name = data.get("Name", "Legendary Figure")
         input_notes = data.get("Content/Input", "")
 
-        # --- PROMPT SHORTS MỚI (CÓ KÊU GỌI SUBSCRIBE) ---
         prompt = f"""
 ROLE: Viral YouTube Shorts Scripter.
-TASK: Write a 60-second script (approx 130-150 words) for {char_name}.
-INPUT CONTEXT (Vietnamese): {input_notes}
+TASK: Write a 60-second script (approx 140-160 words) for {char_name}.
+INPUT: {input_notes}
 
-CRITICAL STRUCTURE:
-1. **THE HOOK (0-5s):** Start with a SPECIFIC NUMBER or a SHOCKING FACT related to {char_name}.
-2. **THE TWIST (5-15s):** Reveal a paradox or conflict.
-3. **THE BODY:** Fast-paced storytelling. Gritty details.
-4. **THE DUAL CTA (Must be fast):** - Mandatory Line: "Subscribe for more legends, and check the related video below for the full story."
+STRUCTURE:
+1. HOOK (0-5s): Specific number or shocking fact.
+2. TWIST: Paradox.
+3. BODY: Fast storytelling.
+4. DUAL CTA: "Subscribe for more, and check the related video below."
 
-STYLE:
-- English Language.
-- No "Hello guys". Direct, aggressive storytelling.
-- Tone: Mysterious & Urgent.
-
-Write the script now.
+STYLE: English. Direct. Mysterious.
 """
 
         response = client.chat.completions.create(
@@ -176,15 +160,12 @@ Write the script now.
         )
 
         raw_script = response.choices[0].message.content.strip()
-
-        # --- ÁP DỤNG HÀM CLEAN TTS ---
         clean_script = clean_text_for_tts(raw_script)
 
         out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
         with open(out_script, "w", encoding="utf-8") as f:
             f.write(clean_script)
 
-        # Title Generation
         title_res = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}."}],
@@ -196,8 +177,7 @@ Write the script now.
         with open(out_title, "w", encoding="utf-8") as f:
             f.write(title)
 
-        logger.info(f"✨ Short EN script created & cleaned for {data['ID']}")
-
+        logger.info(f"✨ Short EN script created for {data['ID']}")
         return out_script, out_title
 
     except Exception as e:
