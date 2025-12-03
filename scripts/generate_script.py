@@ -153,6 +153,28 @@ def generate_short_script(data):
         char_name = data.get("Name", "Legendary Figure")
         input_notes = data.get("Content/Input", "")
 
+        # Prompt kêu gọi kéo kênh
+        prompt = f"""
+ROLE: Viral YouTube Shorts Scripter.
+TASK: Write a 60-second script (approx 130-150 words) for {char_name}.
+INPUT CONTEXT (Vietnamese): {input_notes}
+
+CRITICAL STRUCTURE:
+1. **THE HOOK (0-5s):** Start with a SPECIFIC NUMBER or a SHOCKING FACT related to {char_name}.
+2. **THE TWIST (5-15s):** Reveal a paradox or conflict.
+3. **THE BODY:** Fast-paced storytelling. Gritty details.
+4. **THE DUAL CTA (Must be fast):** - Mandatory Line: "Subscribe for more legends, and check the related video below for the full story."
+
+STYLE:
+- English Language.
+- No "Hello guys". Direct, aggressive storytelling.
+- Tone: Mysterious & Urgent.
+
+Write the script now.
+"""
+
+#form cũ đã chạy
+'''
         prompt = f"""
 ROLE: Viral Shorts Scripter.
 Write a 60-second script for {char_name}.
@@ -166,7 +188,7 @@ STRUCTURE:
 
 STYLE: English. Direct. No "Hello guys".
 """
-
+'''
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
