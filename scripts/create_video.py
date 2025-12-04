@@ -215,6 +215,12 @@ def create_video(audio_path, episode_id, custom_image_path=None):
             layers.append(mic)
 
         final = CompositeVideoClip(layers, size=(1920, 1080)).set_audio(audio)
+     
+        
+        # --- FIX: THÊM BƯỚC RESIZE TRƯỚC KHI XUẤT FILE ---
+        # Áp dụng thay đổi kích thước (từ 1080p xuống 720p)
+        final_resized = final.resize(newsize=(1280, 720)) 
+        logger.info("📐 Đã đặt kích thước render: 1280x720 (Giảm tải CPU).")
 
         # -----------------------------------------------------
         # ⭐ Xuất video (ULTRAFAST)
@@ -231,7 +237,6 @@ def create_video(audio_path, episode_id, custom_image_path=None):
             preset="ultrafast",      # Render nhanh nhất
             threads=4,
             ffmpeg_params=["-crf", "28"], 
-            size=(1280, 720),
             logger='bar' 
         )
 
