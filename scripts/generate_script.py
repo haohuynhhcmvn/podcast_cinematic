@@ -51,7 +51,7 @@ INPUT DATA:
 - Notes: {input_notes}
 
 CRITICAL RULES:
-1. **LENGTH IS KING:** Do NOT summarize. Expand on details. Describe the weather, the smell of the battlefield, the specific emotions.
+1. **DETAIL IS KING (LENGTH):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific object description) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes. MINIMIZE flowery adjectives.
 2. **NO POETIC FLUFF:** No "tapestry", "echoes", "unfold". Use gritty, real-world descriptions.
 3. **DIALOGUE:** Reconstruct specific conversations or monologues based on historical records to add length and drama.
 4. **VISUALS:** Use [Visual: description] tags frequently.
