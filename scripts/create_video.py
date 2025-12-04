@@ -12,13 +12,17 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
+# --- ĐỘ PHÂN GIẢI CHUNG (720P) ---
+OUTPUT_WIDTH = 1280
+OUTPUT_HEIGHT = 720
+# -----------------------------------
+
 # ============================================================
 # 🌑 HÀM XỬ LÝ BACKGROUND (CHIẾN LƯỢC 1 MŨI TÊN 2 ĐÍCH)
 # ============================================================
-def process_background_image(input_path, output_path, width=1920, height=1080):
+def process_background_image(input_path, output_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Xử lý ảnh AI để làm nền video: Center Crop, Darken (40%), Blur (Radius 5).
-    Sử dụng PIL xử lý 1 lần duy nhất để giữ tốc độ Render cao.
+    Xử lý ảnh AI để làm nền video ở kích thước 720p.
     """
     try:
         with Image.open(input_path) as img:
@@ -41,11 +45,9 @@ def process_background_image(input_path, output_path, width=1920, height=1080):
             top = (new_height - height) // 2
             img = img.crop((left, top, left + width, top + height))
             
-            # --- 2. LÀM TỐI (DARKEN) ---
+            # --- 2. LÀM TỐI (DARKEN 40%) VÀ BLUR (RADIUS 5) ---
             enhancer = ImageEnhance.Brightness(img)
             img = enhancer.enhance(0.4) 
-            
-            # --- 3. LÀM MỜ (BLUR) ---
             img = img.filter(ImageFilter.GaussianBlur(radius=5))
             
             img.save(output_path, quality=95)
@@ -57,10 +59,10 @@ def process_background_image(input_path, output_path, width=1920, height=1080):
 
 
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM – TỐI ƯU HÓA (GIỮ NGUYÊN HIỆU NĂNG CAO)
+# 🌟 CIRCULAR WAVEFORM – TỐI ƯU HÓA
 # ============================================================
-def make_circular_waveform(audio_path, duration, width=1920, height=1080):
-    # Tính toán ở độ phân giải thấp (640x360) để tăng tốc độ xử lý
+def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
+    # Tính toán ở độ phân giải thấp (640x360) rồi resize về 720p
     calc_w, calc_h = 640, 360 
     fps = 20 
 
@@ -112,6 +114,7 @@ def make_circular_waveform(audio_path, duration, width=1920, height=1080):
         return mask_frame
 
     mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
+    # Resize từ 640x360 lên 1280x720 (hoặc kích thước đầu ra)
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
     color_clip = ColorClip(size=(width, height), color=(235, 235, 235), duration=duration)
     return color_clip.set_mask(mask_clip_high_res)
@@ -120,7 +123,8 @@ def make_circular_waveform(audio_path, duration, width=1920, height=1080):
 # ============================================================
 # 🌟 Light Glow – Tối ưu hóa
 # ============================================================
-def make_glow_layer(duration, width=1920, height=1080):
+def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
+    # Vẫn tính toán ở độ phân giải siêu thấp (320x180)
     low_w, low_h = 320, 180
     y = np.linspace(0, low_h - 1, low_h)
     x = np.linspace(0, low_w - 1, low_w)
@@ -131,6 +135,7 @@ def make_glow_layer(duration, width=1920, height=1080):
     intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
     glow_low = np.zeros((low_h, low_w, 3), dtype=np.uint8)
     glow_low[:, :, :] = (intensity * 0.25).astype(np.uint8).reshape(low_h, low_w, 1)
+    # Resize lên kích thước đầu ra (1280x720)
     return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.18)
 
 
@@ -154,13 +159,13 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         
         clip = None
 
-        # [ƯU TIÊN 1]: ẢNH NHÂN VẬT (CHIẾN LƯỢC 1 MŨI TÊN 2 ĐÍCH)
+        # [ƯU TIÊN 1]: ẢNH NHÂN VẬT 
         if custom_image_path and os.path.exists(custom_image_path):
             logger.info(f"🖼️ Found custom image: {custom_image_path}")
             processed_bg_path = get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")
             os.makedirs(os.path.dirname(processed_bg_path), exist_ok=True)
             
-            final_bg_path = process_background_image(custom_image_path, processed_bg_path)
+            final_bg_path = process_background_image(custom_image_path, processed_bg_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT)
             
             if final_bg_path:
                 logger.info(f"🎨 Using Processed Background: {final_bg_path}")
@@ -171,20 +176,21 @@ def create_video(audio_path, episode_id, custom_image_path=None):
              clip = (
                 VideoFileClip(bg_video_path)
                 .set_audio(None)
-                .resize((1920, 1080))
+                .resize((OUTPUT_WIDTH, OUTPUT_HEIGHT)) # Resize video nền về 720p
                 .loop(duration=duration)
             )
 
         # [FALLBACK]: ẢNH MẶC ĐỊNH HOẶC MÀU ĐEN
         if clip is None:
             if os.path.exists(bg_default_img):
-                clip = ImageClip(bg_default_img).set_duration(duration).resize((1920, 1080))
+                clip = ImageClip(bg_default_img).set_duration(duration).resize((OUTPUT_WIDTH, OUTPUT_HEIGHT))
             else:
-                clip = ColorClip(size=(1920, 1080), color=(10,10,10), duration=duration)
+                clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(10,10,10), duration=duration)
 
         # -----------------------------------------------------
         # ⭐ Layers
         # -----------------------------------------------------
+        # Gọi các hàm helper (Mặc định là 720p)
         glow = make_glow_layer(duration)
         waveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
@@ -195,7 +201,7 @@ def create_video(audio_path, episode_id, custom_image_path=None):
             mic = (
                 ImageClip(mic_path)
                 .set_duration(duration)
-                .resize(height=260)
+                .resize(height=int(260 * OUTPUT_HEIGHT / 1080)) # Resize mic theo tỉ lệ 720p
                 .set_pos(("center", "bottom"))
             )
 
@@ -203,15 +209,11 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         if mic:
             layers.append(mic)
 
-        # 1. Gộp tất cả các layer lại ở 1080p
-        final = CompositeVideoClip(layers, size=(1920, 1080)).set_audio(audio)
+        # Gộp tất cả các layer lại ở 720p
+        final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
         logger.info("🧩 Lắp ghép layers thành CompositeVideoClip.")
      
-        
-        # 2. 🔥 FIX TỐC ĐỘ RENDER: RESIZE xuống 720p (1280x720) 
-        # Giảm thời gian render 14 phút video từ 60 phút xuống 20-25 phút
-        final_resized = final.resize(newsize=(1280, 720)) 
-        logger.info("📐 Đã đặt kích thước render: 1280x720 (Giảm tải CPU).")
+        # KHÔNG CẦN .resize() ở đây nữa vì đã tính toán hết ở 720p
 
         # -----------------------------------------------------
         # ⭐ Xuất video (ULTRAFAST)
@@ -221,8 +223,8 @@ def create_video(audio_path, episode_id, custom_image_path=None):
 
         logger.info("🚀 Starting fast render...")
         
-        # 3. QUAN TRỌNG: Gọi .write_videofile lên clip ĐÃ RESIZE (final_resized)
-        final_resized.write_videofile(
+        # Gọi .write_videofile lên clip final (đã là 720p)
+        final.write_videofile(
             output,
             fps=24,
             codec="libx264",
