@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 
 TTS_MODEL = "tts-1"
 VOICE = "onyx"
+SPEED_MULTIPLIER = 1.15 # <--- THAM SỐ TỐC ĐỘ MỚI (1.15x)
 
 def create_tts(script_path, episode_id, mode="long"):
     """
     Chuyển đổi Text sang Speech.
-    Hỗ trợ cắt nhỏ (Chunking) và tự động tạo thư mục lưu trữ.
+    Hỗ trợ cắt nhỏ (Chunking) và điều chỉnh tốc độ phát lại.
     """
     try:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -79,15 +80,26 @@ def create_tts(script_path, episode_id, mode="long"):
                 logger.info(f"   ✅ Xong phần {i+1}/{len(chunks)}")
             except Exception as chunk_error:
                 logger.error(f"⚠️ Lỗi tạo chunk {i+1}: {chunk_error}")
-                # Nếu lỗi 1 chunk, bỏ qua để không hỏng cả file (hoặc return None tùy chiến lược)
                 continue
 
-        # 4. Xuất file audio cuối cùng
+        # 4. ĐIỀU CHỈNH TỐC ĐỘ PHÁT LẠI (1.15x)
+        if SPEED_MULTIPLIER != 1.0:
+            original_rate = combined_audio.frame_rate
+            
+            # 1. Thay đổi frame rate để tạo hiệu ứng âm thanh nhanh hơn
+            # int() là cần thiết vì frame_rate phải là số nguyên
+            faster_segment = combined_audio.set_frame_rate(int(original_rate * SPEED_MULTIPLIER))
+            
+            # 2. Đưa frame rate về lại ban đầu (Đây là trick để giữ pitch và tăng tempo)
+            combined_audio = faster_segment.set_frame_rate(original_rate)
+            logger.info(f"⏱️ Đã tăng tốc độ audio lên {SPEED_MULTIPLIER}x.")
+
+
+        # 5. Xuất file audio cuối cùng
         suffix = "long" if mode == "long" else "short"
         output_path = get_path("data", "audio", f"{episode_id}_{suffix}.mp3")
         
-        # 🔥 [FIX QUAN TRỌNG]: Tự động tạo thư mục cha nếu chưa có
-        # Đây là dòng sửa lỗi [Errno 2] No such file or directory
+        # Tự động tạo thư mục cha nếu chưa có
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         combined_audio.export(output_path, format="mp3")
