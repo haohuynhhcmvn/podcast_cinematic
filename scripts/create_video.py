@@ -3,7 +3,7 @@ import logging
 import os
 import numpy as np
 from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter # <--- Thêm thư viện xử lý ảnh
+from PIL import Image, ImageEnhance, ImageFilter 
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
     CompositeVideoClip, VideoClip
@@ -17,11 +17,8 @@ logger = logging.getLogger(__name__)
 # ============================================================
 def process_background_image(input_path, output_path, width=1920, height=1080):
     """
-    Xử lý ảnh AI để làm nền video:
-    1. Center Crop (Fill màn hình).
-    2. Darken (Làm tối).
-    3. Blur (Làm mờ).
-    Dùng PIL xử lý 1 lần -> Render nhanh gấp 10 lần so với MoviePy.
+    Xử lý ảnh AI để làm nền video: Center Crop, Darken (40%), Blur (Radius 5).
+    Sử dụng PIL xử lý 1 lần duy nhất để giữ tốc độ Render cao.
     """
     try:
         with Image.open(input_path) as img:
@@ -32,31 +29,25 @@ def process_background_image(input_path, output_path, width=1920, height=1080):
             img_ratio = img.width / img.height
             
             if img_ratio > target_ratio:
-                # Ảnh rộng hơn -> Resize theo chiều cao
                 new_height = height
                 new_width = int(new_height * img_ratio)
             else:
-                # Ảnh cao hơn -> Resize theo chiều rộng
                 new_width = width
                 new_height = int(new_width / img_ratio)
                 
             img = img.resize((new_width, new_height), Image.LANCZOS)
             
-            # Crop lấy phần giữa
             left = (new_width - width) // 2
             top = (new_height - height) // 2
             img = img.crop((left, top, left + width, top + height))
             
             # --- 2. LÀM TỐI (DARKEN) ---
-            # Giảm độ sáng còn 40% để Sóng nhạc & Chữ nổi bật
             enhancer = ImageEnhance.Brightness(img)
             img = enhancer.enhance(0.4) 
             
             # --- 3. LÀM MỜ (BLUR) ---
-            # Tạo cảm giác Cinematic và đỡ rối mắt
             img = img.filter(ImageFilter.GaussianBlur(radius=5))
             
-            # Lưu file
             img.save(output_path, quality=95)
             return output_path
             
@@ -69,7 +60,7 @@ def process_background_image(input_path, output_path, width=1920, height=1080):
 # 🌟 CIRCULAR WAVEFORM – TỐI ƯU HÓA (GIỮ NGUYÊN HIỆU NĂNG CAO)
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=1920, height=1080):
-    # Tính toán ở độ phân giải thấp (Nhanh gấp 9 lần)
+    # Tính toán ở độ phân giải thấp (640x360) để tăng tốc độ xử lý
     calc_w, calc_h = 640, 360 
     fps = 20 
 
@@ -144,7 +135,7 @@ def make_glow_layer(duration, width=1920, height=1080):
 
 
 # ============================================================
-# 🎬 HÀM TẠO VIDEO CHÍNH (LOGIC MỚI)
+# 🎬 HÀM TẠO VIDEO CHÍNH (LOGIC HOÀN THIỆN)
 # ============================================================
 def create_video(audio_path, episode_id, custom_image_path=None):
     try:
@@ -153,7 +144,7 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         # -----------------------------------------------------
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-        logger.info(f"🎧 Audio duration = {duration:.2f}s")
+        logger.info(f"🎧 Audio duration = {duration:.2f}s") 
 
         # -----------------------------------------------------
         # ⭐ Load background (LOGIC THÔNG MINH)
@@ -166,11 +157,9 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         # [ƯU TIÊN 1]: ẢNH NHÂN VẬT (CHIẾN LƯỢC 1 MŨI TÊN 2 ĐÍCH)
         if custom_image_path and os.path.exists(custom_image_path):
             logger.info(f"🖼️ Found custom image: {custom_image_path}")
-            # Tạo đường dẫn file tạm cho ảnh đã xử lý
             processed_bg_path = get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")
             os.makedirs(os.path.dirname(processed_bg_path), exist_ok=True)
             
-            # Xử lý ảnh (Darken + Blur + Resize)
             final_bg_path = process_background_image(custom_image_path, processed_bg_path)
             
             if final_bg_path:
@@ -214,11 +203,13 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         if mic:
             layers.append(mic)
 
+        # 1. Gộp tất cả các layer lại ở 1080p
         final = CompositeVideoClip(layers, size=(1920, 1080)).set_audio(audio)
+        logger.info("🧩 Lắp ghép layers thành CompositeVideoClip.")
      
         
-        # --- FIX: THÊM BƯỚC RESIZE TRƯỚC KHI XUẤT FILE ---
-        # Áp dụng thay đổi kích thước (từ 1080p xuống 720p)
+        # 2. 🔥 FIX TỐC ĐỘ RENDER: RESIZE xuống 720p (1280x720) 
+        # Giảm thời gian render 14 phút video từ 60 phút xuống 20-25 phút
         final_resized = final.resize(newsize=(1280, 720)) 
         logger.info("📐 Đã đặt kích thước render: 1280x720 (Giảm tải CPU).")
 
@@ -229,12 +220,14 @@ def create_video(audio_path, episode_id, custom_image_path=None):
         os.makedirs(os.path.dirname(output), exist_ok=True)
 
         logger.info("🚀 Starting fast render...")
-        final.write_videofile(
+        
+        # 3. QUAN TRỌNG: Gọi .write_videofile lên clip ĐÃ RESIZE (final_resized)
+        final_resized.write_videofile(
             output,
             fps=24,
             codec="libx264",
             audio_codec="aac",
-            preset="ultrafast",      # Render nhanh nhất
+            preset="ultrafast",      
             threads=4,
             ffmpeg_params=["-crf", "28"], 
             logger='bar' 
@@ -253,4 +246,4 @@ def create_video(audio_path, episode_id, custom_image_path=None):
 
     except Exception as e:
         logger.error(f"❌ VIDEO ERROR: {e}", exc_info=True)
-        return None
+        return False
