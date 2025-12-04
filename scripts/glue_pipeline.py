@@ -181,7 +181,7 @@ def process_shorts(data, task_meta):
 
         # Upload
         upload_data = {
-            "Title": f"{hook_title} – {data.get('Name')} | Bí mật chưa từng kể #Shorts",
+            "Title": f"{hook_title} – {data.get('Name')} | #Shorts",
             "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
             "Tags": ["shorts", "podcast", "history"]
         }
