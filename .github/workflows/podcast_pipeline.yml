@@ -66,6 +66,7 @@ jobs:
       - name: 🚀 Chạy Podcast Generator Pipeline
         run: python scripts/glue_pipeline.py
 
+'''
       # 7. Lưu lại kết quả (Video/Log) để kiểm tra nếu cần
       - name: 💾 Lưu trữ TOÀN BỘ Output (Artifacts)
         uses: actions/upload-artifact@v4
@@ -74,3 +75,4 @@ jobs:
           name: episode-output-artifacts
           path: outputs/ 
           retention-days: 7 
+'''
