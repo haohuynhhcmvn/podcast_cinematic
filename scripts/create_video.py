@@ -232,7 +232,7 @@ def create_video(audio_path, episode_id, custom_image_path=None):
             threads=4,
             ffmpeg_params=["-crf", "28"], 
             size=(1280, 720),
-            logger=None 
+            logger='bar' 
         )
 
         logger.info(f"✅ DONE: {output}")
