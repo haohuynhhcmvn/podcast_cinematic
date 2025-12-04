@@ -2,19 +2,18 @@
 import logging
 import os
 from openai import OpenAI
-from pydub import AudioSegment  # Cần thư viện này để ghép file audio
+from pydub import AudioSegment
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# Mô hình TTS (Giữ nguyên tts-1 cho rẻ và nhanh, tts-1-hd đắt hơn)
 TTS_MODEL = "tts-1"
-VOICE = "onyx"  # Giọng nam trầm, kể chuyện tốt
+VOICE = "onyx"
 
 def create_tts(script_path, episode_id, mode="long"):
     """
     Chuyển đổi Text sang Speech.
-    Hỗ trợ kịch bản siêu dài bằng cách cắt nhỏ (Chunking) để vượt qua giới hạn 4096 ký tự của OpenAI.
+    Hỗ trợ cắt nhỏ (Chunking) và tự động tạo thư mục lưu trữ.
     """
     try:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -36,24 +35,18 @@ def create_tts(script_path, episode_id, mode="long"):
             return None
 
         # 2. Xử lý logic cắt nhỏ (Chunking)
-        # OpenAI giới hạn 4096 chars. Ta cắt an toàn ở mức 3000 để tránh lỗi ngắt câu.
         chunk_size = 3000
         chunks = []
         
-        # Nếu text ngắn thì chỉ có 1 chunk
         if len(full_text) <= chunk_size:
             chunks.append(full_text)
         else:
-            # Cắt thông minh theo dấu chấm câu để giọng đọc không bị đứt quãng vô duyên
-            # (Logic đơn giản: Cứ cắt thô, nhưng tốt nhất là split theo paragraph nếu có thể)
-            # Ở đây dùng cách cắt theo độ dài và tìm dấu chấm gần nhất.
             start = 0
             while start < len(full_text):
                 end = start + chunk_size
                 if end >= len(full_text):
                     end = len(full_text)
                 else:
-                    # Tìm dấu chấm gần nhất để ngắt
                     last_period = full_text.rfind('.', start, end)
                     if last_period != -1 and last_period > start + 2000:
                          end = last_period + 1
@@ -65,30 +58,37 @@ def create_tts(script_path, episode_id, mode="long"):
 
         logger.info(f"🎙️ Đang tạo giọng đọc cho {episode_id} ({len(chunks)} phần)...")
         
-        # 3. Gọi API cho từng phần và ghép lại
+        # 3. Gọi API và ghép Audio
         combined_audio = AudioSegment.empty()
+        
+        # Tạo thư mục tạm nếu chưa có
         temp_chunk_path = get_path("assets", "temp", "temp_chunk.mp3")
         os.makedirs(os.path.dirname(temp_chunk_path), exist_ok=True)
 
         for i, text_chunk in enumerate(chunks):
-            response = client.audio.speech.create(
-                model=TTS_MODEL,
-                voice=VOICE,
-                input=text_chunk
-            )
-            
-            # Lưu tạm
-            response.stream_to_file(temp_chunk_path)
-            
-            # Ghép vào file tổng
-            segment = AudioSegment.from_file(temp_chunk_path)
-            combined_audio += segment
-            logger.info(f"   ✅ Xong phần {i+1}/{len(chunks)}")
+            try:
+                response = client.audio.speech.create(
+                    model=TTS_MODEL,
+                    voice=VOICE,
+                    input=text_chunk
+                )
+                
+                response.stream_to_file(temp_chunk_path)
+                segment = AudioSegment.from_file(temp_chunk_path)
+                combined_audio += segment
+                logger.info(f"   ✅ Xong phần {i+1}/{len(chunks)}")
+            except Exception as chunk_error:
+                logger.error(f"⚠️ Lỗi tạo chunk {i+1}: {chunk_error}")
+                # Nếu lỗi 1 chunk, bỏ qua để không hỏng cả file (hoặc return None tùy chiến lược)
+                continue
 
         # 4. Xuất file audio cuối cùng
-        # Tên file tùy theo long hay short
         suffix = "long" if mode == "long" else "short"
         output_path = get_path("data", "audio", f"{episode_id}_{suffix}.mp3")
+        
+        # 🔥 [FIX QUAN TRỌNG]: Tự động tạo thư mục cha nếu chưa có
+        # Đây là dòng sửa lỗi [Errno 2] No such file or directory
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         combined_audio.export(output_path, format="mp3")
         logger.info(f"🎧 TTS Hoàn tất: {output_path}")
