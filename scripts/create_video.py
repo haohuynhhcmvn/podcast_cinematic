@@ -18,68 +18,64 @@ OUTPUT_HEIGHT = 720
 # -----------------------------------
 
 # ============================================================
-# 🌑 HÀM XỬ LÝ BACKGROUND: CINEMATIC GRADIENT (KHÔNG CẮT)
+# 🌑 HÀM XỬ LÝ BACKGROUND: CINEMATIC GRADIENT (TRÁI -> PHẢI)
 # ============================================================
 def process_background_image(input_path, output_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Xử lý ảnh AI: Giữ nguyên toàn bộ nền, chỉ phủ Gradient tối bên trái để nổi chữ.
+    Xử lý ảnh AI: Phủ Gradient tối bên trái (cho Title) -> Trong suốt bên phải (cho Nhân vật).
     """
     try:
         with Image.open(input_path) as img:
             img = img.convert("RGBA")
             
             # 1. Resize & Center Crop (Lấp đầy màn hình 16:9)
-            # Tính toán tỷ lệ để ảnh phủ kín 1280x720 mà không bị méo
             target_ratio = width / height
             img_ratio = img.width / img.height
             
             if img_ratio > target_ratio:
-                # Ảnh rộng hơn màn hình -> Resize theo chiều cao, crop bớt 2 bên
                 new_height = height
                 new_width = int(new_height * img_ratio)
             else:
-                # Ảnh cao hơn màn hình -> Resize theo chiều rộng, crop bớt trên dưới
                 new_width = width
                 new_height = int(new_width / img_ratio)
                 
             img = img.resize((new_width, new_height), Image.LANCZOS)
             
-            # Crop chính giữa (Center Crop)
+            # Crop chính giữa
             left = (new_width - width) // 2
             top = (new_height - height) // 2
             img_crop = img.crop((left, top, left + width, top + height))
             
-            # 2. Tạo lớp Gradient Mask (Phủ tối bên trái để viết chữ)
-            # Tạo một layer màu đen trong suốt
+            # 2. TẠO LỚP GRADIENT (Masking)
             gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
             draw = ImageDraw.Draw(gradient)
             
-            # Vẽ Gradient từ Trái (Đen đậm) -> Phải (Trong suốt)
-            # Vùng an toàn cho chữ: 40% chiều rộng bên trái
+            # Vẽ từng đường dọc từ trái sang phải
             for x in range(width):
-                # Độ đậm (Alpha): Giảm dần từ 220 (rất tối) xuống 0 (trong suốt)
-                # Công thức này giữ bóng tối đậm ở 30% đầu tiên, rồi nhạt nhanh
-                if x < width * 0.3:
-                    alpha = 200 # Tối đậm phần chứa tiêu đề
-                elif x < width * 0.7:
-                    # Giảm dần tuyến tính
-                    ratio = (x - width * 0.3) / (width * 0.4)
-                    alpha = int(200 * (1 - ratio))
-                else:
-                    alpha = 0 # Trong suốt hoàn toàn phần nhân vật
+                # Logic: 35% đầu rất tối (để đọc chữ), sau đó nhạt dần
+                pct = x / width 
                 
-                # Vẽ từng đường dọc
+                if pct < 0.35:
+                    alpha = 200 # Tối đậm (khoảng 80%)
+                elif pct < 0.75:
+                    # Fade out từ từ
+                    fade_ratio = (pct - 0.35) / (0.40) 
+                    alpha = int(200 * (1 - fade_ratio))
+                else:
+                    alpha = 0 # Trong suốt hoàn toàn
+                
                 draw.line([(x, 0), (x, height)], fill=(0, 0, 0, alpha))
 
-            # 3. Hòa trộn Gradient lên ảnh gốc
+            # 3. Hòa trộn
             final_img = Image.alpha_composite(img_crop, gradient)
             
-            # 4. Làm tối nhẹ tổng thể (Vignette) một chút để video trông "Deep" hơn
+            # 4. Tăng nhẹ độ bão hòa màu (Saturation) cho đẹp
             final_img = final_img.convert("RGB")
-            enhancer = ImageEnhance.Brightness(final_img)
-            final_img = enhancer.enhance(0.85) # Chỉ tối đi 15% tổng thể
+            enhancer = ImageEnhance.Color(final_img)
+            final_img = enhancer.enhance(1.1)
             
             final_img.save(output_path, quality=95)
+            logger.info(f"🌑 Đã tạo nền Cinematic Gradient: {output_path}")
             return output_path
             
     except Exception as e:
@@ -141,9 +137,8 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
         return mask_frame
 
     mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
-    
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
-    color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) # Màu Vàng Gold
+    color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) 
     return color_clip.set_mask(mask_clip_high_res)
 
 
@@ -171,27 +166,22 @@ def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
 # ============================================================
 def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
     try:
-        # Setup Duration
         audio = AudioFileClip(audio_path)
         duration = audio.duration
         logger.info(f"🎧 Audio duration = {duration:.2f}s") 
 
-        # --- 1. LAYER NỀN (BACKGROUND) ---
+        # 1. Background
         bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
         bg_default_img = get_path('assets', 'images', 'default_background.png')
         clip = None
 
         if custom_image_path and os.path.exists(custom_image_path):
-            logger.info(f"🖼️ Found custom image. Processing layout...")
             processed_bg_path = get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")
             os.makedirs(os.path.dirname(processed_bg_path), exist_ok=True)
-            
-            # Gọi hàm xử lý ảnh mới
-            final_bg_path = process_background_image(custom_image_path, processed_bg_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT)
+            final_bg_path = process_background_image(custom_image_path, processed_bg_path)
             if final_bg_path:
                 clip = ImageClip(final_bg_path).set_duration(duration)
 
-        # Fallback
         if clip is None:
             if os.path.exists(bg_video_path):
                  clip = VideoFileClip(bg_video_path).set_audio(None).resize((OUTPUT_WIDTH, OUTPUT_HEIGHT)).loop(duration=duration)
@@ -200,16 +190,15 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             else:
                 clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15,15,15), duration=duration)
 
-        # --- 2. LAYER WAVEFORM & GLOW ---
+        # 2. Waveform & Glow
         glow = make_glow_layer(duration)
         waveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
 
-        # --- 3. LAYER TIÊU ĐỀ (TITLE OVERLAY) - GÓC TRÁI TRÊN ---
+        # 3. Title (Góc trái trên)
         title_layer = None
         if title_text:
             try:
-                # Dùng font có sẵn trên hệ thống Linux
                 title_layer = TextClip(
                     title_text.upper(),
                     fontsize=55,
@@ -223,35 +212,27 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
                 )
                 title_layer = title_layer.set_position((50, 50)).set_duration(duration)
             except Exception as e:
-                logger.warning(f"⚠️ Không thể tạo Title Overlay: {e}")
+                logger.warning(f"⚠️ Title Error: {e}")
 
-        # --- 4. LAYER LOGO KÊNH ---
+        # 4. Logo
         logo_path = get_path('assets', 'images', 'channel_logo.png')
         logo_layer = None
         if os.path.exists(logo_path):
              logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
 
-        # --- GỘP LAYERS ---
         layers = [clip, glow, waveform]
         if title_layer: layers.append(title_layer)
         if logo_layer: layers.append(logo_layer)
 
         final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
         
-        # --- XUẤT FILE ---
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
         os.makedirs(os.path.dirname(output), exist_ok=True)
 
-        logger.info("🚀 Starting render with Title Overlay...")
+        logger.info("🚀 Starting render...")
         final.write_videofile(
-            output,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            preset="ultrafast",      
-            threads=4,
-            ffmpeg_params=["-crf", "28"], 
-            logger='bar' 
+            output, fps=24, codec="libx264", audio_codec="aac", preset="ultrafast", threads=4,
+            ffmpeg_params=["-crf", "28"], logger='bar' 
         )
         return output
 
