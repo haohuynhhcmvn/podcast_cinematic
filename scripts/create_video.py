@@ -3,10 +3,10 @@ import logging
 import os
 import numpy as np
 from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter 
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
-    CompositeVideoClip, VideoClip
+    CompositeVideoClip, TextClip
 )
 from utils import get_path
 
@@ -18,51 +18,63 @@ OUTPUT_HEIGHT = 720
 # -----------------------------------
 
 # ============================================================
-# 🌑 HÀM XỬ LÝ BACKGROUND (CHIẾN LƯỢC 1 MŨI TÊN 2 ĐÍCH)
+# 🌑 HÀM XỬ LÝ BACKGROUND: NHÂN VẬT LỆCH PHẢI & HÒA TRỘN
 # ============================================================
 def process_background_image(input_path, output_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Xử lý ảnh AI để làm nền video ở kích thước 720p.
+    Xử lý ảnh AI: Crop lấy phần bên phải (nhân vật) và hòa trộn mềm mại vào nền đen.
     """
     try:
         with Image.open(input_path) as img:
-            img = img.convert("RGB")
+            img = img.convert("RGBA")
             
-            # --- 1. RESIZE & CENTER CROP (ASPECT FILL) ---
-            target_ratio = width / height
-            img_ratio = img.width / img.height
+            # 1. Resize sao cho chiều cao khớp với video (1280x720)
+            # Giữ tỷ lệ ảnh gốc, ưu tiên chiều cao đủ 720
+            ratio = height / img.height
+            new_w = int(img.width * ratio)
+            new_h = height
+            img_resized = img.resize((new_w, new_h), Image.LANCZOS)
             
-            if img_ratio > target_ratio:
-                new_height = height
-                new_width = int(new_height * img_ratio)
-            else:
-                new_width = width
-                new_height = int(new_width / img_ratio)
-                
-            img = img.resize((new_width, new_height), Image.LANCZOS)
+            # 2. Tạo Canvas nền đen (hoặc xám đậm granite)
+            canvas = Image.new('RGB', (width, height), (20, 20, 25)) # Màu than chì tối
             
-            left = (new_width - width) // 2
-            top = (new_height - height) // 2
-            img = img.crop((left, top, left + width, top + height))
+            # 3. Crop lấy phần bên PHẢI của ảnh nhân vật (Right Alignment)
+            # Chúng ta sẽ lấy một phần ảnh rộng khoảng 60-70% chiều rộng video và đặt sát phải
+            char_width = min(new_w, int(width * 0.7)) 
             
-            # --- 2. LÀM TỐI (DARKEN 40%) VÀ BLUR (RADIUS 5) ---
-            enhancer = ImageEnhance.Brightness(img)
-            img = enhancer.enhance(0.4) 
-            img = img.filter(ImageFilter.GaussianBlur(radius=5))
+            # Cắt lấy phần bên phải nhất của ảnh gốc
+            char_crop = img_resized.crop((new_w - char_width, 0, new_w, new_h))
             
-            img.save(output_path, quality=95)
+            # 4. Tạo Alpha Mask (Gradient mờ dần từ trái sang phải)
+            # Để ảnh nhân vật hòa tan vào nền đen bên trái
+            mask = Image.new('L', (char_width, new_h), 255)
+            draw_mask = ImageDraw.Draw(mask)
+            
+            # Vẽ gradient đen -> trắng trong khoảng 20% chiều rộng ảnh crop
+            gradient_width = int(char_width * 0.3) 
+            for x in range(gradient_width):
+                alpha = int(255 * (x / gradient_width))
+                draw_mask.line([(x, 0), (x, new_h)], fill=alpha)
+            
+            # 5. Dán ảnh nhân vật lên Canvas (Canh phải)
+            paste_x = width - char_width
+            canvas.paste(char_crop, (paste_x, 0), mask=mask)
+            
+            # 6. Làm tối nhẹ tổng thể để tôn text
+            enhancer = ImageEnhance.Brightness(canvas)
+            final_img = enhancer.enhance(0.6) # Tối đi 40%
+            
+            final_img.save(output_path, quality=95)
             return output_path
             
     except Exception as e:
         logger.error(f"❌ Error processing background image: {e}")
         return None
 
-
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM – TỐI ƯU HÓA
+# 🌟 CIRCULAR WAVEFORM (GIỮ NGUYÊN)
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    # Tính toán ở độ phân giải thấp (640x360) rồi resize về 720p
     calc_w, calc_h = 640, 360 
     fps = 20 
 
@@ -113,18 +125,20 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             mask_frame[ring_mask] = opacity
         return mask_frame
 
-    mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
-    # Resize từ 640x360 lên 1280x720 (hoặc kích thước đầu ra)
+    mask_clip_low_res = VideoFileClip(filename=None, has_mask=True) # Dummy init
+    # Re-init đúng cách cho VideoClip từ function
+    from moviepy.video.VideoClip import VideoClip as MVC
+    mask_clip_low_res = MVC(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
+    
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
-    color_clip = ColorClip(size=(width, height), color=(235, 235, 235), duration=duration)
+    color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) # Màu Vàng Gold (255, 215, 0)
     return color_clip.set_mask(mask_clip_high_res)
 
 
 # ============================================================
-# 🌟 Light Glow – Tối ưu hóa
+# 🌟 GLOW LAYER (GIỮ NGUYÊN)
 # ============================================================
 def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    # Vẫn tính toán ở độ phân giải siêu thấp (320x180)
     low_w, low_h = 320, 180
     y = np.linspace(0, low_h - 1, low_h)
     x = np.linspace(0, low_w - 1, low_w)
@@ -134,96 +148,93 @@ def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     dist = np.sqrt((xx - lcx)**2 + (yy - lcy)**2)
     intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
     glow_low = np.zeros((low_h, low_w, 3), dtype=np.uint8)
-    glow_low[:, :, :] = (intensity * 0.25).astype(np.uint8).reshape(low_h, low_w, 1)
-    # Resize lên kích thước đầu ra (1280x720)
-    return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.18)
+    # Glow màu vàng cam nhẹ (Gold tint)
+    glow_low[:, :, 0] = (intensity * 0.3).astype(np.uint8) # R
+    glow_low[:, :, 1] = (intensity * 0.2).astype(np.uint8) # G
+    glow_low[:, :, 2] = 0                                  # B
+    return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.3)
 
 
 # ============================================================
-# 🎬 HÀM TẠO VIDEO CHÍNH (LOGIC HOÀN THIỆN)
+# 🎬 HÀM TẠO VIDEO CHÍNH
 # ============================================================
-def create_video(audio_path, episode_id, custom_image_path=None):
+def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
     try:
-        # -----------------------------------------------------
-        # 🔥 Setup Duration
-        # -----------------------------------------------------
+        # Setup Duration
         audio = AudioFileClip(audio_path)
         duration = audio.duration
         logger.info(f"🎧 Audio duration = {duration:.2f}s") 
 
-        # -----------------------------------------------------
-        # ⭐ Load background (LOGIC THÔNG MINH)
-        # -----------------------------------------------------
-        bg_video_path = get_path('assets', 'video', 'pppodcast_loop_bg_long.mp4')
+        # --- 1. LAYER NỀN (BACKGROUND) ---
+        bg_video_path = get_path('assets', 'video', 'podcast_loop_bg_long.mp4')
         bg_default_img = get_path('assets', 'images', 'default_background.png')
-        
         clip = None
 
-        # [ƯU TIÊN 1]: ẢNH NHÂN VẬT 
         if custom_image_path and os.path.exists(custom_image_path):
-            logger.info(f"🖼️ Found custom image: {custom_image_path}")
+            logger.info(f"🖼️ Found custom image. Processing layout...")
             processed_bg_path = get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")
             os.makedirs(os.path.dirname(processed_bg_path), exist_ok=True)
             
+            # Gọi hàm xử lý ảnh mới (Crop phải + Fade trái)
             final_bg_path = process_background_image(custom_image_path, processed_bg_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT)
-            
             if final_bg_path:
-                logger.info(f"🎨 Using Processed Background: {final_bg_path}")
                 clip = ImageClip(final_bg_path).set_duration(duration)
 
-        # [ƯU TIÊN 2]: VIDEO LOOP MẶC ĐỊNH
-        if clip is None and os.path.exists(bg_video_path):
-             clip = (
-                VideoFileClip(bg_video_path)
-                .set_audio(None)
-                .resize((OUTPUT_WIDTH, OUTPUT_HEIGHT)) # Resize video nền về 720p
-                .loop(duration=duration)
-            )
-
-        # [FALLBACK]: ẢNH MẶC ĐỊNH HOẶC MÀU ĐEN
+        # Fallback
         if clip is None:
-            if os.path.exists(bg_default_img):
+            if os.path.exists(bg_video_path):
+                 clip = VideoFileClip(bg_video_path).set_audio(None).resize((OUTPUT_WIDTH, OUTPUT_HEIGHT)).loop(duration=duration)
+            elif os.path.exists(bg_default_img):
                 clip = ImageClip(bg_default_img).set_duration(duration).resize((OUTPUT_WIDTH, OUTPUT_HEIGHT))
             else:
-                clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(10,10,10), duration=duration)
+                clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15,15,15), duration=duration)
 
-        # -----------------------------------------------------
-        # ⭐ Layers
-        # -----------------------------------------------------
-        # Gọi các hàm helper (Mặc định là 720p)
+        # --- 2. LAYER WAVEFORM & GLOW ---
         glow = make_glow_layer(duration)
         waveform = make_circular_waveform(audio_path, duration)
-        waveform = waveform.set_position("center")
+        waveform = waveform.set_position("center") # Giữ nguyên ở giữa
 
-        mic_path = get_path('assets', 'images', 'microphone.png')
-        mic = None
-        if os.path.exists(mic_path):
-            mic = (
-                ImageClip(mic_path)
-                .set_duration(duration)
-                .resize(height=int(260 * OUTPUT_HEIGHT / 1080)) # Resize mic theo tỉ lệ 720p
-                .set_pos(("center", "bottom"))
-            )
+        # --- 3. LAYER TIÊU ĐỀ (TITLE OVERLAY) - GÓC TRÁI TRÊN ---
+        # "THE BRUTAL TRUTH OF..."
+        title_layer = None
+        if title_text:
+            try:
+                # Dùng font Impact hoặc DejaVu-Sans-Bold có sẵn
+                # Màu vàng Gold: #FFD700
+                title_layer = TextClip(
+                    title_text.upper(),
+                    fontsize=55,
+                    font='DejaVu-Sans-Bold', 
+                    color='#FFD700',      # Gold color
+                    stroke_color='black', # Viền đen
+                    stroke_width=3,
+                    method='caption',
+                    align='West',         # Căn trái
+                    size=(800, None)      # Giới hạn chiều rộng để text xuống dòng nếu dài
+                )
+                # Đặt ở góc trái trên (Padding: 50px trái, 50px trên)
+                title_layer = title_layer.set_position((50, 50)).set_duration(duration)
+            except Exception as e:
+                logger.warning(f"⚠️ Không thể tạo Title Overlay: {e}")
 
+        # --- 4. LAYER LOGO KÊNH (GÓC PHẢI TRÊN - NHỎ) ---
+        logo_path = get_path('assets', 'images', 'channel_logo.png') # Cần file này nếu muốn logo
+        logo_layer = None
+        if os.path.exists(logo_path):
+             logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
+
+        # --- GỘP LAYERS ---
         layers = [clip, glow, waveform]
-        if mic:
-            layers.append(mic)
+        if title_layer: layers.append(title_layer)
+        if logo_layer: layers.append(logo_layer)
 
-        # Gộp tất cả các layer lại ở 720p
         final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
-        logger.info("🧩 Lắp ghép layers thành CompositeVideoClip.")
-     
-        # KHÔNG CẦN .resize() ở đây nữa vì đã tính toán hết ở 720p
-
-        # -----------------------------------------------------
-        # ⭐ Xuất video (ULTRAFAST)
-        # -----------------------------------------------------
+        
+        # --- XUẤT FILE ---
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
         os.makedirs(os.path.dirname(output), exist_ok=True)
 
-        logger.info("🚀 Starting fast render...")
-        
-        # Gọi .write_videofile lên clip final (đã là 720p)
+        logger.info("🚀 Starting render with Title Overlay...")
         final.write_videofile(
             output,
             fps=24,
@@ -234,16 +245,6 @@ def create_video(audio_path, episode_id, custom_image_path=None):
             ffmpeg_params=["-crf", "28"], 
             logger='bar' 
         )
-
-        logger.info(f"✅ DONE: {output}")
-        
-        # Dọn dẹp ảnh tạm nếu cần
-        if custom_image_path and os.path.exists(get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")):
-             try:
-                 os.remove(get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg"))
-             except:
-                 pass
-
         return output
 
     except Exception as e:
