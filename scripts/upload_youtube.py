@@ -26,7 +26,7 @@ def get_authenticated_service():
             except Exception:
                 return None
         else:
-            return None # Token lỗi/mất
+            return None
     return build('youtube', 'v3', credentials=creds)
 
 # --- [FIXED] THÊM THAM SỐ THUMBNAIL_PATH ---
@@ -40,7 +40,7 @@ def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None
 
     youtube = get_authenticated_service()
     if not youtube:
-        logging.error("Lỗi xác thực YouTube (Token).")
+        logging.error("Lỗi xác thực YouTube.")
         return 'FAILED'
 
     try:
@@ -48,7 +48,7 @@ def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None
         description = episode_data.get('Summary', '')
         tags = episode_data.get('Tags', [])
 
-        # Cắt ngắn Title/Description nếu quá dài
+        # Cắt ngắn Title/Description
         if len(title) > MAX_TITLE_LENGTH: title = title[:MAX_TITLE_LENGTH-3] + "..."
         if len(description) > MAX_DESCRIPTION_LENGTH: description = description[:MAX_DESCRIPTION_LENGTH]
 
@@ -57,10 +57,10 @@ def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None
                 'title': title,
                 'description': description,
                 'tags': tags,
-                'categoryId': '22' # Category: People & Blogs
+                'categoryId': '22'
             },
             'status': {
-                'privacyStatus': 'public', # Đổi thành 'private' nếu muốn test an toàn
+                'privacyStatus': 'public', # Để public để đăng luôn
                 'selfDeclaredMadeForKids': False
             }
         }
