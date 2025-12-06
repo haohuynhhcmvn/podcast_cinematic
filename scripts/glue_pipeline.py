@@ -20,12 +20,11 @@ from create_video import create_video
 from create_shorts import create_shorts
 from upload_youtube import upload_video
 
-# --- Import Module tạo Ảnh và Thumbnail ---
 try:
-    from generate_image import generate_character_image # Hàm gọi DALL-E
-    from create_thumbnail import add_text_to_thumbnail  # Hàm chèn chữ
+    from generate_image import generate_character_image
+    from create_thumbnail import add_text_to_thumbnail
 except ImportError:
-    logging.warning("⚠️ Module tạo ảnh/thumbnail chưa có. Sẽ dùng nền mặc định.")
+    logging.warning("⚠️ Module tạo ảnh/thumbnail chưa có.")
     generate_character_image = None
     add_text_to_thumbnail = None
 
@@ -39,9 +38,7 @@ logger = logging.getLogger(__name__)
 # =========================================================
 def safe_update_status(ws, row_idx, col_idx, status):
     try:
-        if not ws:
-            logger.warning("Không có worksheet để update status.")
-            return
+        if not ws: return
         if col_idx and isinstance(col_idx, int):
             ws.update_cell(row_idx, col_idx, status)
         else:
@@ -50,12 +47,10 @@ def safe_update_status(ws, row_idx, col_idx, status):
             ws.update_cell(row_idx, idx, status)
         logger.info(f"Đã cập nhật row {row_idx} -> {status}")
     except Exception as e:
-        logger.error(f"Lỗi khi cập nhật status: {e}")
-
+        logger.error(f"Lỗi update status: {e}")
 
 def try_update_youtube_id(ws, row_idx, video_id):
-    if not ws or not video_id:
-        return
+    if not ws or not video_id: return
     try:
         header = ws.row_values(1)
         cols = ['YouTubeID', 'VideoID', 'youtube_id', 'video_id']
@@ -63,11 +58,8 @@ def try_update_youtube_id(ws, row_idx, video_id):
             if name in header:
                 col = header.index(name) + 1
                 ws.update_cell(row_idx, col, video_id)
-                logger.info(f"Ghi YouTube ID vào cột {name}")
                 return
-    except Exception:
-        pass
-
+    except Exception: pass
 
 # =========================================================
 #  FULL VIDEO PROCESSING (LONG)
@@ -83,7 +75,7 @@ def process_long_video(data, task_meta):
     logger.info(f"🎬 BẮT ĐẦU VIDEO DÀI: {eid} – {name}")
 
     try:
-        # 1) Generate Script Long
+        # 1. Script
         long_res = generate_long_script(data)
         if not long_res:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_GEN_LONG')
@@ -91,98 +83,75 @@ def process_long_video(data, task_meta):
 
         script_path = long_res["script_path"]
         meta = long_res.get("metadata", {})
-
         youtube_title = meta.get("youtube_title", f"{name} – The Untold Story")
-        youtube_description = meta.get("youtube_description", "")
-        yt_tags = meta.get("youtube_tags", "")
-        youtube_tags = yt_tags.split(",") if isinstance(yt_tags, str) else yt_tags
         
-        # --- TẠO ẢNH AI (THUMBNAIL + BG) ---
-        custom_bg_path = None
+        # 2. Ảnh AI & Thumbnail
+        dalle_char_path = None
         final_thumbnail_path = None
         
-        if generate_character_image:
-            logger.info("🎨 Đang tạo ảnh AI nhân vật...")
-            try:
-                # Bước A: Gọi DALL-E tạo ảnh Raw
-                raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-                
-                # Gọi hàm tạo ảnh
-                generated_path = generate_character_image(name, raw_img_path) 
-                
-                if generated_path and os.path.exists(generated_path):
-                    custom_bg_path = generated_path # Dùng ảnh này làm nền video
-                    
-                    # Bước B: Tạo Thumbnail (Chèn Text)
-                    if add_text_to_thumbnail:
-                        # Dùng Tiêu đề Long-form (đã được làm sạch) làm text Thumbnail
-                        thumb_text = youtube_title.upper() 
-                        thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
-                        
-                        final_thumbnail_path = add_text_to_thumbnail(generated_path, thumb_text, thumb_out)
-                        logger.info(f"🖼️ Thumbnail đã tạo: {final_thumbnail_path}")
-            except Exception as e:
-                logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}. Sẽ dùng nền mặc định.")
-        # ----------------------------------------------------------------
+        # [MODIFIED] SỬ DỤNG BACKGROUND CỐ ĐỊNH (default_background.png)
+        # File này phải nằm trong assets/images/
+        base_bg_path = get_path('assets', 'images', 'default_background.png')
+        if not os.path.exists(base_bg_path):
+            logger.warning(f"⚠️ Không tìm thấy ảnh nền gốc: {base_bg_path}")
+            # Fallback (nếu không có thì để None để code create_video tự xử lý)
+            base_bg_path = None
 
-        # 2) TTS Long
+        if generate_character_image:
+            try:
+                raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
+                dalle_char_path = generate_character_image(name, raw_img_path) 
+                
+                if dalle_char_path and add_text_to_thumbnail:
+                    thumb_text = youtube_title.upper() 
+                    thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
+                    final_thumbnail_path = add_text_to_thumbnail(dalle_char_path, thumb_text, thumb_out)
+            except Exception as e:
+                logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}")
+
+        # 3. TTS
         tts = None
         for i in range(3):
             tts = create_tts(script_path, eid, "long")
-            if tts:
-                break
-            logger.warning(f"TTS long attempt {i+1} failed.")
+            if tts: break
             sleep(2)
         if not tts:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_LONG')
             return False
 
-        # 3) Mix audio
+        # 4. Audio Mix
         mixed = auto_music_sfx(tts, eid)
-        if not mixed:
-            safe_update_status(ws, row_idx, col_idx, 'FAILED_MIX_LONG')
-            return False
+        if not mixed: return False
 
-        # 4) Make full video
-        # [UPDATED]: Truyền thêm title_text để hiển thị tiêu đề tĩnh
+        # 5. Render Video (Hybrid: Base BG + DALL-E Char)
         video_path = create_video(
             mixed, 
             eid, 
-            custom_image_path=custom_bg_path,
-            title_text=youtube_title  # <--- THAM SỐ MỚI (Tiêu đề tĩnh)
+            custom_image_path=dalle_char_path, # Ảnh nhân vật (Lớp trên)
+            base_bg_path=base_bg_path,         # Ảnh nền đẹp (Lớp dưới)
+            title_text=youtube_title
         )
         
         if not video_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_LONG')
             return False
 
-        # 5) Upload YouTube (CÓ THUMBNAIL)
+        # 6. Upload
         upload_payload = {
             "Title": youtube_title,
-            "Summary": youtube_description,
-            "Tags": youtube_tags
+            "Summary": meta.get("youtube_description", ""),
+            "Tags": meta.get("youtube_tags", [])
         }
-
-        upload_result = None
-        for i in range(2):
-            # Truyền thumbnail_path vào hàm upload
-            upload_result = upload_video(video_path, upload_payload, thumbnail_path=final_thumbnail_path)
-            if upload_result and upload_result != "FAILED":
-                break
-            logger.warning(f"Upload long attempt {i+1} failed.")
-            sleep(3)
-
+        upload_result = upload_video(video_path, upload_payload, thumbnail_path=final_thumbnail_path)
+        
         if not upload_result or upload_result == "FAILED":
             safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_LONG')
             return False
 
-        # Ghi YouTube ID
         if isinstance(upload_result, dict):
-            vid = upload_result.get("video_id") or upload_result.get("id")
-            try_update_youtube_id(ws, row_idx, vid)
+            try_update_youtube_id(ws, row_idx, upload_result.get("video_id"))
 
         safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
-        logger.info("🎉 LONG VIDEO OK")
         return True
 
     except Exception as e:
@@ -192,7 +161,7 @@ def process_long_video(data, task_meta):
 
 
 # =========================================================
-#  SHORTS PROCESSING
+#  SHORTS
 # =========================================================
 def process_shorts(data, task_meta):
     row_idx = task_meta.get('row_idx')
@@ -200,74 +169,62 @@ def process_shorts(data, task_meta):
     ws = task_meta.get('worksheet')
 
     eid = data.get('ID')
-
     logger.info(f"🎬 BẮT ĐẦU SHORTS: {eid}")
-    
-    # --- [UPDATED] LẤY ẢNH AI ĐỂ LÀM NỀN SHORTS ---
-    # Tái sử dụng ảnh Raw đã tạo ở bước Long Video (nếu có)
-    raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-    custom_bg_for_shorts = None
-    if os.path.exists(raw_img_path):
-        custom_bg_for_shorts = raw_img_path
-        logger.info(f"📱 Tìm thấy ảnh nhân vật cho Shorts: {raw_img_path}")
-    # ----------------------------------------------
 
     try:
         script_path, title_path = generate_short_script(data)
-        with open(title_path, "r", encoding="utf-8") as f:
-            hook_title = f.read().strip()
+        with open(title_path, "r", encoding="utf-8") as f: hook_title = f.read().strip()
 
         # TTS
         tts = None
         for i in range(3):
             tts = create_tts(script_path, eid, "short")
-            if tts:
-                break
+            if tts: break
             sleep(2)
-        if not tts:
-            safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_SHORT')
-            return False
+        if not tts: return False
+
+        # Lấy lại ảnh DALL-E (dùng chung với Long form)
+        dalle_char_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
+        if not os.path.exists(dalle_char_path): dalle_char_path = None
+        
+        # [MODIFIED] SỬ DỤNG BACKGROUND SHORTS CỐ ĐỊNH (default_background_shorts.png)
+        # Bạn nhớ upload file này vào assets/images/ nhé!
+        base_bg_path = get_path('assets', 'images', 'default_background_shorts.png')
+        if not os.path.exists(base_bg_path):
+            logger.warning(f"⚠️ Không tìm thấy ảnh nền Shorts: {base_bg_path}")
+            base_bg_path = None
 
         # Render Shorts
-        # [UPDATED]: Truyền custom_image_path để làm nền mờ
         shorts_path = create_shorts(
-            tts, 
-            hook_title, 
-            eid, 
+            tts, hook_title, eid, 
             data.get("Name", ""), 
-            script_path,
-            custom_image_path=custom_bg_for_shorts # <--- THAM SỐ MỚI (Nền mờ)
+            script_path, 
+            custom_image_path=dalle_char_path,
+            base_bg_path=base_bg_path
         )
         
-        if not shorts_path:
-            safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_SHORTS')
-            return False
+        if not shorts_path: return False
 
         # Upload
         upload_data = {
             "Title": f"{hook_title} – {data.get('Name')} | #Shorts",
             "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
-            "Tags": ["shorts", "podcast", "history"]
+            "Tags": ["shorts", "history", "legend"]
         }
-
         upload_result = upload_video(shorts_path, upload_data)
+        
         if not upload_result or upload_result == 'FAILED':
             safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_SHORTS')
             return False
 
         safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
-        logger.info("🎉 SHORTS OK")
         return True
 
     except Exception as e:
         logger.error(f"ERROR SHORTS: {e}", exc_info=True)
-        safe_update_status(ws, row_idx, col_idx, 'ERROR_SHORTS')
         return False
 
 
-# =========================================================
-#  MAIN
-# =========================================================
 def main():
     setup_environment()
     task = fetch_content()
@@ -276,30 +233,15 @@ def main():
         return
 
     data = task["data"]
-    task_meta = {
-        "row_idx": task["row_idx"],
-        "col_idx": task["col_idx"],
-        "worksheet": task["worksheet"]
-    }
+    task_meta = {"row_idx": task["row_idx"], "col_idx": task["col_idx"], "worksheet": task["worksheet"]}
 
     logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={data.get('ID')} – {data.get('Name')}")
-
+    
     long_ok = process_long_video(data, task_meta)
-    
-    # Nghỉ 1 chút để tránh spam API dồn dập
     sleep(10)
-    
     short_ok = process_shorts(data, task_meta)
 
-    if long_ok and short_ok:
-        logger.info("🎉 FULL SUCCESS!")
-    elif long_ok:
-        logger.info("⚠️ Long OK – Shorts FAILED")
-    elif short_ok:
-        logger.info("⚠️ Shorts OK – Long FAILED")
-    else:
-        logger.info("❌ BOTH FAILED")
-
+    if long_ok and short_ok: logger.info("🎉 FULL SUCCESS!")
 
 if __name__ == "__main__":
     main()
