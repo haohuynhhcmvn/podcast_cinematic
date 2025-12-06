@@ -3,19 +3,25 @@ import logging
 import os
 import asyncio
 import textwrap
+from openai import OpenAI
 from pydub import AudioSegment
-import edge_tts  # Thư viện mới
+import edge_tts
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# --- CẤU HÌNH EDGE TTS ---
-# Giọng nam tính, phim tài liệu: en-US-ChristopherNeural
-# Các giọng khác: en-US-GuyNeural, en-US-EricNeural
-VOICE = "en-US-ChristopherNeural" 
-SPEED_MULTIPLIER = 1.15  # Tăng tốc hậu kỳ bằng pydub (giữ nguyên logic cũ)
+# --- CẤU HÌNH ---
+# 1. Edge TTS (Free)
+EDGE_VOICE = "en-US-ChristopherNeural"
+# 2. OpenAI TTS (Paid Fallback)
+OPENAI_MODEL = "tts-1"
+OPENAI_VOICE = "onyx"
 
-# Hàm lọc sạn kịch bản (GIỮ NGUYÊN)
+SPEED_MULTIPLIER = 1.15
+
+# =========================================================
+# 🧹 HÀM LỌC KỊCH BẢN
+# =========================================================
 def clean_and_validate_script(text):
     if not text: return ""
     lines = text.split('\n')
@@ -34,58 +40,102 @@ def clean_and_validate_script(text):
         cleaned_lines.append(clean_line)
     return "\n".join(cleaned_lines)
 
-# Hàm chạy Edge TTS (Bất đồng bộ)
+# =========================================================
+# 🎙️ ENGINE 1: EDGE TTS (MIỄN PHÍ)
+# =========================================================
 async def _run_edge_tts(text, output_file):
-    communicate = edge_tts.Communicate(text, VOICE)
+    """Hàm bất đồng bộ gọi Edge TTS"""
+    communicate = edge_tts.Communicate(text, EDGE_VOICE)
     await communicate.save(output_file)
 
-def create_tts(script_path, episode_id, mode="long"):
-    try:
-        # 1. Đọc & Lọc kịch bản
-        if not os.path.exists(script_path): return None
-        with open(script_path, "r", encoding="utf-8") as f:
-            raw_text = f.read().strip()
+def generate_with_edge(chunks, episode_id):
+    """Thử tạo audio bằng Edge TTS."""
+    combined_audio = AudioSegment.empty()
+    logger.info(f"🎙️ [Thử] Tạo TTS FREE (Edge-TTS) - {len(chunks)} chunks...")
+    
+    for i, chunk in enumerate(chunks):
+        temp_path = get_path("assets", "temp", f"{episode_id}_edge_{i}.mp3")
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+        try:
+            asyncio.run(_run_edge_tts(chunk, temp_path))
+            segment = AudioSegment.from_file(temp_path)
+            combined_audio += segment
+            os.remove(temp_path)
+        except Exception as e:
+            logger.error(f"⚠️ Edge TTS thất bại ở chunk {i}: {e}")
+            # Nếu lỗi bất kỳ chunk nào, coi như thất bại toàn bộ để chuyển sang backup
+            return None
             
-        full_text = clean_and_validate_script(raw_text)
-        if not full_text: return None
+    return combined_audio
 
-        # 2. Chunking (Chia nhỏ để tránh lỗi quá dài)
-        # Edge TTS xử lý tốt đoạn dài, nhưng chia nhỏ vẫn an toàn hơn
-        chunk_size = 2000
-        chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
+# =========================================================
+# 💎 ENGINE 2: OPENAI TTS (TRẢ PHÍ - DỰ PHÒNG)
+# =========================================================
+def generate_with_openai(chunks, episode_id):
+    """Fallback: Tạo audio bằng OpenAI TTS khi bản Free lỗi."""
+    logger.warning("🚨 Edge TTS bị lỗi! Chuyển sang OpenAI TTS (Trả phí) để cứu video...")
+    
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        logger.error("❌ Không có API Key để chạy Backup OpenAI.")
+        return None
+        
+    client = OpenAI(api_key=api_key)
+    combined_audio = AudioSegment.empty()
 
-        combined_audio = AudioSegment.empty()
-        logger.info(f"🎙️ Tạo TTS FREE (Edge-TTS) - {mode} - {len(chunks)} chunks...")
-
-        for i, chunk in enumerate(chunks):
-            temp_path = get_path("assets", "temp", f"{episode_id}_chunk_{i}.mp3")
+    for i, chunk in enumerate(chunks):
+        try:
+            response = client.audio.speech.create(
+                model=OPENAI_MODEL,
+                voice=OPENAI_VOICE,
+                input=chunk
+            )
+            temp_path = get_path("assets", "temp", f"{episode_id}_openai_{i}.mp3")
             os.makedirs(os.path.dirname(temp_path), exist_ok=True)
             
-            try:
-                # Gọi hàm async trong môi trường sync
-                asyncio.run(_run_edge_tts(chunk, temp_path))
-                
-                # Nối audio
-                segment = AudioSegment.from_file(temp_path)
-                combined_audio += segment
-                
-                # Xóa file tạm
-                os.remove(temp_path)
-            except Exception as e:
-                logger.error(f"⚠️ Lỗi chunk {i}: {e}")
-                continue
+            response.stream_to_file(temp_path)
+            segment = AudioSegment.from_file(temp_path)
+            combined_audio += segment
+            os.remove(temp_path)
+        except Exception as e:
+            logger.error(f"❌ OpenAI TTS cũng lỗi ở chunk {i}: {e}")
+            return None
+            
+    return combined_audio
 
-        if len(combined_audio) == 0: return None
+# =========================================================
+# 🎧 HÀM ĐIỀU PHỐI CHÍNH
+# =========================================================
+def create_tts(script_path, episode_id, mode="long"):
+    try:
+        # 1. Chuẩn bị Script
+        if not os.path.exists(script_path): return None
+        with open(script_path, "r", encoding="utf-8") as f:
+            full_text = clean_and_validate_script(f.read().strip())
+        if not full_text: return None
 
-        # 3. Tăng tốc (Logic cũ vẫn hoạt động tốt)
+        # Chia nhỏ text
+        chunk_size = 2000
+        chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
+        
+        # 2. [CHIẾN LƯỢC] Thử Free trước, nếu chết thì dùng Paid
+        combined_audio = generate_with_edge(chunks, episode_id)
+        
+        if combined_audio is None:
+            # Kích hoạt Backup
+            combined_audio = generate_with_openai(chunks, episode_id)
+
+        if combined_audio is None or len(combined_audio) == 0:
+            logger.error("❌ THẤT BẠI: Cả Edge và OpenAI đều không tạo được giọng đọc.")
+            return None
+
+        # 3. Tăng tốc độ (Hậu kỳ)
         if SPEED_MULTIPLIER != 1.0:
-            original_rate = combined_audio.frame_rate
-            new_rate = int(original_rate * SPEED_MULTIPLIER)
+            rate = combined_audio.frame_rate
             combined_audio = combined_audio._spawn(combined_audio.raw_data, overrides={
-                "frame_rate": new_rate
-            })
-            combined_audio = combined_audio.set_frame_rate(original_rate)
-            logger.info(f"⚡ Đã tăng tốc độ audio: {SPEED_MULTIPLIER}x")
+                "frame_rate": int(rate * SPEED_MULTIPLIER)
+            }).set_frame_rate(rate)
+            logger.info(f"⚡ Đã tăng tốc audio: {SPEED_MULTIPLIER}x")
 
         # 4. Xuất file
         suffix = "long" if mode == "long" else "short"
@@ -93,10 +143,9 @@ def create_tts(script_path, episode_id, mode="long"):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         combined_audio.export(output_path, format="mp3")
-        logger.info(f"✅ TTS Hoàn tất (Free): {output_path}")
-        
+        logger.info(f"✅ TTS Hoàn tất: {output_path}")
         return output_path
 
     except Exception as e:
-        logger.error(f"❌ Lỗi Create TTS: {e}", exc_info=True)
+        logger.error(f"❌ Lỗi Create TTS Tổng: {e}", exc_info=True)
         return None
