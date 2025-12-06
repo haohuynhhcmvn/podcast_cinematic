@@ -20,12 +20,22 @@ from create_video import create_video
 from create_shorts import create_shorts
 from upload_youtube import upload_video
 
+# --- [NEW] Import Module tạo Ảnh và Thumbnail ---
+try:
+    from generate_image import generate_character_image # Hàm gọi DALL-E
+    from create_thumbnail import add_text_to_thumbnail  # Hàm chèn chữ
+except ImportError:
+    logging.warning("⚠️ Module tạo ảnh/thumbnail chưa có. Sẽ dùng nền mặc định.")
+    generate_character_image = None
+    add_text_to_thumbnail = None
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 # =========================================================
-#  SAFE UPDATE STATUS
+#  SAFE UPDATE STATUS (GIỮ NGUYÊN)
 # =========================================================
 def safe_update_status(ws, row_idx, col_idx, status):
     try:
@@ -86,6 +96,33 @@ def process_long_video(data, task_meta):
         youtube_description = meta.get("youtube_description", "")
         yt_tags = meta.get("youtube_tags", "")
         youtube_tags = yt_tags.split(",") if isinstance(yt_tags, str) else yt_tags
+        
+        # --- [FIX LỖ HỔNG 1] TẠO ẢNH AI (THUMBNAIL + BG) ---
+        custom_bg_path = None
+        final_thumbnail_path = None
+        
+        if generate_character_image:
+            logger.info("🎨 Đang tạo ảnh AI nhân vật...")
+            try:
+                # Bước A: Gọi DALL-E tạo ảnh Raw
+                raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
+                # Hàm này bạn cần tự implement (generate_image.py)
+                generated_path = generate_character_image(name, raw_img_path) 
+                
+                if generated_path and os.path.exists(generated_path):
+                    custom_bg_path = generated_path # Dùng làm nền video
+                    
+                    # Bước B: Tạo Thumbnail (Chèn Text)
+                    if add_text_to_thumbnail:
+                        # Dùng Tiêu đề Long-form (đã được làm sạch) làm text Thumbnail
+                        thumb_text = youtube_title.upper() 
+                        thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
+                        # Hàm này bạn cần tự implement (create_thumbnail.py)
+                        final_thumbnail_path = add_text_to_thumbnail(generated_path, thumb_text, thumb_out)
+                        logger.info(f"🖼️ Thumbnail đã tạo: {final_thumbnail_path}")
+            except Exception as e:
+                logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}. Sẽ dùng nền mặc định.")
+        # ----------------------------------------------------------------
 
         # 2) TTS Long
         tts = None
@@ -105,13 +142,14 @@ def process_long_video(data, task_meta):
             safe_update_status(ws, row_idx, col_idx, 'FAILED_MIX_LONG')
             return False
 
-        # 4) Make full video
-        video_path = create_video(mixed, eid)
+        # 4) Make full video (TRUYỀN ẢNH AI LÀM NỀN)
+        video_path = create_video(mixed, eid, custom_image_path=custom_bg_path)
+        
         if not video_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_LONG')
             return False
 
-        # 5) Upload YouTube
+        # 5) Upload YouTube (CÓ THUMBNAIL)
         upload_payload = {
             "Title": youtube_title,
             "Summary": youtube_description,
@@ -120,7 +158,8 @@ def process_long_video(data, task_meta):
 
         upload_result = None
         for i in range(2):
-            upload_result = upload_video(video_path, upload_payload)
+            # Truyền thêm thumbnail_path vào hàm upload
+            upload_result = upload_video(video_path, upload_payload, thumbnail_path=final_thumbnail_path)
             if upload_result and upload_result != "FAILED":
                 break
             logger.warning(f"Upload long attempt {i+1} failed.")
@@ -146,7 +185,7 @@ def process_long_video(data, task_meta):
 
 
 # =========================================================
-#  SHORTS
+#  SHORTS (GIỮ NGUYÊN)
 # =========================================================
 def process_shorts(data, task_meta):
     row_idx = task_meta.get('row_idx')
@@ -174,12 +213,14 @@ def process_shorts(data, task_meta):
             return False
 
         # Render
-        shorts_path = create_shorts(tts, hook_title, eid, data.get("Name", ""))
+        # FIX: Truyền đường dẫn script text để tạo phụ đề (DỰ ĐOÁN)
+        shorts_path = create_shorts(tts, hook_title, eid, data.get("Name", ""), script_path)
         if not shorts_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_SHORTS')
             return False
 
         # Upload
+        # Tiêu đề Shorts phải có #Shorts
         upload_data = {
             "Title": f"{hook_title} – {data.get('Name')} | #Shorts",
             "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
@@ -202,7 +243,7 @@ def process_shorts(data, task_meta):
 
 
 # =========================================================
-#  MAIN
+#  MAIN (GIỮ NGUYÊN)
 # =========================================================
 def main():
     setup_environment()
@@ -221,6 +262,10 @@ def main():
     logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={data.get('ID')} – {data.get('Name')}")
 
     long_ok = process_long_video(data, task_meta)
+    
+    # Nghỉ 1 chút để tránh spam API dồn dập
+    sleep(10)
+    
     short_ok = process_shorts(data, task_meta)
 
     if long_ok and short_ok:
