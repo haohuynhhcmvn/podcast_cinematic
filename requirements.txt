@@ -5,7 +5,8 @@ google-auth-httplib2
 gspread
 moviepy==1.0.3
 pydub
-Pillow       <-- Quan trọng cho xử lý ảnh Gradient
-requests     <-- Quan trọng để tải ảnh DALL-E
+Pillow
+requests
 numpy
 imageio_ffmpeg
+python-dotenv
