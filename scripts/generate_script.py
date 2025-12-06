@@ -52,7 +52,7 @@ INPUT DATA:
 
 CRITICAL RULES:
 1. **ULTIMATE LENGTH REQUIREMENT (SENSORY DETAIL):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific sounds, palpable emotions, textures) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes.
-2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving. Use gritty, real-world descriptions.
+2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving, the richness of the surrounding. Use gritty, real-world descriptions.
 3. **DIALOGUE:** Reconstruct and include at least 3 to 5 actual quotes or monologues to extend the length and drama.
 4. **VISUALS:** Use [Visual: description] tags frequently (at least every 3 sentences).
 
@@ -103,7 +103,7 @@ OUTPUT: English only.
             if "Title:" in meta_text:
                 raw_title = meta_text.split("Title:")[1].split("Description:")[0].strip()
             else:
-                raw_title = meta_text.split("\n")[0] # Fallback nếu format sai
+                raw_title = meta_text.split("\n")[0]
 
             if "Description:" in meta_text:
                 yt_desc = meta_text.split("Description:")[1].strip()
@@ -111,8 +111,8 @@ OUTPUT: English only.
                 yt_desc = meta_text
 
             # 🔥 [FIX QUAN TRỌNG]: LÀM SẠCH TITLE CHO LONG FORM
-            # Loại bỏ các từ khóa dễ gây hiểu lầm cho thuật toán
-            yt_title = raw_title.replace('"', '').replace('**', '').replace('#', '').replace('Short', '').strip()
+            # Loại bỏ các từ khóa dễ gây hiểu lầm cho thuật toán: **, #, Short, |
+            yt_title = raw_title.replace('"', '').replace('**', '').replace('#', '').replace('Short', '').replace('|', '').strip()
             
         except:
             yt_title = f"The Untold Story of {char_name}"
