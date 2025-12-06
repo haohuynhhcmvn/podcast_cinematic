@@ -20,7 +20,7 @@ from create_video import create_video
 from create_shorts import create_shorts
 from upload_youtube import upload_video
 
-# --- [NEW] Import Module tạo Ảnh và Thumbnail ---
+# --- Import Module tạo Ảnh và Thumbnail ---
 try:
     from generate_image import generate_character_image # Hàm gọi DALL-E
     from create_thumbnail import add_text_to_thumbnail  # Hàm chèn chữ
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 # =========================================================
-#  SAFE UPDATE STATUS (GIỮ NGUYÊN)
+#  SAFE UPDATE STATUS
 # =========================================================
 def safe_update_status(ws, row_idx, col_idx, status):
     try:
@@ -97,7 +97,7 @@ def process_long_video(data, task_meta):
         yt_tags = meta.get("youtube_tags", "")
         youtube_tags = yt_tags.split(",") if isinstance(yt_tags, str) else yt_tags
         
-        # --- [FIX LỖ HỔNG 1] TẠO ẢNH AI (THUMBNAIL + BG) ---
+        # --- TẠO ẢNH AI (THUMBNAIL + BG) ---
         custom_bg_path = None
         final_thumbnail_path = None
         
@@ -106,18 +106,19 @@ def process_long_video(data, task_meta):
             try:
                 # Bước A: Gọi DALL-E tạo ảnh Raw
                 raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-                # Hàm này bạn cần tự implement (generate_image.py)
+                
+                # Gọi hàm tạo ảnh
                 generated_path = generate_character_image(name, raw_img_path) 
                 
                 if generated_path and os.path.exists(generated_path):
-                    custom_bg_path = generated_path # Dùng làm nền video
+                    custom_bg_path = generated_path # Dùng ảnh này làm nền video
                     
                     # Bước B: Tạo Thumbnail (Chèn Text)
                     if add_text_to_thumbnail:
                         # Dùng Tiêu đề Long-form (đã được làm sạch) làm text Thumbnail
                         thumb_text = youtube_title.upper() 
                         thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
-                        # Hàm này bạn cần tự implement (create_thumbnail.py)
+                        
                         final_thumbnail_path = add_text_to_thumbnail(generated_path, thumb_text, thumb_out)
                         logger.info(f"🖼️ Thumbnail đã tạo: {final_thumbnail_path}")
             except Exception as e:
@@ -142,8 +143,14 @@ def process_long_video(data, task_meta):
             safe_update_status(ws, row_idx, col_idx, 'FAILED_MIX_LONG')
             return False
 
-        # 4) Make full video (TRUYỀN ẢNH AI LÀM NỀN)
-        video_path = create_video(mixed, eid, custom_image_path=custom_bg_path)
+        # 4) Make full video
+        # [UPDATED]: Truyền thêm title_text để hiển thị tiêu đề tĩnh
+        video_path = create_video(
+            mixed, 
+            eid, 
+            custom_image_path=custom_bg_path,
+            title_text=youtube_title  # <--- THAM SỐ MỚI (Tiêu đề tĩnh)
+        )
         
         if not video_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_LONG')
@@ -158,7 +165,7 @@ def process_long_video(data, task_meta):
 
         upload_result = None
         for i in range(2):
-            # Truyền thêm thumbnail_path vào hàm upload
+            # Truyền thumbnail_path vào hàm upload
             upload_result = upload_video(video_path, upload_payload, thumbnail_path=final_thumbnail_path)
             if upload_result and upload_result != "FAILED":
                 break
@@ -185,7 +192,7 @@ def process_long_video(data, task_meta):
 
 
 # =========================================================
-#  SHORTS (GIỮ NGUYÊN)
+#  SHORTS PROCESSING
 # =========================================================
 def process_shorts(data, task_meta):
     row_idx = task_meta.get('row_idx')
@@ -195,6 +202,15 @@ def process_shorts(data, task_meta):
     eid = data.get('ID')
 
     logger.info(f"🎬 BẮT ĐẦU SHORTS: {eid}")
+    
+    # --- [UPDATED] LẤY ẢNH AI ĐỂ LÀM NỀN SHORTS ---
+    # Tái sử dụng ảnh Raw đã tạo ở bước Long Video (nếu có)
+    raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
+    custom_bg_for_shorts = None
+    if os.path.exists(raw_img_path):
+        custom_bg_for_shorts = raw_img_path
+        logger.info(f"📱 Tìm thấy ảnh nhân vật cho Shorts: {raw_img_path}")
+    # ----------------------------------------------
 
     try:
         script_path, title_path = generate_short_script(data)
@@ -212,15 +228,22 @@ def process_shorts(data, task_meta):
             safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_SHORT')
             return False
 
-        # Render
-        # FIX: Truyền đường dẫn script text để tạo phụ đề (DỰ ĐOÁN)
-        shorts_path = create_shorts(tts, hook_title, eid, data.get("Name", ""), script_path)
+        # Render Shorts
+        # [UPDATED]: Truyền custom_image_path để làm nền mờ
+        shorts_path = create_shorts(
+            tts, 
+            hook_title, 
+            eid, 
+            data.get("Name", ""), 
+            script_path,
+            custom_image_path=custom_bg_for_shorts # <--- THAM SỐ MỚI (Nền mờ)
+        )
+        
         if not shorts_path:
             safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_SHORTS')
             return False
 
         # Upload
-        # Tiêu đề Shorts phải có #Shorts
         upload_data = {
             "Title": f"{hook_title} – {data.get('Name')} | #Shorts",
             "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
@@ -243,7 +266,7 @@ def process_shorts(data, task_meta):
 
 
 # =========================================================
-#  MAIN (GIỮ NGUYÊN)
+#  MAIN
 # =========================================================
 def main():
     setup_environment()
