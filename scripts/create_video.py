@@ -155,7 +155,7 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             radius = base_radius + i * 6
             opacity = max(0.0, 1.0 - i * 0.06)
             if opacity <= 0: continue
-            ring_mask = (dist_matrix >= radius - 1.5) & (dist_matrix <= radius + 1.5)
+            ring_mask = (dist_matrix >= radius - 0.7) & (dist_matrix <= radius + 0.7)
             mask_frame[ring_mask] = opacity
         return mask_frame
 
