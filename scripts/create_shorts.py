@@ -4,6 +4,11 @@ import logging
 import os
 import math 
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip, 
     TextClip, CompositeVideoClip, CompositeAudioClip, concatenate_audioclips
@@ -12,80 +17,95 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-SHORTS_SIZE = (1080, 1920)
+SHORTS_WIDTH = 1080
+SHORTS_HEIGHT = 1920
+SHORTS_SIZE = (SHORTS_WIDTH, SHORTS_HEIGHT)
 MAX_DURATION = 60 
 
 # =========================================================
-# 🌑 HÀM XỬ LÝ NỀN SHORTS: VERTICAL VIGNETTE
+# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16)
 # =========================================================
-def process_shorts_background(input_path, output_path, width=1080, height=1920):
+def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
     """
-    Tạo nền dọc: Blur nhẹ + Gradient tối ở Đỉnh và Đáy (Chữ dễ đọc).
+    Ghép ảnh: Nền phong cảnh dọc (dưới) + Nhân vật DALL-E (đáy).
     """
     try:
-        with Image.open(input_path) as img:
-            img = img.convert("RGBA")
+        width, height = SHORTS_SIZE
+        
+        # 1. LOAD & RESIZE BASE BG (Ảnh nền dọc)
+        if base_bg_path and os.path.exists(base_bg_path):
+            base_img = Image.open(base_bg_path).convert("RGBA")
+        else:
+            base_img = Image.new("RGBA", SHORTS_SIZE, (20,20,20,255))
             
-            # 1. Resize & Crop 9:16
-            target_ratio = width / height
-            img_ratio = img.width / img.height
+        # Resize Aspect Fill
+        ratio = width / height
+        img_ratio = base_img.width / base_img.height
+        
+        if img_ratio > ratio:
+            new_h = height
+            new_w = int(new_h * img_ratio)
+        else:
+            new_w = width
+            new_h = int(new_w / img_ratio)
             
-            if img_ratio > target_ratio:
-                new_height = height
-                new_width = int(new_height * img_ratio)
-            else:
-                new_width = width
-                new_height = int(new_width / img_ratio)
-                
-            img = img.resize((new_width, new_height), Image.LANCZOS)
+        base_img = base_img.resize((new_w, new_h), Image.LANCZOS)
+        left = (new_w - width) // 2
+        base_img = base_img.crop((left, 0, left + width, height))
+        
+        # Làm tối nền để nổi chữ vàng (50%)
+        enhancer = ImageEnhance.Brightness(base_img)
+        base_img = enhancer.enhance(0.5) 
+
+        # 2. XỬ LÝ NHÂN VẬT (Nằm dưới cùng)
+        if char_path and os.path.exists(char_path):
+            char_img = Image.open(char_path).convert("RGBA")
             
-            left = (new_width - width) // 2
-            top = (new_height - height) // 2
-            img_cropped = img.crop((left, top, left + width, top + height))
+            # Resize fit chiều ngang
+            char_w = width
+            char_h = int(char_img.height * (char_w / char_img.width))
+            char_img = char_img.resize((char_w, char_h), Image.LANCZOS)
             
-            # 2. Blur (Mức độ vừa phải để còn thấy hình dáng nhân vật)
-            img_blurred = img_cropped.filter(ImageFilter.GaussianBlur(radius=30))
+            # Mask mờ dần từ trên xuống (Để cạnh trên của nhân vật hòa vào nền)
+            mask = Image.new("L", (char_w, char_h), 0)
+            draw = ImageDraw.Draw(mask)
+            for y in range(char_h):
+                pct = y / char_h
+                # 30% trên cùng trong suốt, sau đó hiện dần
+                if pct < 0.3: alpha = 0
+                else: alpha = int(255 * ((pct - 0.3) / 0.5))
+                if alpha > 255: alpha = 255
+                draw.line([(0, y), (char_w, y)], fill=alpha)
             
-            # 3. Tạo Gradient Dọc (Tối ở trên cùng và dưới cùng)
-            gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(gradient)
-            
-            for y in range(height):
-                # Tỷ lệ vị trí Y (0.0 -> 1.0)
-                pct = y / height
-                
-                # Logic:
-                # 0% - 20% (Đỉnh): Tối (cho Hook Title)
-                # 20% - 80% (Giữa): Sáng (cho Nhân vật)
-                # 80% - 100% (Đáy): Tối (cho Subtitles)
-                
-                if pct < 0.2: 
-                    alpha = int(180 * (1 - (pct / 0.2))) # Giảm dần từ 180 về 0
-                elif pct > 0.8:
-                    alpha = int(180 * ((pct - 0.8) / 0.2)) # Tăng dần từ 0 lên 180
-                else:
-                    alpha = 0 # Trong suốt ở giữa
-                
-                # Vẽ đường ngang
-                draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
-            
-            # 4. Hòa trộn
-            final_img = Image.alpha_composite(img_blurred, gradient)
-            
-            # Làm tối tổng thể một chút (Enhance 0.6)
-            final_img = final_img.convert("RGB")
-            enhancer = ImageEnhance.Brightness(final_img)
-            final_img = enhancer.enhance(0.6) 
-            
-            final_img.save(output_path, quality=90)
-            return output_path
-            
+            # Dán vào đáy ảnh (đẩy xuống chút cho tự nhiên)
+            paste_y = height - char_h + 150 
+            base_img.paste(char_img, (0, paste_y), mask=mask)
+
+        # 3. TẠO VIGNETTE (Tối Đỉnh và Đáy cho Text)
+        overlay = Image.new('RGBA', SHORTS_SIZE, (0,0,0,0))
+        draw_ov = ImageDraw.Draw(overlay)
+        
+        for y in range(height):
+            # Tối ở Đỉnh (20% trên cùng)
+            if y < height * 0.2: 
+                alpha = int(180 * (1 - y/(height*0.2)))
+                draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
+            # Tối ở Đáy (30% dưới cùng)
+            elif y > height * 0.7: 
+                alpha = int(180 * ((y - height*0.7)/(height*0.3)))
+                draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
+        
+        final = Image.alpha_composite(base_img, overlay)
+        final = final.convert("RGB")
+        final.save(output_path, quality=90)
+        return output_path
+
     except Exception as e:
-        logger.error(f"❌ Lỗi xử lý nền Shorts: {e}")
+        logger.error(f"❌ Shorts BG Error: {e}")
         return None
 
 # =========================================================
-# 🛠️ HÀM TẠO PHỤ ĐỀ (VỊ TRÍ CHUẨN)
+# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES) - CẦN THIẾT
 # =========================================================
 def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     if not text_content: return []
@@ -123,16 +143,17 @@ def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     return subtitle_clips
 
 # =========================================================
-# 🎬 HÀM CHÍNH SHORTS
+# 🎬 HÀM CHÍNH (CREATE SHORTS)
 # =========================================================
-def create_shorts(audio_path, hook_title, episode_id, character_name, script_path, custom_image_path=None): 
+def create_shorts(audio_path, hook_title, episode_id, character_name, script_path, custom_image_path=None, base_bg_path=None): 
     try:
+        # 1. Load Voice
         if not os.path.exists(audio_path): return None
         voice = AudioFileClip(audio_path).volumex(1.5) 
         duration = min(voice.duration, MAX_DURATION) 
         voice = voice.subclip(0, duration) 
         
-        # Nhạc nền
+        # 2. Audio Mix (Loop Bg Music)
         bg_music_path = get_path('assets', 'background_music', 'loop_1.mp3')
         if os.path.exists(bg_music_path):
             bg_music = AudioFileClip(bg_music_path).volumex(0.1) 
@@ -142,33 +163,42 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
         else:
             final_audio = voice
 
-        # Background
+        # 3. Hybrid Background
         clip = None
-        if custom_image_path and os.path.exists(custom_image_path):
-            processed_shorts_bg = get_path('assets', 'temp', f"{episode_id}_shorts_bg.jpg")
-            os.makedirs(os.path.dirname(processed_shorts_bg), exist_ok=True)
-            final_bg_path = process_shorts_background(custom_image_path, processed_shorts_bg)
-            if final_bg_path:
-                clip = ImageClip(final_bg_path).set_duration(duration)
+        hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
+        os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
+        
+        if custom_image_path:
+            # Ghép nền có sẵn + Nhân vật DALL-E
+            final_bg = process_hybrid_shorts_bg(custom_image_path, base_bg_path, hybrid_bg_path)
+            if final_bg:
+                clip = ImageClip(final_bg).set_duration(duration)
 
+        # Fallback
         if clip is None:
-            clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
+             if base_bg_path and os.path.exists(base_bg_path):
+                 # Resize ảnh nền có sẵn cho Shorts
+                 clip = ImageClip(base_bg_path).set_duration(duration)
+                 # Cần resize về chuẩn 1080x1920 nếu chưa đúng
+                 if clip.size != SHORTS_SIZE:
+                     clip = clip.resize(height=SHORTS_HEIGHT)
+                     clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH)
+             else:
+                 clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
 
         elements = [clip]
 
-        # HOOK TITLE (Vùng tối trên cùng - Y=200)
+        # 4. Hook Title (Trên cùng)
         if hook_title:
             try:
                 hook_clip = TextClip(
-                    hook_title.upper(), 
-                    fontsize=90, color='white', font='DejaVu-Sans-Bold', 
-                    method='caption', size=(1000, None), 
-                    stroke_color='black', stroke_width=8, align='center'
+                    hook_title.upper(), fontsize=90, color='white', font='DejaVu-Sans-Bold', 
+                    method='caption', size=(1000, None), stroke_color='black', stroke_width=8, align='center'
                 ).set_pos(('center', 200)).set_duration(duration)
                 elements.append(hook_clip)
             except Exception: pass
 
-        # SUBTITLES
+        # 5. Subtitles (Dưới cùng)
         if script_path and os.path.exists(script_path):
             try:
                 with open(script_path, "r", encoding="utf-8") as f: full_script = f.read()
@@ -176,6 +206,7 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
                 if subs: elements.extend(subs)
             except Exception: pass
 
+        # 6. Render
         final = CompositeVideoClip(elements, size=SHORTS_SIZE).set_audio(final_audio)
         out_path = get_path('outputs', 'shorts', f"{episode_id}_shorts.mp4")
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
