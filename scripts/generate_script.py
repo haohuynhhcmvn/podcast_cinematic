@@ -124,7 +124,7 @@ OUTPUT: English only.
 
 
 # ============================================================
-#  SHORT SCRIPT GENERATOR (GIỮ NGUYÊN)
+#  SHORT SCRIPT GENERATOR (PHIÊN BẢN TỐI ƯU 55s & HARD CTA)
 # ============================================================
 def generate_short_script(data):
     try:
@@ -138,24 +138,30 @@ def generate_short_script(data):
         char_name = data.get("Name", "Legendary Figure")
         input_notes = data.get("Content/Input", "")
 
+        # --- CẬP NHẬT PROMPT: KHẮC PHỤC LỖI 61 GIÂY & VĂN MẪU ---
         prompt = f"""
 ROLE: Viral YouTube Shorts Scripter.
-TASK: Write a 60-second script (approx 140-160 words) for {char_name}.
+TASK: Write a **tight, fast-paced** 50-55 second script (MAXIMUM 135 words) for {char_name}.
 INPUT: {input_notes}
 
-STRUCTURE:
-1. HOOK (0-5s): Specific number or shocking fact.
-2. TWIST: Paradox.
-3. BODY: Fast storytelling.
-4. DUAL CTA: "Subscribe for more, and check the related video below."
+CRITICAL RULES:
+1. **LENGTH:** STRICTLY UNDER 140 words. If it's too long, it fails as a Short.
+2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, weaving, testament, mere words, swirling. 
+3. **TONE:** Direct, gritty, aggressive. No rhetorical questions at the end.
 
-STYLE: English. Direct. Mysterious.
+STRUCTURE:
+1. HOOK (0-5s): Start immediately with a specific number or shocking fact. No "Did you know".
+2. THE TWIST: Reveal the paradox or conflict.
+3. THE BODY: Fast storytelling.
+4. THE BRIDGE CTA (Must be exact): "Subscribe for more legends, and click the link below for the full brutal story!"
+
+OUTPUT: English only.
 """
 
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
+            max_tokens=300, # Giảm token để tránh AI viết lan man
             temperature=0.9,
         )
 
@@ -166,12 +172,14 @@ STYLE: English. Direct. Mysterious.
         with open(out_script, "w", encoding="utf-8") as f:
             f.write(clean_script)
 
+        # Tạo Title sạch (Không chứa #Shorts, không chứa ký tự lạ)
         title_res = client.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}."}],
+            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}. NO HASHTAGS. NO QUOTES."}],
             max_tokens=50
         )
-        title = title_res.choices[0].message.content.strip().replace('"', '')
+        # Làm sạch Title thủ công để chắc chắn 100%
+        title = title_res.choices[0].message.content.strip().replace('"', '').replace('#', '').replace('Shorts', '')
 
         out_title = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
         with open(out_title, "w", encoding="utf-8") as f:
