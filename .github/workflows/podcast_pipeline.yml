@@ -1,7 +1,7 @@
 name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
 
 on:
-  schedule:
+  #schedule:
     # Chạy vào các khung giờ vàng (UTC): 
     # 11:40 (18:40 VN), 14:40, 21:40
    # - cron: '40 10,20 * * *'
