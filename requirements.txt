@@ -1,18 +1,11 @@
-# --- CƠ BẢN & AI ---
 openai
-gspread
-gTTS
-python-dotenv
-pydub
-
-# --- VIDEO & HÌNH ẢNH ---
-moviepy==1.0.3
-Pillow==9.0.0
-numpy
-matplotlib
-scipy
-
-# --- YOUTUBE API & GOOGLE AUTH ---
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
+gspread
+moviepy==1.0.3
+pydub
+Pillow       <-- Quan trọng cho xử lý ảnh Gradient
+requests     <-- Quan trọng để tải ảnh DALL-E
+numpy
+imageio_ffmpeg
