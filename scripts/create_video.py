@@ -6,7 +6,7 @@ from pydub import AudioSegment
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
-    CompositeVideoClip, TextClip
+    CompositeVideoClip, TextClip, VideoClip
 )
 from utils import get_path
 
@@ -18,51 +18,66 @@ OUTPUT_HEIGHT = 720
 # -----------------------------------
 
 # ============================================================
-# 🌑 HÀM XỬ LÝ BACKGROUND: NHÂN VẬT LỆCH PHẢI & HÒA TRỘN
+# 🌑 HÀM XỬ LÝ BACKGROUND: CINEMATIC GRADIENT (KHÔNG CẮT)
 # ============================================================
 def process_background_image(input_path, output_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Xử lý ảnh AI: Crop lấy phần bên phải (nhân vật) và hòa trộn mềm mại vào nền đen.
+    Xử lý ảnh AI: Giữ nguyên toàn bộ nền, chỉ phủ Gradient tối bên trái để nổi chữ.
     """
     try:
         with Image.open(input_path) as img:
             img = img.convert("RGBA")
             
-            # 1. Resize sao cho chiều cao khớp với video (1280x720)
-            # Giữ tỷ lệ ảnh gốc, ưu tiên chiều cao đủ 720
-            ratio = height / img.height
-            new_w = int(img.width * ratio)
-            new_h = height
-            img_resized = img.resize((new_w, new_h), Image.LANCZOS)
+            # 1. Resize & Center Crop (Lấp đầy màn hình 16:9)
+            # Tính toán tỷ lệ để ảnh phủ kín 1280x720 mà không bị méo
+            target_ratio = width / height
+            img_ratio = img.width / img.height
             
-            # 2. Tạo Canvas nền đen (hoặc xám đậm granite)
-            canvas = Image.new('RGB', (width, height), (20, 20, 25)) # Màu than chì tối
+            if img_ratio > target_ratio:
+                # Ảnh rộng hơn màn hình -> Resize theo chiều cao, crop bớt 2 bên
+                new_height = height
+                new_width = int(new_height * img_ratio)
+            else:
+                # Ảnh cao hơn màn hình -> Resize theo chiều rộng, crop bớt trên dưới
+                new_width = width
+                new_height = int(new_width / img_ratio)
+                
+            img = img.resize((new_width, new_height), Image.LANCZOS)
             
-            # 3. Crop lấy phần bên PHẢI của ảnh nhân vật (Right Alignment)
-            # Chúng ta sẽ lấy một phần ảnh rộng khoảng 60-70% chiều rộng video và đặt sát phải
-            char_width = min(new_w, int(width * 0.7)) 
+            # Crop chính giữa (Center Crop)
+            left = (new_width - width) // 2
+            top = (new_height - height) // 2
+            img_crop = img.crop((left, top, left + width, top + height))
             
-            # Cắt lấy phần bên phải nhất của ảnh gốc
-            char_crop = img_resized.crop((new_w - char_width, 0, new_w, new_h))
+            # 2. Tạo lớp Gradient Mask (Phủ tối bên trái để viết chữ)
+            # Tạo một layer màu đen trong suốt
+            gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(gradient)
             
-            # 4. Tạo Alpha Mask (Gradient mờ dần từ trái sang phải)
-            # Để ảnh nhân vật hòa tan vào nền đen bên trái
-            mask = Image.new('L', (char_width, new_h), 255)
-            draw_mask = ImageDraw.Draw(mask)
+            # Vẽ Gradient từ Trái (Đen đậm) -> Phải (Trong suốt)
+            # Vùng an toàn cho chữ: 40% chiều rộng bên trái
+            for x in range(width):
+                # Độ đậm (Alpha): Giảm dần từ 220 (rất tối) xuống 0 (trong suốt)
+                # Công thức này giữ bóng tối đậm ở 30% đầu tiên, rồi nhạt nhanh
+                if x < width * 0.3:
+                    alpha = 200 # Tối đậm phần chứa tiêu đề
+                elif x < width * 0.7:
+                    # Giảm dần tuyến tính
+                    ratio = (x - width * 0.3) / (width * 0.4)
+                    alpha = int(200 * (1 - ratio))
+                else:
+                    alpha = 0 # Trong suốt hoàn toàn phần nhân vật
+                
+                # Vẽ từng đường dọc
+                draw.line([(x, 0), (x, height)], fill=(0, 0, 0, alpha))
+
+            # 3. Hòa trộn Gradient lên ảnh gốc
+            final_img = Image.alpha_composite(img_crop, gradient)
             
-            # Vẽ gradient đen -> trắng trong khoảng 20% chiều rộng ảnh crop
-            gradient_width = int(char_width * 0.3) 
-            for x in range(gradient_width):
-                alpha = int(255 * (x / gradient_width))
-                draw_mask.line([(x, 0), (x, new_h)], fill=alpha)
-            
-            # 5. Dán ảnh nhân vật lên Canvas (Canh phải)
-            paste_x = width - char_width
-            canvas.paste(char_crop, (paste_x, 0), mask=mask)
-            
-            # 6. Làm tối nhẹ tổng thể để tôn text
-            enhancer = ImageEnhance.Brightness(canvas)
-            final_img = enhancer.enhance(0.6) # Tối đi 40%
+            # 4. Làm tối nhẹ tổng thể (Vignette) một chút để video trông "Deep" hơn
+            final_img = final_img.convert("RGB")
+            enhancer = ImageEnhance.Brightness(final_img)
+            final_img = enhancer.enhance(0.85) # Chỉ tối đi 15% tổng thể
             
             final_img.save(output_path, quality=95)
             return output_path
@@ -125,13 +140,10 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             mask_frame[ring_mask] = opacity
         return mask_frame
 
-    mask_clip_low_res = VideoFileClip(filename=None, has_mask=True) # Dummy init
-    # Re-init đúng cách cho VideoClip từ function
-    from moviepy.video.VideoClip import VideoClip as MVC
-    mask_clip_low_res = MVC(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
+    mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
     
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
-    color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) # Màu Vàng Gold (255, 215, 0)
+    color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) # Màu Vàng Gold
     return color_clip.set_mask(mask_clip_high_res)
 
 
@@ -148,10 +160,9 @@ def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     dist = np.sqrt((xx - lcx)**2 + (yy - lcy)**2)
     intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
     glow_low = np.zeros((low_h, low_w, 3), dtype=np.uint8)
-    # Glow màu vàng cam nhẹ (Gold tint)
-    glow_low[:, :, 0] = (intensity * 0.3).astype(np.uint8) # R
-    glow_low[:, :, 1] = (intensity * 0.2).astype(np.uint8) # G
-    glow_low[:, :, 2] = 0                                  # B
+    glow_low[:, :, 0] = (intensity * 0.3).astype(np.uint8)
+    glow_low[:, :, 1] = (intensity * 0.2).astype(np.uint8)
+    glow_low[:, :, 2] = 0                                 
     return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.3)
 
 
@@ -175,7 +186,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             processed_bg_path = get_path('assets', 'temp', f"{episode_id}_processed_bg.jpg")
             os.makedirs(os.path.dirname(processed_bg_path), exist_ok=True)
             
-            # Gọi hàm xử lý ảnh mới (Crop phải + Fade trái)
+            # Gọi hàm xử lý ảnh mới
             final_bg_path = process_background_image(custom_image_path, processed_bg_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT)
             if final_bg_path:
                 clip = ImageClip(final_bg_path).set_duration(duration)
@@ -192,33 +203,30 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         # --- 2. LAYER WAVEFORM & GLOW ---
         glow = make_glow_layer(duration)
         waveform = make_circular_waveform(audio_path, duration)
-        waveform = waveform.set_position("center") # Giữ nguyên ở giữa
+        waveform = waveform.set_position("center")
 
         # --- 3. LAYER TIÊU ĐỀ (TITLE OVERLAY) - GÓC TRÁI TRÊN ---
-        # "THE BRUTAL TRUTH OF..."
         title_layer = None
         if title_text:
             try:
-                # Dùng font Impact hoặc DejaVu-Sans-Bold có sẵn
-                # Màu vàng Gold: #FFD700
+                # Dùng font có sẵn trên hệ thống Linux
                 title_layer = TextClip(
                     title_text.upper(),
                     fontsize=55,
                     font='DejaVu-Sans-Bold', 
-                    color='#FFD700',      # Gold color
-                    stroke_color='black', # Viền đen
+                    color='#FFD700',      
+                    stroke_color='black', 
                     stroke_width=3,
                     method='caption',
-                    align='West',         # Căn trái
-                    size=(800, None)      # Giới hạn chiều rộng để text xuống dòng nếu dài
+                    align='West',         
+                    size=(800, None)      
                 )
-                # Đặt ở góc trái trên (Padding: 50px trái, 50px trên)
                 title_layer = title_layer.set_position((50, 50)).set_duration(duration)
             except Exception as e:
                 logger.warning(f"⚠️ Không thể tạo Title Overlay: {e}")
 
-        # --- 4. LAYER LOGO KÊNH (GÓC PHẢI TRÊN - NHỎ) ---
-        logo_path = get_path('assets', 'images', 'channel_logo.png') # Cần file này nếu muốn logo
+        # --- 4. LAYER LOGO KÊNH ---
+        logo_path = get_path('assets', 'images', 'channel_logo.png')
         logo_layer = None
         if os.path.exists(logo_path):
              logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
