@@ -23,7 +23,7 @@ SHORTS_SIZE = (SHORTS_WIDTH, SHORTS_HEIGHT)
 MAX_DURATION = 60 
 
 # =========================================================
-# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16)
+# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16) - CẬP NHẬT
 # =========================================================
 def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
     """
@@ -57,11 +57,12 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
         enhancer = ImageEnhance.Brightness(base_img)
         base_img = enhancer.enhance(0.5) 
 
-        # 2. XỬ LÝ NHÂN VẬT (Nằm dưới cùng)
+        # 2. XỬ LÝ NHÂN VẬT (Nằm dưới cùng) - CẬP NHẬT LOGIC
         if char_path and os.path.exists(char_path):
             char_img = Image.open(char_path).convert("RGBA")
             
-            # Resize fit chiều ngang
+            # Resize nhân vật sao cho chiều rộng bằng chiều rộng Shorts
+            # Điều này giúp nhân vật chiếm trọn phần dưới, rõ ràng hơn
             char_w = width
             char_h = int(char_img.height * (char_w / char_img.width))
             char_img = char_img.resize((char_w, char_h), Image.LANCZOS)
@@ -71,14 +72,24 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
             draw = ImageDraw.Draw(mask)
             for y in range(char_h):
                 pct = y / char_h
-                # 30% trên cùng trong suốt, sau đó hiện dần
-                if pct < 0.3: alpha = 0
-                else: alpha = int(255 * ((pct - 0.3) / 0.5))
+                # 20% trên cùng trong suốt hoàn toàn để hòa trộn tốt hơn
+                if pct < 0.2: alpha = 0
+                # Sau đó hiện dần lên
+                else: alpha = int(255 * ((pct - 0.2) / 0.3)) # Gradient nhanh hơn một chút
                 if alpha > 255: alpha = 255
                 draw.line([(0, y), (char_w, y)], fill=alpha)
             
-            # Dán vào đáy ảnh (đẩy xuống chút cho tự nhiên)
-            paste_y = height - char_h + 150 
+            # Dán vào đáy ảnh. 
+            # Paste Y: Đặt nhân vật sát đáy hoặc hơi thấp xuống một chút nếu ảnh quá cao
+            # Logic: Nếu ảnh nhân vật cao hơn 1/2 chiều cao Shorts, cho nó lún xuống một chút
+            if char_h > height * 0.6:
+                 paste_y = height - char_h + int(char_h * 0.1) # Lún xuống 10% chiều cao nhân vật
+            else:
+                 paste_y = height - char_h
+
+            # Đảm bảo không bị khoảng trống ở đáy
+            if paste_y < 0: paste_y = height - char_h # Fallback nếu tính toán sai
+            
             base_img.paste(char_img, (0, paste_y), mask=mask)
 
         # 3. TẠO VIGNETTE (Tối Đỉnh và Đáy cho Text)
@@ -86,11 +97,11 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
         draw_ov = ImageDraw.Draw(overlay)
         
         for y in range(height):
-            # Tối ở Đỉnh (20% trên cùng)
+            # Tối ở Đỉnh (20% trên cùng) - Cho Hook Title
             if y < height * 0.2: 
                 alpha = int(180 * (1 - y/(height*0.2)))
                 draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
-            # Tối ở Đáy (30% dưới cùng)
+            # Tối ở Đáy (30% dưới cùng) - Cho Subtitles
             elif y > height * 0.7: 
                 alpha = int(180 * ((y - height*0.7)/(height*0.3)))
                 draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
@@ -168,21 +179,30 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
         hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
         os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
         
+        # Luôn ưu tiên tạo nền Hybrid nếu có ảnh nhân vật
         if custom_image_path:
             # Ghép nền có sẵn + Nhân vật DALL-E
             final_bg = process_hybrid_shorts_bg(custom_image_path, base_bg_path, hybrid_bg_path)
             if final_bg:
                 clip = ImageClip(final_bg).set_duration(duration)
 
-        # Fallback
+        # Fallback - Chỉ dùng khi không tạo được hybrid bg
         if clip is None:
              if base_bg_path and os.path.exists(base_bg_path):
                  # Resize ảnh nền có sẵn cho Shorts
                  clip = ImageClip(base_bg_path).set_duration(duration)
                  # Cần resize về chuẩn 1080x1920 nếu chưa đúng
                  if clip.size != SHORTS_SIZE:
+                     # Resize giữ tỷ lệ để phủ kín chiều cao hoặc chiều rộng (Aspect Fill)
+                     # Logic resize của MoviePy: resize(height=...) sẽ tự tính width theo tỷ lệ
                      clip = clip.resize(height=SHORTS_HEIGHT)
-                     clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH)
+                     # Nếu width vẫn nhỏ hơn SHORTS_WIDTH thì resize theo width
+                     if clip.w < SHORTS_WIDTH:
+                         clip = clip.resize(width=SHORTS_WIDTH)
+                     
+                     # Crop giữa
+                     clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH, 
+                                      y1=clip.h/2 - SHORTS_HEIGHT/2, height=SHORTS_HEIGHT)
              else:
                  clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
 
