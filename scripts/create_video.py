@@ -116,10 +116,13 @@ def process_hybrid_background(char_path, base_bg_path, output_path, width=OUTPUT
         return None
 
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM
+# 🌟 CIRCULAR WAVEFORM (MODERN STYLE: NÉT MẢNH + PHỦ RỘNG)
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    calc_w, calc_h = 640, 360 
+    # [1] Tăng không gian vẽ để sóng không bị cắt khi bung to
+    # Trước đây là 640x360, giờ tăng lên vuông 1000x1000 để sóng tròn đẹp nhất
+    calc_w, calc_h = 1000, 1000 
+    
     fps = 20 
     audio = AudioSegment.from_file(audio_path)
     raw_samples = np.array(audio.get_array_of_samples()).astype(np.float32)
@@ -139,7 +142,9 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
     max_val = np.max(envelope) if len(envelope) > 0 else 1
     if max_val > 0: envelope = envelope / max_val 
 
-    waves = 15 
+    # [2] Tăng số lượng vòng sóng (để phủ kín không gian rộng hơn)
+    waves = 20  # Cũ là 15
+    
     center = (calc_w // 2, calc_h // 2)
     yy, xx = np.ogrid[:calc_h, :calc_w]
     dist_sq = (xx - center[0]) ** 2 + (yy - center[1]) ** 2
@@ -150,19 +155,34 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
         frame_idx = min(frame_idx, len(envelope) - 1)
         amp = envelope[frame_idx]
         mask_frame = np.zeros((calc_h, calc_w), dtype=np.float32)
-        base_radius = 25 + amp * 20 
+        
+        # [3] Tăng bán kính cơ bản và độ nảy (Amplitude)
+        # Sóng sẽ bung ra xa tâm hơn khi nhạc to
+        base_radius = 60 + amp * 100  # Cũ: 25 + amp*20 -> Tăng mạnh để sóng to hơn
+        
         for i in range(waves):
-            radius = base_radius + i * 6
-            opacity = max(0.0, 1.0 - i * 0.06)
+            # [4] Tăng khoảng cách giữa các vòng (Spacing)
+            # Giúp tổng thể sóng trông rộng và thoáng hơn
+            radius = base_radius + i * 20  # Cũ: i*6 -> Tăng lên 20
+            
+            opacity = max(0.0, 1.0 - i * 0.05)
             if opacity <= 0: continue
-            ring_mask = (dist_matrix >= radius - 0.3) & (dist_matrix <= radius + 0.3)
+            
+            # [5] CHỈNH NÉT MẢNH (THIN LINES)
+            # Giảm độ dày từ +/- 1.5 xuống +/- 0.6
+            # Kết hợp với calc_w/h lớn sẽ cho ra nét cực mảnh và sắc sảo
+            ring_mask = (dist_matrix >= radius - 0.6) & (dist_matrix <= radius + 0.6)
+            
             mask_frame[ring_mask] = opacity
         return mask_frame
 
     mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
+    
+    # Resize về kích thước video đầu ra
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
     color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) 
     return color_clip.set_mask(mask_clip_high_res)
+
 
 def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     low_w, low_h = 320, 180
