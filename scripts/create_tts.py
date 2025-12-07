@@ -120,11 +120,14 @@ def create_tts(script_path, episode_id, mode="long"):
             full_text = clean_and_validate_script(f.read().strip())
         if not full_text: return None
 
+        # Chia nhỏ text (Giảm xuống 1500 ký tự cho an toàn hơn)
         chunk_size = 1500
         chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
         
+        # 1. Thử Edge (Miễn phí)
         combined_audio = generate_with_edge(chunks, episode_id)
         
+        # 2. Nếu thất bại, check xem có cho dùng OpenAI không
         if combined_audio is None:
             if USE_OPENAI_BACKUP:
                 combined_audio = generate_with_openai(chunks, episode_id)
@@ -134,12 +137,14 @@ def create_tts(script_path, episode_id, mode="long"):
 
         if combined_audio is None or len(combined_audio) == 0: return None
 
+        # 3. Tăng tốc
         if SPEED_MULTIPLIER != 1.0:
             rate = combined_audio.frame_rate
             combined_audio = combined_audio._spawn(combined_audio.raw_data, overrides={
                 "frame_rate": int(rate * SPEED_MULTIPLIER)
             }).set_frame_rate(rate)
 
+        # Xuất file
         suffix = "long" if mode == "long" else "short"
         output_path = get_path("data", "audio", f"{episode_id}_{suffix}.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
