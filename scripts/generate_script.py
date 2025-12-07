@@ -13,7 +13,6 @@ GPT_MODEL = "gpt-4o-mini"
 MAX_TOKENS = 4000
 
 def parse_json_garbage(text):
-    """Hàm làm sạch JSON trả về từ GPT"""
     text = re.sub(r"```json", "", text)
     text = re.sub(r"```", "", text)
     return text.strip()
@@ -22,9 +21,6 @@ def parse_json_garbage(text):
 # 1. TẠO KỊCH BẢN VIDEO DÀI (LONG FORM)
 # ============================================================
 def generate_long_script(data):
-    """
-    Tạo kịch bản dài, tiêu đề YouTube (SỐC) và mô tả chuẩn SEO.
-    """
     try:
         char_name = data.get("Name")
         char_desc = data.get("Content/Input") or f"A historical figure named {char_name}"
@@ -32,33 +28,28 @@ def generate_long_script(data):
         logger.info(f"📝 Đang viết kịch bản Long-form cho: {char_name}...")
 
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("❌ Thiếu OPENAI_API_KEY")
-            return None
-        
+        if not api_key: return None
         client = OpenAI(api_key=api_key)
 
-        # --- PROMPT GÂY SỐC (CÓ FIX LỖI DICT) ---
+        # --- PROMPT GÂY SỐC & FIX LỖI DICT ---
         prompt = f"""
-        You are a master storyteller and YouTube strategist for a history channel.
-        Topic: {char_name}. Context: {char_desc}.
-
-        TASK: Create a complete package for a viral history documentary (8-10 minutes).
+        You are a master storyteller. Topic: {char_name}. Context: {char_desc}.
+        TASK: Create a viral history documentary script (8-10 minutes).
         
-        STRUCTURE OF THE SCRIPT:
-        1. HOOK (0:00-0:45): Start in medias res (middle of action). Use sensory details.
-        2. BACKGROUND: Briefly cover childhood/origins.
-        3. RISING ACTION: The major struggles/battles.
-        4. CLIMAX: The turning point.
-        5. FALL/LEGACY: The tragic end or impact.
+        STRUCTURE:
+        1. HOOK: Start with sensory details (smell, sound).
+        2. BACKGROUND: Brief origins.
+        3. RISING ACTION: Struggles/Battles.
+        4. CLIMAX: Turning point.
+        5. LEGACY: Impact.
         
-        CRITICAL INSTRUCTIONS FOR METADATA:
-        1. YOUTUBE TITLE: Clickbait style, SHOCKING QUESTION or CONTROVERSIAL STATEMENT. Under 60 chars.
-        2. DESCRIPTION: Detailed summary (min 1500 chars).
-        3. TAGS: 15-20 high-traffic tags.
+        METADATA:
+        1. YOUTUBE TITLE: Clickbait style, SHOCKING QUESTION. Under 60 chars.
+        2. DESCRIPTION: Min 1500 chars.
+        3. TAGS: 15-20 tags.
 
-        OUTPUT FORMAT: Return ONLY a valid JSON object with keys: "title", "description", "tags", "script".
-        IMPORTANT: The value of "script" must be a SINGLE LONG STRING containing the narration (not a nested object).
+        OUTPUT FORMAT: JSON with keys: "title", "description", "tags", "script".
+        IMPORTANT: The value of "script" must be a SINGLE LONG STRING (not a nested object).
         """
 
         response = client.chat.completions.create(
@@ -78,26 +69,22 @@ def generate_long_script(data):
         if isinstance(raw_script, str):
             final_script_str = raw_script
         elif isinstance(raw_script, dict):
-            # Nếu GPT trả về dict, gộp lại thành string
             lines = []
             for section, text in raw_script.items():
                 lines.append(f"[{section.upper()}]\n{text}")
             final_script_str = "\n\n".join(lines)
         elif isinstance(raw_script, list):
-            # Nếu GPT trả về list
             final_script_str = "\n\n".join([str(x) for x in raw_script])
         else:
             final_script_str = str(raw_script)
         # -----------------------------------------------
 
         # Lưu file
-        # 1. Script Text (Đã xử lý an toàn)
         script_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(final_script_str)
 
-        # 2. Metadata
         meta_path = get_path("data", "episodes", f"{data['ID']}_meta.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({
@@ -122,7 +109,7 @@ def generate_long_script(data):
         return None
 
 # ============================================================
-# 2. TẠO KỊCH BẢN SHORTS (GIỮ NGUYÊN)
+# 2. TẠO KỊCH BẢN SHORTS
 # ============================================================
 def generate_short_script(data):
     try:
@@ -134,15 +121,9 @@ def generate_short_script(data):
         client = OpenAI(api_key=api_key)
 
         prompt = f"""
-        Write a viral YouTube Shorts script (approx 50-60 seconds speaking time) about {char_name}.
-        
-        STRUCTURE:
-        - 0-5s: The Hook (A shocking fact or question).
-        - 5-45s: The Twist/Story (Fast-paced, high energy).
-        - 45-60s: Conclusion + Call to Action (Subscribe for more legends).
-        
-        ALSO PROVIDE: A 3-5 word "Hook Title" for the video overlay (e.g., "TRAITOR OR HERO?", "BLOODY TRUTH").
-        
+        Write a viral YouTube Shorts script (50-60s) about {char_name}.
+        STRUCTURE: Hook -> Twist -> CTA.
+        ALSO PROVIDE: A 3-5 word "Hook Title" for video overlay.
         OUTPUT FORMAT: JSON with keys: "overlay_title", "script".
         """
 
@@ -154,7 +135,6 @@ def generate_short_script(data):
         content = response.choices[0].message.content
         result = json.loads(parse_json_garbage(content))
 
-        # Lưu file
         script_path = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
         title_path = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
         
