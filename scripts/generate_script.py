@@ -9,11 +9,11 @@ from utils import get_path
 logger = logging.getLogger(__name__)
 
 # --- CẤU HÌNH ---
-GPT_MODEL = "gpt-4o-mini"  # Model rẻ và nhanh, chất lượng đủ tốt
+GPT_MODEL = "gpt-4o-mini"
 MAX_TOKENS = 4000
 
 def parse_json_garbage(text):
-    """Hàm làm sạch JSON trả về từ GPT (đôi khi nó thêm ```json ... ```)"""
+    """Hàm làm sạch JSON trả về từ GPT"""
     text = re.sub(r"```json", "", text)
     text = re.sub(r"```", "", text)
     return text.strip()
@@ -38,7 +38,7 @@ def generate_long_script(data):
         
         client = OpenAI(api_key=api_key)
 
-        # --- [CẬP NHẬT QUAN TRỌNG] PROMPT GÂY SỐC ---
+        # --- PROMPT GÂY SỐC (CÓ FIX LỖI DICT) ---
         prompt = f"""
         You are a master storyteller and YouTube strategist for a history channel.
         Topic: {char_name}. Context: {char_desc}.
@@ -46,22 +46,19 @@ def generate_long_script(data):
         TASK: Create a complete package for a viral history documentary (8-10 minutes).
         
         STRUCTURE OF THE SCRIPT:
-        1. HOOK (0:00-0:45): Start in medias res (middle of action). Use sensory details (smell of blood, sound of steel). Grab attention immediately.
-        2. BACKGROUND: Briefly cover childhood/origins but move fast.
-        3. RISING ACTION: The major struggles, battles, or political maneuvers.
-        4. CLIMAX: The turning point or most famous moment.
-        5. FALL/LEGACY: The tragic end or lasting impact.
+        1. HOOK (0:00-0:45): Start in medias res (middle of action). Use sensory details.
+        2. BACKGROUND: Briefly cover childhood/origins.
+        3. RISING ACTION: The major struggles/battles.
+        4. CLIMAX: The turning point.
+        5. FALL/LEGACY: The tragic end or impact.
         
-        CRITICAL INSTRUCTIONS FOR METADATA (SEO & CTR):
-        1. YOUTUBE TITLE: MUST be a "Clickbait" style. Use a SHOCKING QUESTION or a CONTROVERSIAL STATEMENT. 
-           - Bad: "The History of {char_name}"
-           - Good: "Was {char_name} Actually a Psychopath?", "The Horrifying Secret {char_name} Hid for Years", "Why History Lied About {char_name}".
-           - Keep it under 60 characters if possible.
-           - Use UPPERCASE for emphasis words.
-        2. DESCRIPTION: Detailed summary (min 1500 chars) optimized for SEO keywords.
+        CRITICAL INSTRUCTIONS FOR METADATA:
+        1. YOUTUBE TITLE: Clickbait style, SHOCKING QUESTION or CONTROVERSIAL STATEMENT. Under 60 chars.
+        2. DESCRIPTION: Detailed summary (min 1500 chars).
         3. TAGS: 15-20 high-traffic tags.
 
         OUTPUT FORMAT: Return ONLY a valid JSON object with keys: "title", "description", "tags", "script".
+        IMPORTANT: The value of "script" must be a SINGLE LONG STRING containing the narration (not a nested object).
         """
 
         response = client.chat.completions.create(
@@ -74,14 +71,33 @@ def generate_long_script(data):
         clean_json = parse_json_garbage(content)
         result = json.loads(clean_json)
 
+        # --- [FIX LỖI] XỬ LÝ NẾU SCRIPT LÀ DICT/LIST ---
+        raw_script = result.get("script", "")
+        final_script_str = ""
+
+        if isinstance(raw_script, str):
+            final_script_str = raw_script
+        elif isinstance(raw_script, dict):
+            # Nếu GPT trả về dict, gộp lại thành string
+            lines = []
+            for section, text in raw_script.items():
+                lines.append(f"[{section.upper()}]\n{text}")
+            final_script_str = "\n\n".join(lines)
+        elif isinstance(raw_script, list):
+            # Nếu GPT trả về list
+            final_script_str = "\n\n".join([str(x) for x in raw_script])
+        else:
+            final_script_str = str(raw_script)
+        # -----------------------------------------------
+
         # Lưu file
-        # 1. Script Text
+        # 1. Script Text (Đã xử lý an toàn)
         script_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         with open(script_path, "w", encoding="utf-8") as f:
-            f.write(result["script"])
+            f.write(final_script_str)
 
-        # 2. Metadata (Title, Desc, Tags)
+        # 2. Metadata
         meta_path = get_path("data", "episodes", f"{data['ID']}_meta.json")
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump({
