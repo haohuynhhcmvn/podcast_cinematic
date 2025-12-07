@@ -1,4 +1,4 @@
-#=== script/glue_pipeline.py==
+#=== scripts/glue_pipeline.py ===
 
 import logging
 import sys
@@ -85,29 +85,31 @@ def process_long_video(data, task_meta):
         meta = long_res.get("metadata", {})
         youtube_title = meta.get("youtube_title", f"{name} – The Untold Story")
         
-        # 2. Ảnh AI & Thumbnail
+        # 2. Ảnh AI & Thumbnail (SMART CACHE)
         dalle_char_path = None
         final_thumbnail_path = None
         
-        # [MODIFIED] SỬ DỤNG BACKGROUND CỐ ĐỊNH (default_background.png)
-        # File này phải nằm trong assets/images/
         base_bg_path = get_path('assets', 'images', 'default_background.png')
-        if not os.path.exists(base_bg_path):
-            logger.warning(f"⚠️ Không tìm thấy ảnh nền gốc: {base_bg_path}")
-            # Fallback (nếu không có thì để None để code create_video tự xử lý)
-            base_bg_path = None
+        raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
+        
+        # [SMART CHECK] Kiểm tra xem ảnh đã tồn tại chưa
+        if os.path.exists(raw_img_path):
+             logger.info(f"💰 Đã tìm thấy ảnh nhân vật cũ ({raw_img_path}). Dùng lại để tiết kiệm $0.04.")
+             dalle_char_path = raw_img_path
+        else:
+             # Chỉ tạo mới khi chưa có
+             if generate_character_image:
+                try:
+                    logger.info(f"🎨 Ảnh chưa có. Gọi DALL-E tạo mới: {name}...")
+                    dalle_char_path = generate_character_image(name, raw_img_path) 
+                except Exception as e:
+                    logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}")
 
-        if generate_character_image:
-            try:
-                raw_img_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-                dalle_char_path = generate_character_image(name, raw_img_path) 
-                
-                if dalle_char_path and add_text_to_thumbnail:
-                    thumb_text = youtube_title.upper() 
-                    thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
-                    final_thumbnail_path = add_text_to_thumbnail(dalle_char_path, thumb_text, thumb_out)
-            except Exception as e:
-                logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}")
+        # Tạo Thumbnail (Luôn tạo lại vì tiêu đề có thể đổi)
+        if dalle_char_path and add_text_to_thumbnail:
+            thumb_text = youtube_title.upper() 
+            thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
+            final_thumbnail_path = add_text_to_thumbnail(dalle_char_path, thumb_text, thumb_out)
 
         # 3. TTS
         tts = None
@@ -123,12 +125,12 @@ def process_long_video(data, task_meta):
         mixed = auto_music_sfx(tts, eid)
         if not mixed: return False
 
-        # 5. Render Video (Hybrid: Base BG + DALL-E Char)
+        # 5. Render Video (Hybrid)
         video_path = create_video(
             mixed, 
             eid, 
-            custom_image_path=dalle_char_path, # Ảnh nhân vật (Lớp trên)
-            base_bg_path=base_bg_path,         # Ảnh nền đẹp (Lớp dưới)
+            custom_image_path=dalle_char_path,
+            base_bg_path=base_bg_path, 
             title_text=youtube_title
         )
         
@@ -169,10 +171,14 @@ def process_shorts(data, task_meta):
     ws = task_meta.get('worksheet')
 
     eid = data.get('ID')
+    name = data.get('Name')
     logger.info(f"🎬 BẮT ĐẦU SHORTS: {eid}")
 
     try:
         script_path, title_path = generate_short_script(data)
+        if not title_path or not os.path.exists(title_path):
+             return False
+             
         with open(title_path, "r", encoding="utf-8") as f: hook_title = f.read().strip()
 
         # TTS
@@ -183,21 +189,33 @@ def process_shorts(data, task_meta):
             sleep(2)
         if not tts: return False
 
-        # Lấy lại ảnh DALL-E (dùng chung với Long form)
+        # --- [SMART CHECK] KIỂM TRA ẢNH TỒN TẠI ---
         dalle_char_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-        if not os.path.exists(dalle_char_path): dalle_char_path = None
         
-        # [MODIFIED] SỬ DỤNG BACKGROUND SHORTS CỐ ĐỊNH (default_background_shorts.png)
-        # Bạn nhớ upload file này vào assets/images/ nhé!
+        if os.path.exists(dalle_char_path):
+            logger.info(f"💰 Đã tìm thấy ảnh nhân vật cũ ({dalle_char_path}). Shorts sẽ dùng lại.")
+        else:
+            # Chỉ tạo khi chưa có
+            logger.warning(f"⚠️ Ảnh chưa có. Shorts gọi DALL-E tạo mới: {name}...")
+            if generate_character_image:
+                try:
+                    dalle_char_path = generate_character_image(name, dalle_char_path)
+                except Exception:
+                    dalle_char_path = None
+            else:
+                dalle_char_path = None
+        # ------------------------------------------
+
+        # Lấy nền Shorts cố định
         base_bg_path = get_path('assets', 'images', 'default_background_shorts.png')
         if not os.path.exists(base_bg_path):
-            logger.warning(f"⚠️ Không tìm thấy ảnh nền Shorts: {base_bg_path}")
-            base_bg_path = None
+             logger.warning("⚠️ Thiếu background Shorts")
+             base_bg_path = None
 
         # Render Shorts
         shorts_path = create_shorts(
             tts, hook_title, eid, 
-            data.get("Name", ""), 
+            name, 
             script_path, 
             custom_image_path=dalle_char_path,
             base_bg_path=base_bg_path
@@ -207,9 +225,9 @@ def process_shorts(data, task_meta):
 
         # Upload
         upload_data = {
-            "Title": f"{hook_title} – {data.get('Name')} | #Shorts",
-            "Summary": f"Short story about {data.get('Name')}.\nFull story on channel.",
-            "Tags": ["shorts", "history", "legend"]
+            "Title": f"{hook_title} – {name} | #Shorts",
+            "Summary": f"Shorts about {name}",
+            "Tags": ["shorts", "history"]
         }
         upload_result = upload_video(shorts_path, upload_data)
         
