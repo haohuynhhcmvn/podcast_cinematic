@@ -15,17 +15,18 @@ logger = logging.getLogger(__name__)
 # =========================================================
 # ⚙️ CẤU HÌNH TIẾT KIỆM TIỀN (QUAN TRỌNG)
 # =========================================================
-# Danh sách giọng nam Edge-TTS để xoay vòng nếu bị chặn
+# Danh sách giọng nam Edge-TTS để xoay vòng
 EDGE_VOICES = [
-    "en-US-ChristopherNeural", # Ưu tiên 1: Giọng trầm (Tài liệu)
-    "en-US-EricNeural",        # Ưu tiên 2: Giọng chắc (Tin tức)
-    "en-US-GuyNeural",         # Ưu tiên 3: Giọng thường
+    "en-US-ChristopherNeural", # Ưu tiên 1
+    "en-US-EricNeural",        # Ưu tiên 2
+    "en-US-GuyNeural",         # Ưu tiên 3
     "en-US-RogerNeural"        # Ưu tiên 4
 ]
 
-# 🚨 KILL SWITCH: Đặt là False để KHÔNG BAO GIỜ dùng OpenAI (Tiết kiệm tuyệt đối)
-# Nếu Edge lỗi, quy trình sẽ dừng lại (Failed) thay vì trừ tiền thẻ của bạn.
-# Đặt là True nếu bạn chấp nhận tốn tiền để cứu video bằng mọi giá.
+# Số lần lặp lại toàn bộ danh sách giọng trước khi bỏ cuộc
+MAX_MASTER_LOOPS = 5 
+
+# 🚨 KILL SWITCH: Đặt là False để KHÔNG BAO GIỜ dùng OpenAI
 USE_OPENAI_BACKUP = False 
 
 SPEED_MULTIPLIER = 1.15
@@ -52,35 +53,45 @@ def clean_and_validate_script(text):
     return "\n".join(cleaned_lines)
 
 # =========================================================
-# 🎙️ ENGINE 1: EDGE TTS (HARDCORE RETRY)
+# 🎙️ ENGINE 1: EDGE TTS (MASTER LOOP RETRY)
 # =========================================================
 async def _run_edge_tts_with_retry(text, output_file):
     """
-    Thử tạo TTS với cơ chế xoay vòng giọng và thử lại nhiều lần.
+    Thử tạo TTS với cơ chế xoay vòng giọng và lặp lại danh sách nhiều lần.
     """
     last_error = None
     
-    # Thử từng giọng trong danh sách
-    for voice in EDGE_VOICES:
-        # Với mỗi giọng, thử lại 3 lần (Retry)
-        for attempt in range(3):
+    # [CHIẾN THUẬT VÒNG LẶP] Lặp lại danh sách giọng 5 lần
+    for loop_index in range(MAX_MASTER_LOOPS):
+        logger.info(f"🔄 Đang thử tìm giọng Edge-TTS (Vòng lặp danh sách {loop_index + 1}/{MAX_MASTER_LOOPS})...")
+        
+        # Thử từng giọng trong danh sách
+        for voice in EDGE_VOICES:
             try:
-                # Thêm delay ngẫu nhiên để tránh bị server chặn IP
-                await asyncio.sleep(random.uniform(0.5, 2.0))
+                # Thêm delay ngẫu nhiên để tránh bị server chặn IP (tăng dần theo số vòng lặp)
+                wait_time = random.uniform(1.0, 3.0) + (loop_index * 0.5)
+                await asyncio.sleep(wait_time)
+                
+                logger.info(f"   👉 Thử giọng: {voice}")
                 
                 communicate = edge_tts.Communicate(text, voice)
                 await communicate.save(output_file)
                 
-                # Kiểm tra xem file có tạo ra thật không và có dung lượng > 0 không
+                # Kiểm tra kết quả
                 if os.path.exists(output_file) and os.path.getsize(output_file) > 1024:
-                    return True # Thành công
+                    logger.info(f"   ✅ Thành công với giọng: {voice}")
+                    return True # Thoát ngay khi thành công
                 
             except Exception as e:
                 last_error = e
-                logger.warning(f"   ⚠️ Thất bại giọng {voice} (Lần {attempt+1}): {e}")
+                logger.warning(f"   ⚠️ Lỗi giọng {voice}: {e}")
                 
-    # Nếu thử hết mọi cách mà vẫn lỗi
-    logger.error(f"❌ Edge TTS thất bại hoàn toàn. Lỗi cuối: {last_error}")
+        # Nếu hết danh sách mà chưa được, nghỉ lâu hơn một chút trước khi sang vòng lặp tiếp theo
+        logger.warning(f"⏳ Hết vòng {loop_index + 1}, nghỉ 5 giây trước khi thử lại danh sách...")
+        await asyncio.sleep(5)
+
+    # Nếu thử hết 5 vòng (tổng cộng 20 lần thử) mà vẫn lỗi
+    logger.error(f"❌ Edge TTS thất bại hoàn toàn sau {MAX_MASTER_LOOPS} vòng lặp. Lỗi cuối: {last_error}")
     return False
 
 def generate_with_edge(chunks, episode_id):
@@ -100,13 +111,12 @@ def generate_with_edge(chunks, episode_id):
                 segment = AudioSegment.from_file(temp_path)
                 combined_audio += segment
                 os.remove(temp_path)
-                logger.info(f"   ✅ Chunk {i+1} OK.")
             except Exception as e:
                 logger.error(f"   ❌ File lỗi định dạng chunk {i}: {e}")
                 return None
         else:
             logger.error(f"💀 Chunk {i} không thể tạo được bằng Edge TTS.")
-            return None # Thất bại để kích hoạt backup (hoặc dừng)
+            return None 
             
     return combined_audio
 
@@ -147,7 +157,7 @@ def create_tts(script_path, episode_id, mode="long"):
             full_text = clean_and_validate_script(f.read().strip())
         if not full_text: return None
 
-        # Chia nhỏ text (Giảm xuống 1500 ký tự cho an toàn hơn)
+        # Chia nhỏ text
         chunk_size = 1500
         chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
         
