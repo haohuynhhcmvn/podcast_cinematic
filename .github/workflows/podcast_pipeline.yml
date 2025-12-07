@@ -4,7 +4,7 @@ on:
   schedule:
     # Chạy vào các khung giờ vàng (UTC): 
     # 11:40 (18:40 VN), 14:40, 21:40
-    - cron: '40 9,22 * * *'
+    - cron: '40 11,22 * * *'
   
   workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
 
