@@ -1,5 +1,6 @@
-# scripts/generate_script.py
+# === scripts/generate_script.py ===
 import os
+import json
 import logging
 import re
 from openai import OpenAI
@@ -7,198 +8,150 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# Giữ nguyên model
-MODEL = "gpt-4o-mini" 
+# --- CẤU HÌNH ---
+GPT_MODEL = "gpt-4o-mini"  # Model rẻ và nhanh, chất lượng đủ tốt
+MAX_TOKENS = 4000
+
+def parse_json_garbage(text):
+    """Hàm làm sạch JSON trả về từ GPT (đôi khi nó thêm ```json ... ```)"""
+    text = re.sub(r"```json", "", text)
+    text = re.sub(r"```", "", text)
+    return text.strip()
 
 # ============================================================
-#  HÀM LÀM SẠCH KỊCH BẢN (GIỮ NGUYÊN)
-# ============================================================
-def clean_text_for_tts(text):
-    if not text: return ""
-    text = text.replace('**', '').replace('__', '')
-    text = re.sub(r'\[.*?\]', '', text)
-    text = re.sub(r'(?i)^\s*(SECTION|PART|SEGMENT)\s+\d+.*$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'(?i)^\s*(Visual|Sound|Scene|Instruction|Voiceover|Narrator)\s*:', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n\s*\n', '\n\n', text).strip()
-    return text
-
-# ============================================================
-#  LONG SCRIPT GENERATOR (PHIÊN BẢN 8-10 PHÚT CHUẨN)
+# 1. TẠO KỊCH BẢN VIDEO DÀI (LONG FORM)
 # ============================================================
 def generate_long_script(data):
+    """
+    Tạo kịch bản dài, tiêu đề YouTube (SỐC) và mô tả chuẩn SEO.
+    """
     try:
+        char_name = data.get("Name")
+        char_desc = data.get("Content/Input") or f"A historical figure named {char_name}"
+        
+        logger.info(f"📝 Đang viết kịch bản Long-form cho: {char_name}...")
+
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            logger.error("❌ Missing OPENAI_API_KEY.")
+            logger.error("❌ Thiếu OPENAI_API_KEY")
             return None
-
+        
         client = OpenAI(api_key=api_key)
 
-        char_name = data.get("Name", "Historical Figure")
-        core_theme = data.get("Core Theme", "Biography")
-        input_notes = data.get("Content/Input", "")
-
-        # --- FINAL PROMPT: ÉP VIẾT DÀI & CHI TIẾT CẢM QUAN ---
+        # --- [CẬP NHẬT QUAN TRỌNG] PROMPT GÂY SỐC ---
         prompt = f"""
-ROLE:
-You are the Head Scriptwriter for "Legendary Footsteps".
-Write a **HIGH-DETAIL, LONG-FORM** biography script (Minimum **1800 words**).
-Target Video Length: **8 to 12 minutes** (The absolute minimum for monetization).
+        You are a master storyteller and YouTube strategist for a history channel.
+        Topic: {char_name}. Context: {char_desc}.
 
-INPUT DATA:
-- Character: {char_name}
-- Theme: {core_theme}
-- Notes: {input_notes}
+        TASK: Create a complete package for a viral history documentary (8-10 minutes).
+        
+        STRUCTURE OF THE SCRIPT:
+        1. HOOK (0:00-0:45): Start in medias res (middle of action). Use sensory details (smell of blood, sound of steel). Grab attention immediately.
+        2. BACKGROUND: Briefly cover childhood/origins but move fast.
+        3. RISING ACTION: The major struggles, battles, or political maneuvers.
+        4. CLIMAX: The turning point or most famous moment.
+        5. FALL/LEGACY: The tragic end or lasting impact.
+        
+        CRITICAL INSTRUCTIONS FOR METADATA (SEO & CTR):
+        1. YOUTUBE TITLE: MUST be a "Clickbait" style. Use a SHOCKING QUESTION or a CONTROVERSIAL STATEMENT. 
+           - Bad: "The History of {char_name}"
+           - Good: "Was {char_name} Actually a Psychopath?", "The Horrifying Secret {char_name} Hid for Years", "Why History Lied About {char_name}".
+           - Keep it under 60 characters if possible.
+           - Use UPPERCASE for emphasis words.
+        2. DESCRIPTION: Detailed summary (min 1500 chars) optimized for SEO keywords.
+        3. TAGS: 15-20 high-traffic tags.
 
-CRITICAL RULES:
-1. **ULTIMATE LENGTH REQUIREMENT (SENSORY DETAIL):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific sounds, palpable emotions, textures) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes.
-2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving, the richness of the surrounding. Use gritty, real-world descriptions.
-3. **DIALOGUE:** Reconstruct and include at least 3 to 5 actual quotes or monologues to extend the length and drama.
-4. **VISUALS:** Use [Visual: description] tags frequently (at least every 3 sentences).
-
-EXTENDED STRUCTURE (7 SECTIONS):
-[SECTION 1: THE HOOK - 2 Mins] Start with a detailed, slow-motion description of a critical moment (Death or Victory). Focus on the sounds and smells.
-[SECTION 2: THE CONTEXT & TRAUMA - 1 Min] The world before them. The family struggles. (Go deep into childhood trauma).
-[SECTION 3: THE FIRST STRUGGLE - 1 Min] The early failures. The specific moment they almost gave up.
-[SECTION 4: THE TURNING POINT & TACTICS - 2 Mins] Detailed explanation of ONE specific genius strategy. Explain the tactics in depth.
-[SECTION 5: THE CLIMAX - 2 Mins] The biggest battle or confrontation. Describe the landscape minute-by-minute.
-[SECTION 6: THE BETRAYAL/DOWNFALL] The specific people who turned against them. (Must include a direct quote).
-[SECTION 7: LEGACY & PHILOSOPHY - 1 Min] A long, reflective conclusion on human nature.
-
-OUTPUT: English only.
-"""
+        OUTPUT FORMAT: Return ONLY a valid JSON object with keys: "title", "description", "tags", "script".
+        """
 
         response = client.chat.completions.create(
-            model=MODEL,
+            model=GPT_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.85,
+            temperature=0.7
         )
 
-        raw_script = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        clean_json = parse_json_garbage(content)
+        result = json.loads(clean_json)
 
-        # --- CLEAN TTS ---
-        clean_script = clean_text_for_tts(raw_script)
+        # Lưu file
+        # 1. Script Text
+        script_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(result["script"])
 
-        # -------------------------------------------------------
-        # 🔓 GIỚI HẠN KÝ TỰ (GIỮ NGUYÊN 15000 CHO VIDEO DÀI)
-        # -------------------------------------------------------
-        safe_text = clean_script[:15000] 
+        # 2. Metadata (Title, Desc, Tags)
+        meta_path = get_path("data", "episodes", f"{data['ID']}_meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "youtube_title": result["title"],
+                "youtube_description": result["description"],
+                "youtube_tags": result["tags"]
+            }, f, indent=4)
 
-        out_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(safe_text)
-
-        logger.info(f"📝 Long EN script created ({len(safe_text)} chars): {out_path}")
-
-        # Metadata Generation
-        meta_prompt = f"Write 1 Clickbait YouTube Title and a Short Description for {char_name}. The title MUST be clean and free of special characters or hashtags."
-        meta_res = client.chat.completions.create(
-            model=MODEL, messages=[{"role": "user", "content": meta_prompt}], max_tokens=200
-        )
-        meta_text = meta_res.choices[0].message.content.strip()
+        logger.info(f"✅ Long script & Meta created: {result['title']}")
         
-        try:
-            # Tách Title và Description
-            if "Title:" in meta_text:
-                raw_title = meta_text.split("Title:")[1].split("Description:")[0].strip()
-            else:
-                raw_title = meta_text.split("\n")[0]
-
-            if "Description:" in meta_text:
-                yt_desc = meta_text.split("Description:")[1].strip()
-            else:
-                yt_desc = meta_text
-
-            # 🔥 [FIX QUAN TRỌNG]: LÀM SẠCH TITLE CHO LONG FORM
-            # Loại bỏ các từ khóa dễ gây hiểu lầm cho thuật toán: **, #, Short, |
-            yt_title = raw_title.replace('"', '').replace('**', '').replace('#', '').replace('Short', '').replace('|', '').strip()
-            
-        except:
-            yt_title = f"The Untold Story of {char_name}"
-            yt_desc = meta_text
-
-        metadata = {
-            "youtube_title": yt_title,
-            "youtube_description": yt_desc,
-            "youtube_tags": ["history", "biography", char_name.lower()]
-        }
-
         return {
-            "script_path": out_path,
-            "metadata": metadata
+            "script_path": script_path,
+            "metadata": {
+                "youtube_title": result["title"],
+                "youtube_description": result["description"],
+                "youtube_tags": result["tags"]
+            }
         }
 
     except Exception as e:
-        logger.error(f"❌ Error generating long script: {e}")
+        logger.error(f"❌ Lỗi tạo Long Script: {e}", exc_info=True)
         return None
 
-
 # ============================================================
-#  SHORT SCRIPT GENERATOR (PHIÊN BẢN TỐI ƯU 55s & HARD CTA)
+# 2. TẠO KỊCH BẢN SHORTS (GIỮ NGUYÊN)
 # ============================================================
 def generate_short_script(data):
     try:
+        char_name = data.get("Name")
+        logger.info(f"✨ Đang viết kịch bản Shorts cho: {char_name}...")
+
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("❌ Missing OPENAI_API_KEY.")
-            return None
-
+        if not api_key: return None, None
         client = OpenAI(api_key=api_key)
-        
-        char_name = data.get("Name", "Legendary Figure")
-        input_notes = data.get("Content/Input", "")
 
-        # --- CẬP NHẬT PROMPT: KHẮC PHỤC LỖI 61 GIÂY & VĂN MẪU ---
         prompt = f"""
-ROLE: Viral YouTube Shorts Scripter.
-TASK: Write a **tight, fast-paced** 50-55 second script (MAXIMUM 135 words) for {char_name}.
-INPUT: {input_notes}
-
-CRITICAL RULES:
-1. **LENGTH:** STRICTLY UNDER 140 words. If it's too long, it fails as a Short.
-2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, weaving, testament, mere words, swirling. 
-3. **TONE:** Direct, gritty, aggressive. No rhetorical questions at the end.
-
-STRUCTURE:
-1. HOOK (0-5s): Start immediately with a specific number or shocking fact. No "Did you know".
-2. THE TWIST: Reveal the paradox or conflict.
-3. THE BODY: Fast storytelling.
-4. THE BRIDGE CTA (Must be exact): "Subscribe for more legends, and click the link below for the full brutal story!"
-
-OUTPUT: English only.
-"""
+        Write a viral YouTube Shorts script (approx 50-60 seconds speaking time) about {char_name}.
+        
+        STRUCTURE:
+        - 0-5s: The Hook (A shocking fact or question).
+        - 5-45s: The Twist/Story (Fast-paced, high energy).
+        - 45-60s: Conclusion + Call to Action (Subscribe for more legends).
+        
+        ALSO PROVIDE: A 3-5 word "Hook Title" for the video overlay (e.g., "TRAITOR OR HERO?", "BLOODY TRUTH").
+        
+        OUTPUT FORMAT: JSON with keys: "overlay_title", "script".
+        """
 
         response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300, # Giảm token để tránh AI viết lan man
-            temperature=0.9,
+            model=GPT_MODEL,
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        raw_script = response.choices[0].message.content.strip()
-        clean_script = clean_text_for_tts(raw_script)
+        content = response.choices[0].message.content
+        result = json.loads(parse_json_garbage(content))
 
-        out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
-        with open(out_script, "w", encoding="utf-8") as f:
-            f.write(clean_script)
-
-        # Tạo Title sạch (Không chứa #Shorts, không chứa ký tự lạ)
-        title_res = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}. NO HASHTAGS. NO QUOTES."}],
-            max_tokens=50
-        )
-        # Làm sạch Title thủ công để chắc chắn 100%
-        title = title_res.choices[0].message.content.strip().replace('"', '').replace('#', '').replace('Shorts', '')
-
-        out_title = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
-        with open(out_title, "w", encoding="utf-8") as f:
-            f.write(title)
-
-        logger.info(f"✨ Short EN script created for {data['ID']}")
-        return out_script, out_title
+        # Lưu file
+        script_path = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
+        title_path = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
+        
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(result["script"])
+        with open(title_path, "w", encoding="utf-8") as f:
+            f.write(result["overlay_title"])
+            
+        logger.info(f"✅ Short script created for {char_name}")
+        return script_path, title_path
 
     except Exception as e:
-        logger.error(f"❌ Error generating short script: {e}")
-        return None
+        logger.error(f"❌ Lỗi tạo Short Script: {e}")
+        return None, None
