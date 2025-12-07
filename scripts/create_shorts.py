@@ -23,11 +23,11 @@ SHORTS_SIZE = (SHORTS_WIDTH, SHORTS_HEIGHT)
 MAX_DURATION = 60 
 
 # =========================================================
-# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16) - CẬP NHẬT
+# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16) - NHÂN VẬT Ở GIỮA
 # =========================================================
 def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
     """
-    Ghép ảnh: Nền phong cảnh dọc (dưới) + Nhân vật DALL-E (đáy).
+    Ghép ảnh: Nền phong cảnh dọc + Nhân vật DALL-E (Ở GIỮA).
     """
     try:
         width, height = SHORTS_SIZE
@@ -53,44 +53,41 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
         left = (new_w - width) // 2
         base_img = base_img.crop((left, 0, left + width, height))
         
-        # Làm tối nền để nổi chữ vàng (50%)
+        # Làm tối nền mạnh hơn để nhân vật nổi bật (40% độ sáng)
         enhancer = ImageEnhance.Brightness(base_img)
-        base_img = enhancer.enhance(0.5) 
+        base_img = enhancer.enhance(0.4) 
 
-        # 2. XỬ LÝ NHÂN VẬT (Nằm dưới cùng) - CẬP NHẬT LOGIC
+        # 2. XỬ LÝ NHÂN VẬT (Đặt ở Giữa)
         if char_path and os.path.exists(char_path):
             char_img = Image.open(char_path).convert("RGBA")
             
-            # Resize nhân vật sao cho chiều rộng bằng chiều rộng Shorts
-            # Điều này giúp nhân vật chiếm trọn phần dưới, rõ ràng hơn
-            char_w = width
+            # Resize nhân vật: Chiều rộng bằng 90% chiều rộng Shorts (để có lề)
+            target_char_w = int(width * 0.9)
+            char_w = target_char_w
             char_h = int(char_img.height * (char_w / char_img.width))
             char_img = char_img.resize((char_w, char_h), Image.LANCZOS)
             
-            # Mask mờ dần từ trên xuống (Để cạnh trên của nhân vật hòa vào nền)
-            mask = Image.new("L", (char_w, char_h), 0)
+            # Tạo Mask mờ 2 đầu (Trên và Dưới) để hòa vào nền
+            mask = Image.new("L", (char_w, char_h), 255) # Mặc định là hiện rõ (255)
             draw = ImageDraw.Draw(mask)
-            for y in range(char_h):
-                pct = y / char_h
-                # 20% trên cùng trong suốt hoàn toàn để hòa trộn tốt hơn
-                if pct < 0.2: alpha = 0
-                # Sau đó hiện dần lên
-                else: alpha = int(255 * ((pct - 0.2) / 0.3)) # Gradient nhanh hơn một chút
-                if alpha > 255: alpha = 255
-                draw.line([(0, y), (char_w, y)], fill=alpha)
-            
-            # Dán vào đáy ảnh. 
-            # Paste Y: Đặt nhân vật sát đáy hoặc hơi thấp xuống một chút nếu ảnh quá cao
-            # Logic: Nếu ảnh nhân vật cao hơn 1/2 chiều cao Shorts, cho nó lún xuống một chút
-            if char_h > height * 0.6:
-                 paste_y = height - char_h + int(char_h * 0.1) # Lún xuống 10% chiều cao nhân vật
-            else:
-                 paste_y = height - char_h
+            fade_height = int(char_h * 0.2) # Vùng mờ là 20% chiều cao ở mỗi đầu
 
-            # Đảm bảo không bị khoảng trống ở đáy
-            if paste_y < 0: paste_y = height - char_h # Fallback nếu tính toán sai
+            for y in range(char_h):
+                # Mờ phần trên
+                if y < fade_height:
+                    alpha = int(255 * (y / fade_height))
+                    draw.line([(0, y), (char_w, y)], fill=alpha)
+                # Mờ phần dưới
+                elif y > char_h - fade_height:
+                    alpha = int(255 * ((char_h - y) / fade_height))
+                    draw.line([(0, y), (char_w, y)], fill=alpha)
             
-            base_img.paste(char_img, (0, paste_y), mask=mask)
+            # Tính vị trí dán vào GIỮA khung hình
+            paste_x = (width - char_w) // 2
+            paste_y = (height - char_h) // 2
+            
+            # Dán nhân vật vào
+            base_img.paste(char_img, (paste_x, paste_y), mask=mask)
 
         # 3. TẠO VIGNETTE (Tối Đỉnh và Đáy cho Text)
         overlay = Image.new('RGBA', SHORTS_SIZE, (0,0,0,0))
@@ -193,14 +190,10 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
                  clip = ImageClip(base_bg_path).set_duration(duration)
                  # Cần resize về chuẩn 1080x1920 nếu chưa đúng
                  if clip.size != SHORTS_SIZE:
-                     # Resize giữ tỷ lệ để phủ kín chiều cao hoặc chiều rộng (Aspect Fill)
-                     # Logic resize của MoviePy: resize(height=...) sẽ tự tính width theo tỷ lệ
                      clip = clip.resize(height=SHORTS_HEIGHT)
-                     # Nếu width vẫn nhỏ hơn SHORTS_WIDTH thì resize theo width
                      if clip.w < SHORTS_WIDTH:
                          clip = clip.resize(width=SHORTS_WIDTH)
                      
-                     # Crop giữa
                      clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH, 
                                       y1=clip.h/2 - SHORTS_HEIGHT/2, height=SHORTS_HEIGHT)
              else:
