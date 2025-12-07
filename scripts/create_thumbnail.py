@@ -17,7 +17,7 @@ def find_font(font_name="Impact.ttf"):
 
 def add_text_to_thumbnail(image_path, text_content, output_path):
     """
-    Thêm text vào Thumbnail với HỘP MÀU ĐỎ (Red Box) phía sau để tăng độ nổi bật (CTR).
+    Thêm text vào Thumbnail (Chữ Vàng, không có hộp đỏ)
     """
     try:
         # Load ảnh
@@ -41,8 +41,8 @@ def add_text_to_thumbnail(image_path, text_content, output_path):
         lines = []
         current_line = ""
         
-        # Giới hạn chiều rộng text (khoảng 45% chiều rộng ảnh)
-        max_width = int(width * 0.45) 
+        # Giới hạn chiều rộng text (khoảng 50% chiều rộng ảnh)
+        max_width = int(width * 0.50) 
 
         for word in words:
             test_line = current_line + " " + word if current_line else word
@@ -65,50 +65,19 @@ def add_text_to_thumbnail(image_path, text_content, output_path):
             img.save(output_path)
             return output_path
 
-        # --- 2. TÍNH TOÁN KÍCH THƯỚC HỘP ĐỎ ---
+        # --- 2. TÍNH TOÁN VỊ TRÍ (KHÔNG CÒN HỘP ĐỎ) ---
         start_x = int(width * 0.05)   # Cách lề trái 5%
-        start_y = int(height * 0.20)  # Cách lề trên 20%
+        start_y = int(height * 0.25)  # Cách lề trên 25% (Hạ thấp xuống một chút)
         line_spacing = target_font_size * 1.2
         
-        # Tính chiều rộng lớn nhất của các dòng text
-        max_line_width = 0
-        for line in lines:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            line_w = bbox[2] - bbox[0]
-            if line_w > max_line_width:
-                max_line_width = line_w
-        
-        total_text_height = len(lines) * line_spacing - (line_spacing - target_font_size) # Ước lượng chiều cao
-
-        # Tạo vùng đệm (padding) cho hộp
-        padding = 40
-        box_x1 = start_x + max_line_width + padding
-        box_y1 = start_y + total_text_height + padding/2 # Thêm chút ở dưới
-        
-        # Vẽ Hộp Đỏ lên một layer riêng để chỉnh độ trong suốt
-        overlay = Image.new('RGBA', img.size, (0,0,0,0))
-        draw_ov = ImageDraw.Draw(overlay)
-        
-        # Màu đỏ (200, 0, 0) với Alpha = 220 (Khá đậm)
-        draw_ov.rectangle(
-            [(start_x - padding/2, start_y - padding/2), (box_x1, box_y1)], 
-            fill=(200, 0, 0, 220)
-        )
-        
-        # Gộp layer hộp đỏ vào ảnh gốc
-        img = Image.alpha_composite(img, overlay)
-        
-        # Tạo lại đối tượng draw trên ảnh mới đã gộp
-        draw = ImageDraw.Draw(img)
-
-        # --- 3. VIẾT CHỮ (TEXT RENDER) ---
+        # --- 3. VIẾT CHỮ (TEXT RENDER) TRỰC TIẾP LÊN ẢNH ---
         for i, line in enumerate(lines):
             y_pos = start_y + i * line_spacing
             
-            # Viền đen (Outline) dày để tách biệt với nền đỏ
+            # Viền đen (Outline) dày
             stroke_color = "black"
             text_color = "#FFD700" # Vàng Gold
-            stroke_width = 4
+            stroke_width = 5 # Viền dày hơn chút để nổi trên nền ảnh
             
             # Vẽ viền
             for dx in [-stroke_width, stroke_width]:
@@ -123,7 +92,7 @@ def add_text_to_thumbnail(image_path, text_content, output_path):
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         img.save(output_path, quality=95)
         
-        logger.info(f"🖼️ Đã tạo Thumbnail (Red Box): {output_path}")
+        logger.info(f"🖼️ Đã tạo Thumbnail (Classic Style): {output_path}")
         return output_path
 
     except Exception as e:
