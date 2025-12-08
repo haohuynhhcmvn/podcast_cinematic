@@ -25,8 +25,8 @@ EDGE_VOICES = [
 
 # 🚨 KILL SWITCH: Đặt là False để KHÔNG BAO GIỜ dùng OpenAI (Tiết kiệm tuyệt đối)
 # Nếu Edge lỗi, quy trình sẽ dừng lại (Failed) thay vì trừ tiền thẻ của bạn.
-# Đặt là True nếu bạn chấp nhận tốn tiền để cứu video bằng mọi giá.
-USE_OPENAI_BACKUP = False 
+# Đặt là True nếu bạn chấp nhận tốn tiền để cứu video bằng mọi giá. (False: Ngắt OpenAI)
+USE_OPENAI_BACKUP = True
 
 SPEED_MULTIPLIER = 1.15
 
