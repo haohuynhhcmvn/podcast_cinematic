@@ -11,7 +11,38 @@ logger = logging.getLogger(__name__)
 MODEL = "gpt-4o-mini" 
 
 # ============================================================
-#  HÀM LÀM SẠCH KỊCH BẢN (GIỮ NGUYÊN)
+#  🛡️ BỘ LỌC AN NINH (PYTHON GUARDRAIL)
+# ============================================================
+def check_safety_compliance(text):
+    """
+    Rà soát văn bản để tìm các từ khóa vi phạm chính sách an toàn/chính trị.
+    Trả về: (is_safe: bool, reason: str)
+    """
+    # Danh sách từ khóa cấm (Bao gồm tiếng Anh và Tiếng Việt)
+    # Tập trung vào các từ mang ý nghĩa: Lật đổ, Phản động, Kích động bạo lực chính trị, Xuyên tạc
+    forbidden_keywords = [
+        # --- Keywords Tiếng Anh (Risk Keywords) ---
+        "overthrow the government", "regime change", "topple the regime",
+        "incite rebellion", "destroy the state", "illegitimate government",
+        "dictatorship of", "oppressive regime", 
+        "distort history", "reactionary", "incite violence",
+        
+        # --- Keywords Tiếng Việt (Phòng trường hợp AI bịa hoặc quote tiếng Việt) ---
+        "phản động", "lật đổ", "chống phá", "xuyên tạc", "biểu tình bạo loạn", 
+        "bất mãn chế độ", "lật đổ chính quyền"
+    ]
+    
+    text_lower = text.lower()
+    
+    for word in forbidden_keywords:
+        if word in text_lower:
+            return False, word # ⛔ Phát hiện từ cấm
+            
+    return True, None # ✅ An toàn
+
+
+# ============================================================
+#  HÀM LÀM SẠCH KỊCH BẢN
 # ============================================================
 def clean_text_for_tts(text):
     if not text: return ""
@@ -23,7 +54,7 @@ def clean_text_for_tts(text):
     return text
 
 # ============================================================
-#  LONG SCRIPT GENERATOR (PHIÊN BẢN 8-10 PHÚT CHUẨN)
+#  LONG SCRIPT GENERATOR (TÍCH HỢP SAFETY GUARDRAIL)
 # ============================================================
 def generate_long_script(data):
     try:
@@ -38,7 +69,7 @@ def generate_long_script(data):
         core_theme = data.get("Core Theme", "Biography")
         input_notes = data.get("Content/Input", "")
 
-        # --- FINAL PROMPT: ÉP VIẾT DÀI & CHI TIẾT CẢM QUAN ---
+        # --- FINAL PROMPT: CẬP NHẬT QUY TẮC AN TOÀN CHÍNH TRỊ ---
         prompt = f"""
 ROLE:
 You are the Head Scriptwriter for "Legendary Footsteps".
@@ -50,11 +81,17 @@ INPUT DATA:
 - Theme: {core_theme}
 - Notes: {input_notes}
 
-CRITICAL RULES:
-1. **ULTIMATE LENGTH REQUIREMENT (SENSORY DETAIL):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific sounds, palpable emotions, textures) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes.
-2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving, the richness of the surrounding. Use gritty, real-world descriptions.
-3. **DIALOGUE:** Reconstruct and include at least 3 to 5 actual quotes or monologues to extend the length and drama.
-4. **VISUALS:** Use [Visual: description] tags frequently (at least every 3 sentences).
+CRITICAL RULES (STRICT COMPLIANCE REQUIRED):
+1. **POLITICAL NEUTRALITY & LEGALITY (ZERO TOLERANCE):** - You MUST maintain strict historical objectivity. 
+   - **ABSOLUTELY FORBIDDEN:** Content that promotes rebellion, "reactionary" ideologies, undermines national sovereignty, or incites hatred against any government.
+   - Do NOT draw parallels to modern politics. Do NOT distort historical facts.
+   - Focus strictly on the human journey, historical lessons, and factual events.
+
+2. **ULTIMATE LENGTH REQUIREMENT (SENSORY DETAIL):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific sounds, palpable emotions, textures) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes.
+3. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving, the richness of the surrounding. Use gritty, real-world descriptions.
+4. **DIALOGUE:** Reconstruct and include at least 3 to 5 actual quotes or monologues to extend the length and drama.
+5. **VISUALS:** Use [Visual: description] tags frequently (at least every 3 sentences).
+6. **SAFETY GUIDELINES:** Avoid graphic descriptions of excessive gore or sexual violence. Depict war/conflict with a focus on atmosphere and emotional weight, suitable for public broadcast.
 
 EXTENDED STRUCTURE (7 SECTIONS):
 [SECTION 1: THE HOOK - 2 Mins] Start with a detailed, slow-motion description of a critical moment (Death or Victory). Focus on the sounds and smells.
@@ -62,7 +99,7 @@ EXTENDED STRUCTURE (7 SECTIONS):
 [SECTION 3: THE FIRST STRUGGLE - 1 Min] The early failures. The specific moment they almost gave up.
 [SECTION 4: THE TURNING POINT & TACTICS - 2 Mins] Detailed explanation of ONE specific genius strategy. Explain the tactics in depth.
 [SECTION 5: THE CLIMAX - 2 Mins] The biggest battle or confrontation. Describe the landscape minute-by-minute.
-[SECTION 6: THE BETRAYAL/DOWNFALL] The specific people who turned against them. (Must include a direct quote).
+[SECTION 6: THE DOWNFALL OR OBSTACLE] The specific people or circumstances that turned against them. (Maintain historical accuracy).
 [SECTION 7: LEGACY & PHILOSOPHY - 1 Min] A long, reflective conclusion on human nature.
 
 OUTPUT: English only.
@@ -76,6 +113,15 @@ OUTPUT: English only.
         )
 
         raw_script = response.choices[0].message.content.strip()
+
+        # -------------------------------------------------------
+        # 🛡️ KIỂM TRA AN TOÀN TRƯỚC KHI XỬ LÝ
+        # -------------------------------------------------------
+        is_safe, trigger_word = check_safety_compliance(raw_script)
+        if not is_safe:
+            logger.error(f"⛔ SECURITY ALERT: Long script for '{char_name}' BLOCKED.")
+            logger.error(f"Reason: Found sensitive/forbidden keyword: '{trigger_word}'.")
+            return None
 
         # --- CLEAN TTS ---
         clean_script = clean_text_for_tts(raw_script)
@@ -99,7 +145,6 @@ OUTPUT: English only.
         meta_text = meta_res.choices[0].message.content.strip()
         
         try:
-            # Tách Title và Description
             if "Title:" in meta_text:
                 raw_title = meta_text.split("Title:")[1].split("Description:")[0].strip()
             else:
@@ -110,8 +155,6 @@ OUTPUT: English only.
             else:
                 yt_desc = meta_text
 
-            # 🔥 [FIX QUAN TRỌNG]: LÀM SẠCH TITLE CHO LONG FORM
-            # Loại bỏ các từ khóa dễ gây hiểu lầm cho thuật toán: **, #, Short, |
             yt_title = raw_title.replace('"', '').replace('**', '').replace('#', '').replace('Short', '').replace('|', '').strip()
             
         except:
@@ -135,7 +178,7 @@ OUTPUT: English only.
 
 
 # ============================================================
-#  SHORT SCRIPT GENERATOR (PHIÊN BẢN TỐI ƯU 55s & HARD CTA)
+#  SHORT SCRIPT GENERATOR (TÍCH HỢP SAFETY GUARDRAIL)
 # ============================================================
 def generate_short_script(data):
     try:
@@ -149,22 +192,23 @@ def generate_short_script(data):
         char_name = data.get("Name", "Legendary Figure")
         input_notes = data.get("Content/Input", "")
 
-        # --- CẬP NHẬT PROMPT: KHẮC PHỤC LỖI 61 GIÂY & VĂN MẪU ---
+        # --- CẬP NHẬT PROMPT: THÊM SYSTEM INSTRUCTION AN TOÀN ---
         prompt = f"""
 ROLE: Viral YouTube Shorts Scripter.
 TASK: Write a **tight, fast-paced** 50-55 second script (MAXIMUM 135 words) for {char_name}.
 INPUT: {input_notes}
 
 CRITICAL RULES:
-1. **LENGTH:** STRICTLY UNDER 140 words. If it's too long, it fails as a Short.
-2. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, weaving, testament, mere words, swirling. 
-3. **TONE:** Direct, gritty, aggressive. No rhetorical questions at the end.
+1. **SAFETY & LEGALITY:** NO content promoting rebellion, reactionary ideologies, or hate speech. Keep it historically accurate and compliant with public broadcast standards.
+2. **LENGTH:** STRICTLY UNDER 140 words. If it's too long, it fails as a Short.
+3. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, weaving, testament, mere words, swirling. 
+4. **TONE:** Direct, gritty, aggressive but SAFE. No rhetorical questions at the end.
 
 STRUCTURE:
 1. HOOK (0-5s): Start immediately with a specific number or shocking fact. No "Did you know".
 2. THE TWIST: Reveal the paradox or conflict.
 3. THE BODY: Fast storytelling.
-4. THE BRIDGE CTA (Must be exact): "Subscribe for more legends, and click the link below for the full brutal story!"
+4. THE BRIDGE CTA (Must be exact): "Subscribe for more legends, and check the related video below for the full story!"
 
 OUTPUT: English only.
 """
@@ -172,24 +216,33 @@ OUTPUT: English only.
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=300, # Giảm token để tránh AI viết lan man
+            max_tokens=300,
             temperature=0.9,
         )
 
         raw_script = response.choices[0].message.content.strip()
+
+        # -------------------------------------------------------
+        # 🛡️ KIỂM TRA AN TOÀN SHORT SCRIPT
+        # -------------------------------------------------------
+        is_safe, trigger_word = check_safety_compliance(raw_script)
+        if not is_safe:
+            logger.error(f"⛔ SECURITY ALERT: Short script for '{char_name}' BLOCKED.")
+            logger.error(f"Reason: Found sensitive/forbidden keyword: '{trigger_word}'.")
+            return None
+
         clean_script = clean_text_for_tts(raw_script)
 
         out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
         with open(out_script, "w", encoding="utf-8") as f:
             f.write(clean_script)
 
-        # Tạo Title sạch (Không chứa #Shorts, không chứa ký tự lạ)
+        # Tạo Title sạch
         title_res = client.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}. NO HASHTAGS. NO QUOTES."}],
+            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}. NO HASHTAGS. NO QUOTES. SAFE CONTENT."}],
             max_tokens=50
         )
-        # Làm sạch Title thủ công để chắc chắn 100%
         title = title_res.choices[0].message.content.strip().replace('"', '').replace('#', '').replace('Shorts', '')
 
         out_title = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
