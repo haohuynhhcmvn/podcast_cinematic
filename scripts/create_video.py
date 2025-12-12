@@ -3,7 +3,7 @@ import logging
 import os
 import numpy as np
 from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+from PIL import Image, ImageDraw
 
 # --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW 10+ CHO MOVIEPY ---
 import PIL.Image
@@ -13,9 +13,12 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
-    CompositeVideoClip, VideoClip, TextClip
+    CompositeVideoClip, VideoClip, TextClip,
+    vfx # Cần thiết cho các hiệu ứng video như brightness
 )
-from utils import get_path
+
+# IMPORT TỪ MODULE UTILS ĐÃ CUNG CẤP
+from utils import get_path 
 
 logger = logging.getLogger(__name__)
 
@@ -25,44 +28,18 @@ OUTPUT_HEIGHT = 720
 # -----------------------------------
 
 # ============================================================
-# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (16:9)
+# 🎨 HÀM XỬ LÝ LỚP PHỦ TĨNH (NHÂN VẬT & VIGNETTE)
 # ============================================================
-def process_hybrid_background(char_path, base_bg_path, output_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
+def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Ghép ảnh: Nền phong cảnh cố định (dưới) + Nhân vật DALL-E (trên, lệch phải).
+    Tạo một lớp phủ (overlay image) chứa nhân vật (fade-in) và vignette đen.
+    Lớp này được dùng chung cho cả nền tĩnh và nền động.
     """
-    try:
-        # 1. LOAD & RESIZE BASE BACKGROUND (Lớp nền)
-        if base_bg_path and os.path.exists(base_bg_path):
-            base_img = Image.open(base_bg_path).convert("RGBA")
-        else:
-            # Fallback nếu thiếu ảnh nền
-            base_img = Image.new("RGBA", (width, height), (20, 20, 20, 255))
-
-        # Resize Aspect Fill (Lấp đầy màn hình)
-        bg_ratio = base_img.width / base_img.height
-        target_ratio = width / height
-        
-        if bg_ratio > target_ratio:
-            new_h = height
-            new_w = int(new_h * bg_ratio)
-        else:
-            new_w = width
-            new_h = int(new_w / bg_ratio)
-            
-        base_img = base_img.resize((new_w, new_h), Image.LANCZOS)
-        
-        # Center Crop
-        left = (new_w - width) // 2
-        top = (new_h - height) // 2
-        base_img = base_img.crop((left, top, left + width, top + height))
-        
-        # Làm tối nền gốc một chút (30%) để nhân vật nổi hơn
-        enhancer = ImageEnhance.Brightness(base_img)
-        base_img = enhancer.enhance(0.7) 
-
-        # 2. XỬ LÝ NHÂN VẬT (Lớp trên)
-        if char_path and os.path.exists(char_path):
+    final_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    
+    # 1. XỬ LÝ NHÂN VẬT (Lớp trên)
+    if char_path and os.path.exists(char_path):
+        try:
             char_img = Image.open(char_path).convert("RGBA")
             
             # Tính toán kích thước nhân vật (Cao bằng màn hình)
@@ -71,7 +48,6 @@ def process_hybrid_background(char_path, base_bg_path, output_path, width=OUTPUT
             char_img = char_img.resize((char_w, char_h), Image.LANCZOS)
             
             # Tạo Mask hòa trộn (Gradient từ trong suốt -> hiện rõ)
-            # Giúp cạnh trái của nhân vật hòa vào nền
             mask = Image.new("L", (char_w, char_h), 0)
             draw_mask = ImageDraw.Draw(mask)
             
@@ -88,41 +64,88 @@ def process_hybrid_background(char_path, base_bg_path, output_path, width=OUTPUT
                 draw_mask.line([(x, 0), (x, char_h)], fill=alpha)
             
             # Dán nhân vật sang bên phải màn hình
-            paste_x = width - char_w + 50 # Đẩy sang phải một chút
+            paste_x = width - char_w + 50 
             if paste_x < 0: paste_x = 0
             
-            base_img.paste(char_img, (paste_x, 0), mask=mask)
+            final_overlay.paste(char_img, (paste_x, 0), mask=mask)
+            logger.info("✅ Đã xử lý lớp nhân vật Overlay.")
+        except Exception as e:
+            logger.error(f"❌ Lỗi xử lý ảnh nhân vật: {e}")
 
-        # 3. TẠO VIGNETTE ĐEN BÊN TRÁI (Để viết Title)
-        gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-        draw_grad = ImageDraw.Draw(gradient)
+    # 2. TẠO VIGNETTE ĐEN BÊN TRÁI
+    gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw_grad = ImageDraw.Draw(gradient)
+    
+    # Phủ tối 60% màn hình từ trái sang
+    for x in range(int(width * 0.6)): 
+        # Giảm dần độ đậm từ 200 về 0
+        alpha = int(200 * (1 - (x / (width * 0.6))))
+        draw_grad.line([(x, 0), (x, height)], fill=(0, 0, 0, alpha))
         
-        # Phủ tối 60% màn hình từ trái sang
-        for x in range(int(width * 0.6)): 
-            # Giảm dần độ đậm từ 200 về 0
-            alpha = int(200 * (1 - (x / (width * 0.6))))
-            draw_grad.line([(x, 0), (x, height)], fill=(0, 0, 0, alpha))
-            
-        final_img = Image.alpha_composite(base_img, gradient)
-        
-        # Lưu ảnh
-        final_img = final_img.convert("RGB")
-        final_img.save(output_path, quality=95)
-        logger.info(f"🎨 Đã tạo Hybrid Background: {output_path}")
-        return output_path
-            
-    except Exception as e:
-        logger.error(f"❌ Error Hybrid BG: {e}")
-        return None
+    final_overlay = Image.alpha_composite(final_overlay, gradient)
+    
+    # Lưu tạm ảnh overlay (RGB) để sử dụng trong MoviePy
+    overlay_path = get_path('assets', 'temp', "char_vignette_overlay.png")
+    os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
+    final_overlay.convert("RGB").save(overlay_path, quality=95)
+    
+    return overlay_path
+
 
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM (MODERN STYLE: NÉT MẢNH + PHỦ RỘNG)
+# 🎥 HÀM TẠO NỀN VIDEO LAI (HYBRID VIDEO BACKGROUND)
+# ============================================================
+def make_hybrid_video_background(video_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
+    """
+    Sử dụng VideoFileClip làm nền, thực hiện Crop/Loop, làm tối và dán lớp phủ.
+    """
+    try:
+        # 1. Load & Xử lý thời lượng Video Clip
+        base_clip = VideoFileClip(video_path)
+
+        # Điều chỉnh thời lượng (Loop hoặc Crop) để khớp với duration
+        if base_clip.duration < duration:
+            # Nếu video ngắn hơn audio: Lặp lại (Loop)
+            base_clip = base_clip.loop(duration=duration)
+            logger.info(f"🔄 Video nền ngắn ({base_clip.duration:.2f}s), đã lặp lại để đủ {duration:.2f}s.")
+        elif base_clip.duration > duration:
+            # Nếu video dài hơn audio: Cắt bớt (Crop)
+            base_clip = base_clip.subclip(0, duration)
+            logger.info(f"✂️ Video nền dài, đã cắt bớt còn {duration:.2f}s.")
+        
+        # 2. Căn chỉnh kích thước (Aspect Fill & Center Crop)
+        
+        # Resize để lấp đầy khung hình (giữ tỷ lệ, lấy chiều cao làm chuẩn)
+        base_clip = base_clip.resize(height=height) 
+        
+        # Crop về kích thước chuẩn 1280x720, căn giữa
+        base_clip = base_clip.crop(x_center=base_clip.w/2, y_center=base_clip.h/2, width=width, height=height)
+        
+        # 3. Làm tối Video Clip (0.7 Brightness)
+        # Giúp nhân vật và chữ nổi bật hơn
+        base_clip = base_clip.fx(vfx.color.brightness, factor=0.7)
+        
+        # 4. Dán lớp phủ tĩnh (Nhân vật + Vignette)
+        if os.path.exists(char_overlay_path):
+            overlay_clip = ImageClip(char_overlay_path).set_duration(duration)
+            final_clip = CompositeVideoClip([base_clip, overlay_clip], 
+                                            size=(width, height))
+        else:
+            final_clip = base_clip
+        
+        return final_clip.set_duration(duration)
+        
+    except Exception as e:
+        logger.error(f"❌ Lỗi tạo Hybrid Video Background: {e}", exc_info=True)
+        # Fallback nền đen
+        return ColorClip(size=(width, height), color=(15, 15, 15), duration=duration)
+
+# ============================================================
+# 🌟 CIRCULAR WAVEFORM
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    # [1] Tăng không gian vẽ để sóng không bị cắt khi bung to
-    # Trước đây là 640x360, giờ tăng lên vuông 1000x1000 để sóng tròn đẹp nhất
-    calc_w, calc_h = 1000, 1000 
-    
+    """ Tạo clip sóng âm thanh hình tròn, đồng bộ với audio. """
+    calc_w, calc_h = 1000, 1000 # Không gian vẽ cao độ phân giải
     fps = 20 
     audio = AudioSegment.from_file(audio_path)
     raw_samples = np.array(audio.get_array_of_samples()).astype(np.float32)
@@ -142,9 +165,7 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
     max_val = np.max(envelope) if len(envelope) > 0 else 1
     if max_val > 0: envelope = envelope / max_val 
 
-    # [2] Tăng số lượng vòng sóng (để phủ kín không gian rộng hơn)
-    waves = 20  # Cũ là 15
-    
+    waves = 20
     center = (calc_w // 2, calc_h // 2)
     yy, xx = np.ogrid[:calc_h, :calc_w]
     dist_sq = (xx - center[0]) ** 2 + (yy - center[1]) ** 2
@@ -156,85 +177,93 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
         amp = envelope[frame_idx]
         mask_frame = np.zeros((calc_h, calc_w), dtype=np.float32)
         
-        # [3] Tăng bán kính cơ bản và độ nảy (Amplitude)
-        # Sóng sẽ bung ra xa tâm hơn khi nhạc to
-        base_radius = 60 + amp * 100  # Cũ: 25 + amp*20 -> Tăng mạnh để sóng to hơn
+        base_radius = 60 + amp * 100 
         
         for i in range(waves):
-            # [4] Tăng khoảng cách giữa các vòng (Spacing)
-            # Giúp tổng thể sóng trông rộng và thoáng hơn
-            radius = base_radius + i * 20  # Cũ: i*6 -> Tăng lên 20
+            radius = base_radius + i * 20 
             
             opacity = max(0.0, 1.0 - i * 0.05)
             if opacity <= 0: continue
             
-            # [5] CHỈNH NÉT MẢNH (THIN LINES)
-            # Giảm độ dày từ +/- 1.5 xuống +/- 0.6
-            # Kết hợp với calc_w/h lớn sẽ cho ra nét cực mảnh và sắc sảo
+            # Nét mảnh: +/- 0.6
             ring_mask = (dist_matrix >= radius - 0.6) & (dist_matrix <= radius + 0.6)
             
             mask_frame[ring_mask] = opacity
         return mask_frame
 
     mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
-    
-    # Resize về kích thước video đầu ra
     mask_clip_high_res = mask_clip_low_res.resize((width, height))
+    # Màu Vàng Gold
     color_clip = ColorClip(size=(width, height), color=(255, 215, 0), duration=duration) 
     return color_clip.set_mask(mask_clip_high_res)
 
 
 def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
+    """ Tạo lớp phát sáng mờ dưới sóng âm. """
     low_w, low_h = 320, 180
     y = np.linspace(0, low_h - 1, low_h)
     x = np.linspace(0, low_w - 1, low_w)
     xx, yy = np.meshgrid(x, y)
-    lcx, lcy = low_w // 2, int(low_h * 0.45)
+    lcx, lcy = low_w // 2, int(low_h * 0.45) 
     radius = int(min(low_w, low_h) * 0.45)
     dist = np.sqrt((xx - lcx)**2 + (yy - lcy)**2)
     intensity = np.clip(255 - (dist / radius) * 255, 0, 255)
+    
     glow_low = np.zeros((low_h, low_w, 3), dtype=np.uint8)
-    glow_low[:, :, 0] = (intensity * 0.3).astype(np.uint8)
-    glow_low[:, :, 1] = (intensity * 0.2).astype(np.uint8)
-    glow_low[:, :, 2] = 0                                 
+    glow_low[:, :, 0] = (intensity * 0.7).astype(np.uint8) 
+    glow_low[:, :, 1] = (intensity * 0.5).astype(np.uint8)
+    glow_low[:, :, 2] = 0                               
+    
     return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.3)
 
 
 # ============================================================
 # 🎬 HÀM CHÍNH (CREATE VIDEO)
 # ============================================================
-def create_video(audio_path, episode_id, custom_image_path=None, base_bg_path=None, title_text="LEGENDARY FOOTSTEPS"):
+def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
+    """
+    Hàm chính tạo video từ audio, ảnh nhân vật và tự động lấy video nền động.
+    """
     try:
         # 1. Setup Audio
         audio = AudioFileClip(audio_path)
         duration = audio.duration
         logger.info(f"🎧 Audio duration = {duration:.2f}s") 
 
-        # 2. Setup Background (Hybrid)
+        # 2. Tạo Lớp Phủ Tĩnh (Nhân vật + Vignette)
+        char_overlay_path = create_static_overlay_image(custom_image_path)
+        
+        # 3. XÁC ĐỊNH VÀ SETUP BACKGROUND
+        
+        # Đường dẫn video nền đã xác định
+        base_video_path = get_path('assets', 'video', 'long_background.mp4')
+        
         clip = None
-        # Đường dẫn file ảnh tạm sau khi ghép
-        hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_hybrid_bg.jpg")
-        os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
+        
+        if os.path.exists(base_video_path):
+            # SỬ DỤNG VIDEO NỀN ĐỘNG (Hybrid Video Background)
+            clip = make_hybrid_video_background(base_video_path, char_overlay_path, duration)
+        else:
+            # FALLBACK NỀN TĨNH (hoặc nền đen)
+            logger.warning(f"⚠️ Không tìm thấy Video nền tại {base_video_path}. Sử dụng nền màu đen tĩnh.")
+            clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15, 15, 15), duration=duration)
+            
+            # Dán lớp phủ tĩnh lên nền đen
+            if os.path.exists(char_overlay_path):
+                overlay_clip = ImageClip(char_overlay_path).set_duration(duration)
+                clip = CompositeVideoClip([clip, overlay_clip])
+        
+        # Đảm bảo clip nền có thời lượng chính xác
+        clip = clip.set_duration(duration)
 
-        if custom_image_path:
-            # Gọi hàm ghép ảnh
-            final_bg = process_hybrid_background(custom_image_path, base_bg_path, hybrid_bg_path)
-            if final_bg:
-                clip = ImageClip(final_bg).set_duration(duration)
 
-        # Fallback (Nếu không có ảnh nhân vật thì dùng ảnh nền gốc)
-        if clip is None:
-             if base_bg_path and os.path.exists(base_bg_path):
-                 clip = ImageClip(base_bg_path).set_duration(duration).resize((OUTPUT_WIDTH, OUTPUT_HEIGHT))
-             else:
-                 clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15,15,15), duration=duration)
-
-        # 3. Waveform & Glow
+        # 4. Waveform & Glow
         glow = make_glow_layer(duration)
         waveform = make_circular_waveform(audio_path, duration)
         waveform = waveform.set_position("center")
 
-        # 4. Title Text (Góc trái trên)
+
+        # 5. Title Text (Góc trái trên)
         title_layer = None
         if title_text:
             try:
@@ -246,26 +275,26 @@ def create_video(audio_path, episode_id, custom_image_path=None, base_bg_path=No
                     stroke_color='black', 
                     stroke_width=3,
                     method='caption',
-                    align='West',         
-                    size=(800, None)      
+                    align='West',          
+                    size=(800, None)       
                 ).set_position((50, 50)).set_duration(duration)
             except Exception as e:
                 logger.warning(f"⚠️ Title Error: {e}")
 
-        # 5. Channel Logo
+        # 6. Channel Logo
         logo_path = get_path('assets', 'images', 'channel_logo.png')
         logo_layer = None
         if os.path.exists(logo_path):
-             logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
+            logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
 
-        # 6. Composite
+        # 7. Composite
         layers = [clip, glow, waveform]
         if title_layer: layers.append(title_layer)
         if logo_layer: layers.append(logo_layer)
 
         final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
         
-        # 7. Render
+        # 8. Render
         output = get_path('outputs', 'video', f"{episode_id}_video.mp4")
         os.makedirs(os.path.dirname(output), exist_ok=True)
         logger.info("🚀 Starting Render Long Video...")
@@ -275,7 +304,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, base_bg_path=No
             fps=24,
             codec="libx264",
             audio_codec="aac",
-            preset="ultrafast",      
+            preset="ultrafast",       
             threads=4,
             ffmpeg_params=["-crf", "28"], 
             logger='bar' 
