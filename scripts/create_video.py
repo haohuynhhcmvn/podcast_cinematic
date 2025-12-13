@@ -1,4 +1,4 @@
-# ===scripts/create_video.py===
+# === scripts/create_video.py ===
 import logging
 import os
 import numpy as np
@@ -79,7 +79,10 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
     
     overlay_path = get_path('assets', 'temp', "char_vignette_overlay.png")
     os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
-    final_overlay.convert("RGB").save(overlay_path, quality=95)
+    
+    # --- [ĐÃ SỬA] LƯU DẠNG PNG ĐỂ GIỮ NỀN TRONG SUỐT ---
+    final_overlay.save(overlay_path, format="PNG") 
+    # ---------------------------------------------------
     
     return overlay_path
 
@@ -96,7 +99,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
         layers_to_composite = []
         base_clip = None
 
-        # --- LỚP 1: VIDEO ĐỘNG (ĐÁY) - XỬ LÝ CẮT/LOOP ---
+        # --- LỚP 1: VIDEO ĐỘNG (ĐÁY - BOTTOM LAYER) ---
         try:
             temp_clip = VideoFileClip(video_path)
             
@@ -113,6 +116,8 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             base_clip = base_clip.crop(x_center=base_clip.w/2, y_center=base_clip.h/2, width=width, height=height)
             
             base_clip = base_clip.fx(vfx.colorx, factor=0.7)
+            
+            # [ĐÃ SỬA] Thêm Video vào đầu danh sách (Nằm dưới cùng)
             layers_to_composite.append(base_clip)
             logger.info("   (LOG-BG): ✅ Video Nền Động đã được xử lý (Cắt/Loop/Tối màu).")
             
@@ -121,21 +126,22 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             base_clip = None 
 
 
-        # --- LỚP 2: HÌNH NỀN TĨNH (GIỮA/ĐÁY) ---
+        # --- LỚP 2: HÌNH NỀN TĨNH (GIỮA - MIDDLE LAYER) ---
         if static_bg_path and os.path.exists(static_bg_path):
             img_clip = ImageClip(static_bg_path).set_duration(duration)
             img_clip = img_clip.resize(height=height)
             img_clip = img_clip.crop(x_center=img_clip.w/2, y_center=img_clip.h/2, width=width, height=height)
             
             if base_clip is not None:
-                static_bg_clip = img_clip.set_opacity(0.3)
+                static_bg_clip = img_clip.set_opacity(0.3) # Làm mờ để thấy video bên dưới
             else:
                 static_bg_clip = img_clip.set_opacity(1.0) 
             
-            layers_to_composite.insert(0, static_bg_clip) 
-            logger.info("   (LOG-BG): ✅ Ảnh Nền Tĩnh đã được thêm vào lớp đáy.")
+            # [ĐÃ SỬA] Dùng append để nằm ĐÈ LÊN video clip (Thay vì insert(0) chui xuống dưới)
+            layers_to_composite.append(static_bg_clip) 
+            logger.info("   (LOG-BG): ✅ Ảnh Nền Tĩnh đã được thêm vào lớp giữa.")
 
-        # --- LỚP 3: LỚP PHỦ NHÂN VẬT & VIGNETTE (TRÊN) ---
+        # --- LỚP 3: LỚP PHỦ NHÂN VẬT & VIGNETTE (TRÊN CÙNG - TOP LAYER) ---
         if os.path.exists(char_overlay_path):
             overlay_clip = ImageClip(char_overlay_path).set_duration(duration)
             layers_to_composite.append(overlay_clip)
@@ -156,7 +162,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
 
 
 # ============================================================
-# 🌟 CIRCULAR WAVEFORM (Giữ nguyên)
+# 🌟 CIRCULAR WAVEFORM
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """ Tạo sóng âm thanh tròn đồng tâm. """
