@@ -31,49 +31,63 @@ OUTPUT_HEIGHT = 720
 # ============================================================
 def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Tạo lớp phủ: Nhân vật rõ nét (soft edge) + Vignette vừa phải để không che nền.
+    Tạo lớp phủ: Nhân vật nhỏ (60% chiều cao), nằm góc dưới phải.
+    Vignette chỉ mờ nhẹ ở góc phải để không che video nền.
     """
-    logger.info("   (LOG-BG): Bắt đầu xử lý lớp phủ tĩnh (Balanced)...")
+    logger.info("   (LOG-BG): Bắt đầu xử lý lớp phủ tĩnh (Small Character)...")
     final_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     
-    # 1. XỬ LÝ NHÂN VẬT (Rõ nét hơn)
+    # 1. XỬ LÝ NHÂN VẬT (Thu nhỏ & Đặt góc dưới phải)
     if char_path and os.path.exists(char_path):
         try:
             char_img = Image.open(char_path).convert("RGBA")
-            char_h = height
+            
+            # --- [CẤU HÌNH] THU NHỎ SIZE ---
+            # Chỉ lấy 60% chiều cao màn hình (Để lộ nền phía trên và bên trái)
+            scale_factor = 0.6
+            char_h = int(height * scale_factor)
+            
+            # Tính chiều rộng giữ nguyên tỉ lệ
             char_w = int(char_img.width * (char_h / char_img.height))
             char_img = char_img.resize((char_w, char_h), PIL.Image.LANCZOS)
             
-            # [FIX VISUAL] Mask chỉ làm mềm biên, không làm mờ cả người
-            mask = Image.new("L", (char_w, char_h), 255) # 255 = Hiện rõ 100%
+            # Tạo Mask làm mềm biên trái (Soft Edge)
+            mask = Image.new("L", (char_w, char_h), 255)
             draw_mask = ImageDraw.Draw(mask)
             
-            fade_width = 120 # Chỉ làm mờ 120px ở cạnh trái
+            fade_width = 80 # Làm mềm biên khoảng 80px
             for x in range(fade_width):
                 alpha = int(255 * (x / fade_width))
                 draw_mask.line([(x, 0), (x, char_h)], fill=alpha)
             
-            # Đặt sát lề phải
-            paste_x = width - char_w 
-            # Logic chống lỗi nếu ảnh quá nhỏ
-            if paste_x > width * 0.7: paste_x = int(width * 0.7)
+            # --- [CẤU HÌNH] VỊ TRÍ DÁN (GÓC DƯỚI PHẢI) ---
+            # Cách lề phải 50px, nằm sát đáy
+            paste_x = width - char_w - 50
+            paste_y = height - char_h # Sát đáy
             
-            final_overlay.paste(char_img, (paste_x, 0), mask=mask)
-            logger.info("   (LOG-BG): ✅ Nhân vật đã được làm rõ nét.")
+            if paste_x < 0: paste_x = 0
+            
+            final_overlay.paste(char_img, (paste_x, paste_y), mask=mask)
+            logger.info(f"   (LOG-BG): ✅ Nhân vật đã thu nhỏ ({int(scale_factor*100)}%) & dời xuống góc phải.")
         except Exception as e:
             logger.error(f"   (LOG-BG): ❌ Lỗi xử lý ảnh nhân vật: {e}")
 
-    # 2. TẠO VIGNETTE (Bóng đen) - [GIẢM ĐỘ ĐẬM]
-    # Chỉ phủ 35% màn hình (thay vì 60%) để lộ nền video
+    # 2. TẠO VIGNETTE (BÓNG ĐEN) - [RẤT NHẸ & CỤC BỘ]
+    # Chỉ tạo một chút bóng tối ở góc phải để làm nổi nhân vật.
+    # Tuyệt đối KHÔNG che phần còn lại của màn hình.
+    
     vignette_layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     draw_grad = ImageDraw.Draw(vignette_layer)
     
-    vignette_width = int(width * 0.35) 
+    # Chỉ phủ đen 40% chiều rộng bên phải
+    bg_w = int(width * 0.4) 
+    start_x_grad = width - bg_w
     
-    for x in range(vignette_width): 
-        # Alpha max 160 (thay vì 200) để nhìn xuyên qua được
-        alpha = int(160 * (1 - (x / vignette_width)))
-        draw_grad.line([(x, 0), (x, height)], fill=(0, 0, 0, alpha))
+    for x in range(bg_w): 
+        # Gradient từ trong ra ngoài (càng về mép phải càng tối)
+        # Alpha tối đa chỉ 100/255 (khoảng 40% độ đậm)
+        alpha = int(100 * (x / bg_w)) 
+        draw_grad.line([(start_x_grad + x, 0), (start_x_grad + x, height)], fill=(0, 0, 0, alpha))
         
     final_overlay = Image.alpha_composite(final_overlay, vignette_layer)
     
@@ -91,7 +105,7 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
 # ============================================================
 def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Tạo nền phức hợp: Video động (Sáng) + Ảnh tĩnh (Mờ) + Nhân vật (Rõ).
+    Tạo nền phức hợp: Video động (Sáng) + Ảnh tĩnh (Mờ) + Nhân vật (Góc phải).
     """
     logger.info("   (LOG-BG): Bắt đầu tạo Hybrid Video Background...")
     try:
@@ -113,7 +127,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             base_clip = base_clip.resize(height=height) 
             base_clip = base_clip.crop(x_center=base_clip.w/2, y_center=base_clip.h/2, width=width, height=height)
             
-            # [FIX VISUAL] Tăng độ sáng từ 0.7 -> 0.9 để thấy rõ chuyển động
+            # [CẤU HÌNH] Độ sáng 90% để thấy rõ video nền
             base_clip = base_clip.fx(vfx.colorx, factor=0.9)
             
             layers_to_composite.append(base_clip)
@@ -123,7 +137,6 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             logger.error(f"   (LOG-BG): ❌ Lỗi Video Nền: {video_e}. Fallback ảnh tĩnh.")
             base_clip = None 
 
-
         # --- LỚP 2: HÌNH NỀN TĨNH (GIỮA) ---
         if static_bg_path and os.path.exists(static_bg_path):
             img_clip = ImageClip(static_bg_path).set_duration(duration)
@@ -131,7 +144,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             img_clip = img_clip.crop(x_center=img_clip.w/2, y_center=img_clip.h/2, width=width, height=height)
             
             if base_clip is not None:
-                # [FIX VISUAL] Giảm Opacity xuống 0.25 để video bên dưới hiện lên
+                # [CẤU HÌNH] Opacity 25% - Vừa đủ texture, không che video
                 static_bg_clip = img_clip.set_opacity(0.25) 
             else:
                 static_bg_clip = img_clip.set_opacity(1.0) 
@@ -161,9 +174,9 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """ Tạo sóng âm thanh (Optimized Low-Res Calculation). """
-    # [OPTIMIZE] Giảm độ phân giải tính toán để Render nhanh gấp 5 lần
+    # [TỐI ƯU] Giảm độ phân giải tính toán -> Render nhanh gấp 5 lần
     calc_w, calc_h = 400, 400 
-    fps = 20 # FPS riêng cho waveform
+    fps = 20 # FPS thấp cho Waveform để nhẹ máy
     
     logger.info("   (LOG-WF): Bắt đầu tạo Waveform (Optimized)...")
     try:
@@ -185,7 +198,7 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
         max_val = np.max(envelope) if len(envelope) > 0 else 1
         if max_val > 0: envelope = envelope / max_val 
 
-        waves = 15 # Giảm số lượng sóng chút xíu cho nhẹ
+        waves = 15 
         center = (calc_w // 2, calc_h // 2)
         yy, xx = np.ogrid[:calc_h, :calc_w]
         dist_sq = (xx - center[0]) ** 2 + (yy - center[1]) ** 2
@@ -197,7 +210,6 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             amp = envelope[frame_idx]
             mask_frame = np.zeros((calc_h, calc_w), dtype=np.float32)
             
-            # Radius phù hợp với resolution 400x400
             base_radius = 20 + amp * 50 
             
             for i in range(waves):
@@ -205,12 +217,11 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
                 opacity = max(0.0, 1.0 - i * 0.08)
                 if opacity <= 0: continue
                 
-                # Vẽ nét mảnh hơn
                 ring_mask = (dist_matrix >= radius - 0.8) & (dist_matrix <= radius + 0.8)
                 mask_frame[ring_mask] = opacity
             return mask_frame
 
-        # Render ở Low-Res rồi Resize lên High-Res
+        # Render ở Low-Res rồi Resize lên High-Res (Bilinear)
         mask_clip_low_res = VideoClip(make_mask_frame, duration=duration, ismask=True).set_fps(fps)
         mask_clip_high_res = mask_clip_low_res.resize((width, height))
         
@@ -299,7 +310,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         os.makedirs(os.path.dirname(output), exist_ok=True)
         logger.info("🚀 PHASE RENDER: Bắt đầu Render Long Video (Optimized)...")
         
-        # [OPTIMIZE] FPS 20 & Threads 2 để phù hợp GitHub Actions
+        # [TỐI ƯU] FPS 20 & Threads 2 để phù hợp GitHub Actions
         final.write_videofile(
             output, fps=20, codec="libx264", audio_codec="aac", preset="ultrafast", threads=2, ffmpeg_params=["-crf", "28"], logger='bar' 
         )
