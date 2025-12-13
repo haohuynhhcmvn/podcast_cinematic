@@ -58,7 +58,7 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
             
             # --- [BƯỚC 1] TÍNH TOÁN KÍCH THƯỚC ---
             # Muốn nhân vật cao bằng 60% chiều cao video (0.6)
-            scale_factor = 0.5
+            scale_factor = 0.6
             new_char_h = int(height * scale_factor)
             
             # Tính chiều rộng mới dựa trên tỷ lệ gốc (để ảnh không bị méo)
