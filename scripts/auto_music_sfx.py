@@ -137,24 +137,35 @@ def auto_music_sfx(raw_audio_path: str, episode_id: int):
         # 3. Chèn SFX (NEW)
         mixed = inject_sfx(mixed, duration_ms)
 
-        # 4. Thêm Intro / Outro (Nếu có)
+        # 4. Thêm Intro / Outro (Logic đã cập nhật)
         intro_path = get_path('assets', 'intro_outro', 'intro.mp3')
         outro_path = get_path('assets', 'intro_outro', 'outro.mp3')
         
-        # (Optional: Nếu có Intro thì chèn vào đầu)
-        # if os.path.exists(intro_path): ...
-        
+        final_audio = mixed # Bắt đầu với audio đã mix
+
+        # --- LOGIC THÊM INTRO ---
+        if os.path.exists(intro_path):
+            intro = load_audio(intro_path)
+            if intro:
+                intro = intro + VOL_INTRO
+                # Nối Intro vào ĐẦU audio đã trộn
+                final_audio = intro.append(final_audio, crossfade=1000)
+                logger.info("🎬 Đã thêm Intro vào đầu Video.")
+
+        # --- LOGIC THÊM OUTRO ---
         if os.path.exists(outro_path):
             outro = load_audio(outro_path)
             if outro:
                 outro = outro + VOL_INTRO
-                mixed = mixed.append(outro, crossfade=1000)
+                # Nối Outro vào CUỐI audio
+                final_audio = final_audio.append(outro, crossfade=1000)
+                logger.info("🔚 Đã thêm Outro vào cuối Video.")
 
-        # Xuất file
+        # Xuất file (Sử dụng final_audio thay vì mixed)
         output_path = get_path('outputs', 'audio', f"{episode_id}_mixed.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        mixed.export(output_path, format="mp3")
+        final_audio.export(output_path, format="mp3") # Export final_audio (thay vì mixed)
         logger.info(f"✅ Audio Mixing Complete: {output_path}")
         return output_path
 
