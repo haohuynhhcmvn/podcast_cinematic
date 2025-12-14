@@ -9,9 +9,7 @@ from pydub import AudioSegment
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
 
 # --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW PHIÊN BẢN MỚI ---
-import PIL.Image
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# ĐÃ XÓA: Không cần thiết cho Python 3.12 và gây lỗi.
 # ------------------------------------------------------
 
 from moviepy.editor import (
@@ -47,7 +45,8 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
             # --- Resize (Full Height) ---
             new_char_h = height 
             new_char_w = int(char_img.width * (new_char_h / char_img.height))
-            char_img = char_img.resize((new_char_w, new_char_h), PIL.Image.LANCZOS)
+            # FIX: Thay PIL.Image.LANCZOS bằng Image.LANCZOS (vì PIL.Image không còn được import)
+            char_img = char_img.resize((new_char_w, new_char_h), Image.LANCZOS)
             
             # --- [BƯỚC QUAN TRỌNG] TẠO MASK HÒA TRỘN ---
             
@@ -258,6 +257,17 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         # 4. Hiệu ứng
         glow_layer = make_glow_layer(duration)
         waveform_layer = make_circular_waveform(audio_path, duration)
+        
+        # FIX CỐ ĐỊNH LỖI I8: Đảm bảo frame đầu ra là uint8 trước khi áp dụng hiệu ứng phức tạp
+        # Hàm này ép kiểu frame về np.uint8, giải quyết lỗi "Cannot handle this data type: (1, 1, 3), <i8"
+        def force_frame_uint8(get_frame, t):
+            frame = get_frame(t)
+            # Kiểm tra nếu kiểu dữ liệu không phải uint8 thì ép kiểu
+            if frame.ndim == 3 and frame.dtype != np.uint8:
+                return frame.astype(np.uint8)
+            return frame
+        
+        waveform_layer = waveform_layer.fl(force_frame_uint8)
         
         # [TINH CHỈNH] Thêm chuyển động xoay nhẹ (Dynamic Waveform)
         # Xoay 1 độ mỗi giây (rất tinh tế)
