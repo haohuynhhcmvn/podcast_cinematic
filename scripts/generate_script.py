@@ -69,42 +69,89 @@ def generate_long_script(data):
         core_theme = data.get("Core Theme", "Biography")
         input_notes = data.get("Content/Input", "")
 
-        # --- FINAL PROMPT: CẬP NHẬT QUY TẮC AN TOÀN CHÍNH TRỊ ---
+
+         # --- FINAL PROMPT: GROWTH-OPTIMIZED + SAFETY COMPLIANT ---
+        # CHỈNH SỬA: 
+        # - Thêm Hook đánh vào HỆ QUẢ ngay từ đầu
+        # - Ép tư duy QUYẾT ĐỊNH & SAI LẦM (không kể tiểu sử thuần)
+        # - VẪN giữ độ dài + an toàn chính trị
+
         prompt = f"""
 ROLE:
 You are the Head Scriptwriter for "Legendary Footsteps".
-Write a **HIGH-DETAIL, LONG-FORM** biography script (Minimum **1800 words**).
-Target Video Length: **8 to 12 minutes** (The absolute minimum for monetization).
+
+OBJECTIVE (GROWTH-CRITICAL):
+This script must HOOK viewers who do NOT know this person.
+Prioritize retention, emotional tension, and curiosity over education.
 
 INPUT DATA:
 - Character: {char_name}
 - Theme: {core_theme}
 - Notes: {input_notes}
 
-CRITICAL RULES (STRICT COMPLIANCE REQUIRED):
-1. **POLITICAL NEUTRALITY & LEGALITY (ZERO TOLERANCE):** - You MUST maintain strict historical objectivity. 
-   - **ABSOLUTELY FORBIDDEN:** Content that promotes rebellion, "reactionary" ideologies, undermines national sovereignty, or incites hatred against any government.
-   - Do NOT draw parallels to modern politics. Do NOT distort historical facts.
-   - Focus strictly on the human journey, historical lessons, and factual events.
+CRITICAL RULES (NON-NEGOTIABLE):
 
-2. **ULTIMATE LENGTH REQUIREMENT (SENSORY DETAIL):** Do NOT summarize. Every section MUST include detailed sensory description (smell, temperature, specific sounds, palpable emotions, textures) AND/OR a dialogue/quote to push the narrative length beyond 8 minutes.
-3. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, bustling marketplace, swirling storm, testament to, shadows linger, voice of the past, mere words, weaving, the richness of the surrounding. Use gritty, real-world descriptions.
-4. **DIALOGUE:** Reconstruct and include at least 3 to 5 actual quotes or monologues to extend the length and drama.
-5. **VISUALS:** Use [Visual: description] tags frequently (at least every 3 sentences).
-6. **SAFETY GUIDELINES:** Avoid graphic descriptions of excessive gore or sexual violence. Depict war/conflict with a focus on atmosphere and emotional weight, suitable for public broadcast.
+1. POLITICAL NEUTRALITY & LEGALITY:
+- Maintain strict historical objectivity.
+- ABSOLUTELY FORBIDDEN: rebellion, reactionary ideology, modern political parallels.
+- Focus on human decisions, consequences, and historical lessons only.
 
-EXTENDED STRUCTURE (7 SECTIONS):
-[SECTION 1: THE HOOK - 2 Mins] Start with a detailed, slow-motion description of a critical moment (Death or Victory). Focus on the sounds and smells.
-[SECTION 2: THE CONTEXT & TRAUMA - 1 Min] The world before them. The family struggles. (Go deep into childhood trauma).
-[SECTION 3: THE FIRST STRUGGLE - 1 Min] The early failures. The specific moment they almost gave up.
-[SECTION 4: THE TURNING POINT & TACTICS - 2 Mins] Detailed explanation of ONE specific genius strategy. Explain the tactics in depth.
-[SECTION 5: THE CLIMAX - 2 Mins] The biggest battle or confrontation. Describe the landscape minute-by-minute.
-[SECTION 6: THE DOWNFALL OR OBSTACLE] The specific people or circumstances that turned against them. (Maintain historical accuracy).
-[SECTION 7: LEGACY & PHILOSOPHY - 1 Min] A long, reflective conclusion on human nature.
+2. OPENING RULE (MOST IMPORTANT):
+- DO NOT start with childhood, background, or chronology.
+- START with a HIGH-STAKES CONSEQUENCE:
+  death, collapse, betrayal, irreversible loss, or ultimate victory.
+- Make the viewer feel: “How did it come to this?”
+
+3. NARRATIVE LOGIC:
+- Always reveal CONSEQUENCE before CAUSE.
+- Focus on:
+  • Decisions
+  • Mistakes
+  • Strategic thinking
+  • Human flaws under pressure
+
+4. LENGTH REQUIREMENT (UNCHANGED):
+- Minimum 1800 words.
+- Target runtime: 8–12 minutes.
+- Do NOT summarize.
+- Use sensory detail and reconstructed dialogue to maintain length.
+
+5. LANGUAGE & STYLE:
+- Gritty, grounded, cinematic.
+- NO poetic fluff.
+- BANNED WORDS remain enforced.
+
+6. VISUALS:
+- Use [Visual: description] tags frequently (unchanged).
+
+EXTENDED STRUCTURE (REFINED FOR RETENTION):
+
+[SECTION 1 – THE CONSEQUENCE (2 mins)]
+Start at the moment everything is lost or decided.
+No introduction. No explanation. Just impact.
+
+[SECTION 2 – THE PRESSURE BUILDING]
+Reveal the hidden forces, enemies, or internal flaws.
+
+[SECTION 3 – THE FIRST CRITICAL DECISION]
+The moment that set everything in motion.
+
+[SECTION 4 – THE STRATEGY OR ILLUSION]
+What they believed would save them—and why it worked (or didn’t).
+
+[SECTION 5 – THE CLIMAX]
+Minute-by-minute tension of the decisive event.
+
+[SECTION 6 – THE BETRAYAL / FAILURE / COST]
+Who turned. What failed. What could not be undone.
+
+[SECTION 7 – THE HUMAN LESSON]
+What this reveals about power, ambition, and human nature.
+NO modern politics.
 
 OUTPUT: English only.
 """
-
+        
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -193,22 +240,40 @@ def generate_short_script(data):
         input_notes = data.get("Content/Input", "")
 
         # --- CẬP NHẬT PROMPT: THÊM SYSTEM INSTRUCTION AN TOÀN ---
+        # --- UPDATED SHORTS PROMPT: RETENTION-FIRST ---
+        # CHỈNH SỬA:
+        # - Không bắt đầu bằng số máy móc
+        # - Thêm CONSEQUENCE-FIRST hook
+        # - CTA kích thích session thay vì xin sub lộ liễu
+
         prompt = f"""
-ROLE: Viral YouTube Shorts Scripter.
-TASK: Write a **tight, fast-paced** 50-55 second script (MAXIMUM 135 words) for {char_name}.
-INPUT: {input_notes}
+ROLE: Viral YouTube Shorts Scriptwriter.
+OBJECTIVE: Stop scrolling within 3 seconds.
+
+INPUT:
+- Character: {char_name}
+- Notes: {input_notes}
 
 CRITICAL RULES:
-1. **SAFETY & LEGALITY:** NO content promoting rebellion, reactionary ideologies, or hate speech. Keep it historically accurate and compliant with public broadcast standards.
-2. **LENGTH:** STRICTLY UNDER 140 words. If it's too long, it fails as a Short.
-3. **NO POETIC FLUFF:** BANNED WORDS: tapestry, echoes, unfold, realm, weaving, testament, mere words, swirling. 
-4. **TONE:** Direct, gritty, aggressive but SAFE. No rhetorical questions at the end.
+1. SAFETY & LEGALITY: Fully compliant. No rebellion, no modern politics.
+2. LENGTH: 45–55 seconds. MAX 135 words.
+3. NO POETIC FLUFF. Spoken, punchy English.
+4. Write for viewers who DO NOT know this person.
 
-STRUCTURE:
-1. HOOK (0-5s): Start immediately with a specific number or shocking fact. No "Did you know".
-2. THE TWIST: Reveal the paradox or conflict.
-3. THE BODY: Fast storytelling.
-4. THE BRIDGE CTA (Must be exact): "Subscribe for more legends, and check the related video below for the full story!"
+STRUCTURE (RETENTION-OPTIMIZED):
+
+1. HOOK (0–3s):
+Start with a consequence, mistake, or shocking outcome.
+NO names. NO dates.
+
+2. THE TURN:
+Reveal the decision or belief that caused it.
+
+3. ESCALATION:
+Fast, tense storytelling. Short sentences.
+
+4. OPEN LOOP CTA (DO NOT CHANGE WORDING):
+\"The full story explains why this decision failed.\"
 
 OUTPUT: English only.
 """
