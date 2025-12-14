@@ -7,7 +7,6 @@ import shutil # Import mới cho cleanup
 logger = logging.getLogger(__name__)
 
 # Xác định thư mục gốc của dự án
-# Dùng os.path.realpath để xử lý symlink, làm cho đường dẫn ổn định hơn
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 def get_path(*args):
@@ -17,40 +16,36 @@ def get_path(*args):
 def setup_environment():
     """Tạo đầy đủ cấu trúc thư mục đầu ra và log lại."""
     
-    # Thêm 'assets/temp' vì bạn dùng nó trong create_video.py
     required_dirs = [
         'data/episodes', 
         'assets/images', 'assets/audio', 'assets/video', 
         'assets/intro_outro', 'assets/background_music',
         'assets/temp', 
         'outputs/audio', 'outputs/video', 'outputs/shorts',
-        'outputs/thumbnails' # <--- ĐÃ THÊM MỚI
+        'outputs/thumbnails' # <-- ĐÃ THÊM THƯ MỤC THUMBNAILS
     ]
     
     for d in required_dirs:
         os.makedirs(get_path(d), exist_ok=True)
         
-    # Thay print bằng logger.info
     logger.info(f"✅ Cấu trúc thư mục dự án đã sẵn sàng tại: {PROJECT_ROOT}")
 
 # --- HÀM DỌN DẸP (CLEANUP) MỚI ---
 def cleanup_temp_files(episode_id: str, text_hash: str):
     """
-    Xóa các file tạm liên quan đến episode đã hoàn thành (TTS chunks, video render, audio mix, v.v.).
+    Xóa các file tạm liên quan đến episode đã hoàn thành.
     """
     try:
-        # ⚠️ FIX LỖI: Chuyển đổi ID sang chuỗi để tránh lỗi startswith(int)
+        # FIX LỖI: Chuyển đổi ID sang chuỗi để tránh lỗi startswith(int)
         episode_id_str = str(episode_id) 
 
         # 1. Xóa các file trung gian (TTS chunks, ảnh AI raw, hybrid BG)
         temp_dir = get_path("assets", "temp")
         for f in os.listdir(temp_dir):
-            # Sử dụng episode_id_str để so sánh
             if f.startswith(episode_id_str) or f.startswith("char_blend_mix") or f.startswith("img_clip"):
                 os.remove(os.path.join(temp_dir, f))
         
         # 2. Xóa các file output trung gian (Audio Mix, Thumb)
-        # Sử dụng episode_id_str trong đường dẫn
         audio_mix_path = get_path('outputs', 'audio', f"{episode_id_str}_mixed.mp3")
         if os.path.exists(audio_mix_path): os.remove(audio_mix_path)
 
