@@ -34,7 +34,7 @@ OUTPUT_HEIGHT = 720
 # ============================================================
 def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Tạo ảnh nhân vật Full Size, giảm Opacity mạnh (khoảng 70%) để hòa trộn (Mix) vào nền.
+    Tạo ảnh nhân vật Full Size, giảm Opacity và làm mờ viền cực mạnh để hòa trộn vào nền.
     """
     logger.info("   (LOG-BG): Bắt đầu xử lý ảnh nhân vật (Double Exposure Mix)...")
     final_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -54,16 +54,15 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
             # 1. Lấy hình dáng gốc (Alpha channel)
             original_alpha = char_img.getchannel("A")
             
-            # 2. Co vùng hiển thị vào trong (tăng từ 20px -> 25px)
+            # 2. Co vùng hiển thị vào trong 25px
             shrink_radius = 25
             eroded_mask = original_alpha.filter(ImageFilter.MinFilter(shrink_radius))
             
-            # 3. Làm mềm biên cực mạnh (tăng từ 30px -> 35px)
-            blur_radius = 35
+            # 3. [TINH CHỈNH] Làm mềm biên cực mạnh (Tăng lên 45px)
+            blur_radius = 45
             soft_edge_mask = eroded_mask.filter(ImageFilter.GaussianBlur(blur_radius))
             
-            # 4. [KEY FIX] GIẢM ĐỘ ĐẬM TOÀN THÂN (GLOBAL OPACITY)
-            # Giảm từ 230 xuống 190 (tương đương 75% độ đậm) để nền TĨNH có thể xuyên qua rõ rệt.
+            # 4. GIẢM ĐỘ ĐẬM TOÀN THÂN (75% độ đậm)
             blend_opacity = 190 
             opacity_layer = Image.new("L", soft_edge_mask.size, blend_opacity)
             
@@ -94,20 +93,23 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
 # ============================================================
 def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Cấu trúc Layer: Ảnh tĩnh (Rõ) -> Nhân vật (Blend) -> Video Overlay (Mờ).
+    Cấu trúc Layer: Ảnh tĩnh (Tăng Contrast) -> Nhân vật (Blend) -> Video Overlay (Mờ).
     """
     logger.info("   (LOG-BG): Bắt đầu phối cảnh (Cinematic Layering)...")
     try:
         layers_to_composite = []
 
-        # --- LAYER 1: ẢNH NỀN TĨNH (ĐÁY) ---
+        # --- LAYER 1: ẢNH NỀN TĨNH (ĐÁY - TĂNG CONTRAST) ---
         if static_bg_path and os.path.exists(static_bg_path):
             img_clip = ImageClip(static_bg_path).set_duration(duration)
             img_clip = img_clip.resize(height=height)
             img_clip = img_clip.crop(x_center=img_clip.w/2, y_center=img_clip.h/2, width=width, height=height)
-            img_clip = img_clip.set_opacity(1.0) # Rõ 100%
+            
+            # [TINH CHỈNH] Giảm sáng nhẹ (0.9) và Tăng độ tương phản (contrast=0.2)
+            img_clip = img_clip.fx(vfx.colorx, factor=0.9).fx(vfx.lum_contrast, contrast=0.2)
+            img_clip = img_clip.set_opacity(1.0)
             layers_to_composite.append(img_clip)
-            logger.info("   (LOG-BG): ✅ [Lớp 1] Ảnh nền tĩnh (Gốc).")
+            logger.info("   (LOG-BG): ✅ [Lớp 1] Ảnh nền tĩnh (Contrast Tăng).")
 
         # --- LAYER 2: NHÂN VẬT (GIỮA - ĐÃ BLEND) ---
         if os.path.exists(char_overlay_path):
@@ -130,7 +132,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             video_layer = video_layer.resize(height=height) 
             video_layer = video_layer.crop(x_center=video_layer.w/2, y_center=video_layer.h/2, width=width, height=height)
             
-            # Opacity 35% + Tăng sáng 1.1 (Hiệu ứng sương/bụi bay bắt mắt)
+            # Opacity 35% + Tăng sáng 1.1 
             video_layer = video_layer.set_opacity(0.35).fx(vfx.colorx, factor=1.1)
 
             layers_to_composite.append(video_layer)
@@ -154,7 +156,7 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
 # 🌊 HÀM 3: TẠO SÓNG NHẠC (THƯA & SANG TRỌNG)
 # ============================================================
 def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    """ Tạo sóng nhạc thưa, đường nét mảnh để không che hình ảnh. """
+    """ Tạo sóng nhạc thưa, đường nét mảnh và thêm chuyển động xoay. """
     calc_w, calc_h = 500, 500 
     fps = 20 
     
@@ -189,8 +191,6 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             frame_idx = min(frame_idx, len(envelope) - 1)
             amp = envelope[frame_idx]
             mask_frame = np.zeros((calc_h, calc_w), dtype=np.float32)
-            
-            # Bán kính lớn hơn
             base_radius = 40 + amp * 60 
             
             for i in range(waves):
@@ -258,6 +258,12 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         # 4. Hiệu ứng
         glow_layer = make_glow_layer(duration)
         waveform_layer = make_circular_waveform(audio_path, duration)
+        
+        # [TINH CHỈNH] Thêm chuyển động xoay nhẹ (Dynamic Waveform)
+        # Xoay 1 độ mỗi giây (rất tinh tế)
+        waveform_layer = waveform_layer.fx(vfx.rotate, angle=lambda t: t * 1) 
+        
+        # Đặt vị trí sóng nhạc
         waveform_layer = waveform_layer.set_position(("center", 50)) 
 
         # 5. Tiêu đề
