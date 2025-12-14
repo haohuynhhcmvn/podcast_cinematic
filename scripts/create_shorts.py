@@ -3,11 +3,14 @@
 import logging
 import os
 import math 
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
 
-import PIL.Image
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW PHIÊN BẢN MỚI ---
+# Loại bỏ 3 dòng này:
+# import PIL.Image
+# if not hasattr(PIL.Image, 'ANTIALIAS'):
+#     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# ------------------------------------------------------
 
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip, 
