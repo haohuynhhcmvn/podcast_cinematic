@@ -11,7 +11,8 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from utils import setup_environment, get_path
+# Đã THÊM cleanup_temp_files
+from utils import setup_environment, get_path, cleanup_temp_files 
 from fetch_content import fetch_content
 from generate_script import generate_long_script, generate_short_script
 from auto_music_sfx import auto_music_sfx
@@ -36,8 +37,8 @@ logger = logging.getLogger(__name__)
 # =========================================================
 #  SAFE UPDATE STATUS
 # =========================================================
+# ... (Giữ nguyên các hàm safe_update_status và try_update_youtube_id) ...
 def safe_update_status(ws, row_idx, col_idx, status):
-    """Cập nhật trạng thái vào Google Sheet một cách an toàn."""
     try:
         if not ws: return
         if col_idx and isinstance(col_idx, int):
@@ -51,7 +52,6 @@ def safe_update_status(ws, row_idx, col_idx, status):
         logger.error(f"❌ Lỗi update status: {e}")
 
 def try_update_youtube_id(ws, row_idx, video_id):
-    """Cập nhật YouTube ID vào Google Sheet."""
     if not ws or not video_id: return
     try:
         header = ws.row_values(1)
@@ -62,9 +62,8 @@ def try_update_youtube_id(ws, row_idx, video_id):
                 ws.update_cell(row_idx, col, video_id)
                 return
     except Exception: pass
-
 # =========================================================
-#  FULL VIDEO PROCESSING (LONG) - ĐÃ CẢI TIẾN LỖI
+#  FULL VIDEO PROCESSING (LONG)
 # =========================================================
 def process_long_video(data, task_meta):
     row_idx = task_meta.get('row_idx')
@@ -77,24 +76,20 @@ def process_long_video(data, task_meta):
     logger.info(f"=========================================================")
     logger.info(f"🎬 BẮT ĐẦU [LONG]: ID={eid} – {name}")
     logger.info(f"=========================================================")
-    
-    final_status = 'UPLOADED_LONG' # Trạng thái thành công mặc định
-    success = False # Biến kiểm soát luồng
 
     try:
         # 1. SCRIPT
         logger.info("PHASE 1/6: Đang gọi AI tạo Long Script & Metadata...")
         long_res = generate_long_script(data)
         if not long_res:
-            final_status = 'FAILED_GEN_LONG'
-            logger.error("❌ Lỗi tạo Long Script.")
-            return False # Thoát try để cập nhật trạng thái
+            safe_update_status(ws, row_idx, col_idx, 'FAILED_GEN_LONG')
+            return False
 
         script_path = long_res["script_path"]
         meta = long_res.get("metadata", {})
         youtube_title = meta.get("youtube_title", f"{name} – The Untold Story")
         
-        # 2. ẢNH AI & THUMBNAIL
+        # 2. ẢNH AI & THUMBNAIL (SMART CACHE)
         logger.info("PHASE 2/6: Xử lý ảnh AI (Smart Cache) và Thumbnail...")
         dalle_char_path = None
         final_thumbnail_path = None
@@ -126,15 +121,13 @@ def process_long_video(data, task_meta):
             if tts: break
             sleep(2)
         if not tts:
-            final_status = 'FAILED_TTS_LONG'
-            logger.error("❌ Lỗi TTS Long.")
+            safe_update_status(ws, row_idx, col_idx, 'FAILED_TTS_LONG')
             return False
 
         # 4. AUDIO MIX
         logger.info("PHASE 4/6: Đang trộn nhạc nền (Auto Music SFX)...")
         mixed = auto_music_sfx(tts, eid)
         if not mixed:
-             final_status = 'FAILED_MIX_LONG'
              logger.error("❌ Lỗi trộn Audio Mix.")
              return False
 
@@ -148,8 +141,7 @@ def process_long_video(data, task_meta):
         )
         
         if not video_path:
-            final_status = 'FAILED_RENDER_LONG'
-            logger.error("❌ Lỗi Render Long Video.")
+            safe_update_status(ws, row_idx, col_idx, 'FAILED_RENDER_LONG')
             return False
 
         # 6. UPLOAD
@@ -162,34 +154,24 @@ def process_long_video(data, task_meta):
         upload_result = upload_video(video_path, upload_payload, thumbnail_path=final_thumbnail_path)
         
         if not upload_result or upload_result == "FAILED":
-            final_status = 'FAILED_UPLOAD_LONG'
-            logger.error("❌ Lỗi Upload Long Video.")
+            safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_LONG')
             return False
 
         if isinstance(upload_result, dict):
             try_update_youtube_id(ws, row_idx, upload_result.get("video_id"))
 
+        safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
         logger.info(f"✅ LONG VIDEO SUCCESS: {upload_result.get('video_id')}")
-        success = True # Đánh dấu thành công
-        return True # Trả về thành công trước khi vào finally
+        return True
 
     except Exception as e:
-        # Xử lý lỗi hệ thống bất ngờ (crash)
-        logger.error(f"❌ ERROR LONG VIDEO TỔNG: Đang đặt status '{final_status}' trước khi lỗi - {e}", exc_info=True)
-        if final_status == 'UPLOADED_LONG':
-             final_status = 'ERROR_LONG' # Đặt trạng thái lỗi chung nếu chưa có lỗi cụ thể
-        return False # Đảm bảo hàm trả về False
-
-    finally:
-        # BƯỚC CUỐI CÙNG: ĐẢM BẢO CẬP NHẬT TRẠNG THÁI DÙ CÓ LỖI HAY KHÔNG
-        if not success:
-             safe_update_status(ws, row_idx, col_idx, final_status)
-        else:
-             safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
+        logger.error(f"❌ ERROR LONG VIDEO TỔNG: {e}", exc_info=True)
+        safe_update_status(ws, row_idx, col_idx, 'ERROR_LONG')
+        return False
 
 
 # =========================================================
-#  SHORTS - ĐÃ CẢI TIẾN LỖI
+#  SHORTS
 # =========================================================
 def process_shorts(data, task_meta):
     row_idx = task_meta.get('row_idx')
@@ -202,16 +184,13 @@ def process_shorts(data, task_meta):
     logger.info(f"---------------------------------------------------------")
     logger.info(f"🎬 BẮT ĐẦU [SHORTS]: ID={eid}")
     logger.info(f"---------------------------------------------------------")
-    
-    final_status = 'UPLOADED_SHORTS'
-    success = False
+
 
     try:
         # 1. SCRIPT
         logger.info("PHASE 1/5: Đang gọi AI tạo Short Script...")
         script_path, title_path = generate_short_script(data)
         if not title_path or not os.path.exists(title_path):
-             final_status = 'FAILED_SCRIPT_SHORTS'
              logger.error("❌ Lỗi tạo Script Shorts.")
              return False
              
@@ -225,7 +204,6 @@ def process_shorts(data, task_meta):
             if tts: break
             sleep(2)
         if not tts:
-             final_status = 'FAILED_TTS_SHORTS'
              logger.error("❌ Lỗi TTS Shorts.")
              return False
 
@@ -258,7 +236,6 @@ def process_shorts(data, task_meta):
         )
         
         if not shorts_path:
-             final_status = 'FAILED_RENDER_SHORTS'
              logger.error("❌ Lỗi Render Shorts.")
              return False
 
@@ -272,25 +249,16 @@ def process_shorts(data, task_meta):
         upload_result = upload_video(shorts_path, upload_data)
         
         if not upload_result or upload_result == 'FAILED':
-            final_status = 'FAILED_UPLOAD_SHORTS'
+            safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD_SHORTS')
             return False
 
+        safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
         logger.info(f"✅ SHORTS SUCCESS!")
-        success = True
         return True
 
     except Exception as e:
-        logger.error(f"❌ ERROR SHORTS TỔNG: Đang đặt status '{final_status}' trước khi lỗi - {e}", exc_info=True)
-        if final_status == 'UPLOADED_SHORTS':
-             final_status = 'ERROR_SHORTS'
+        logger.error(f"❌ ERROR SHORTS TỔNG: {e}", exc_info=True)
         return False
-
-    finally:
-        # BƯỚC CUỐI CÙNG: ĐẢM BẢO CẬP NHẬT TRẠNG THÁI
-        if not success:
-            safe_update_status(ws, row_idx, col_idx, final_status)
-        else:
-            safe_update_status(ws, row_idx, col_idx, 'UPLOADED_SHORTS')
 
 
 def main():
@@ -302,17 +270,20 @@ def main():
 
     data = task["data"]
     task_meta = {"row_idx": task["row_idx"], "col_idx": task["col_idx"], "worksheet": task["worksheet"]}
+    
+    # Lấy text_hash để dọn dẹp
+    text_hash = data.get("text_hash") 
 
     logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={data.get('ID')} – {data.get('Name')}")
     
     long_ok = process_long_video(data, task_meta)
     sleep(10)
-    # Cập nhật col_idx cho shorts (thường là cột liền kề)
-    shorts_col_idx = task_meta.get('col_idx', 6) + 1 
-    shorts_task_meta = {"row_idx": task["row_idx"], "col_idx": shorts_col_idx, "worksheet": task["worksheet"]}
-    
-    short_ok = process_shorts(data, shorts_task_meta)
+    short_ok = process_shorts(data, task_meta)
 
+    # ⚠️ BƯỚC MỚI: DỌN DẸP
+    if long_ok or short_ok: # Chỉ dọn dẹp nếu ít nhất 1 video được tạo thành công
+        cleanup_temp_files(data.get('ID'), text_hash)
+        
     if long_ok and short_ok: logger.info("🎉 FULL SUCCESS!")
 
 if __name__ == "__main__":
