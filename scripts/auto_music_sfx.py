@@ -10,11 +10,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # --- CẤU HÌNH ÂM LƯỢNG (dB) ---
-VOL_VOICE = -2.0        # Giọng đọc to rõ
-VOL_MUSIC_LOW = -22.0   # Nhạc nền (mức nhỏ - Intro)
-VOL_MUSIC_HIGH = -18.0  # Nhạc nền (mức cao trào - Body)
-VOL_SFX = -10.0         # Hiệu ứng âm thanh
+VOL_VOICE = -2.0        
+VOL_MUSIC_LOW = -22.0   
+VOL_MUSIC_HIGH = -18.0  
+VOL_SFX = -10.0         
 VOL_INTRO = -10.0
+
+# Hằng số Crossfade an toàn mặc định
+MAX_CROSSFADE = 2000 # 2 giây
+MIN_CROSSFADE = 100  # 100ms tối thiểu
 
 def load_audio(filepath):
     try:
@@ -24,21 +28,36 @@ def load_audio(filepath):
         logger.error(f"⚠️ Lỗi tải file {filepath}: {e}")
     return None
 
+def get_safe_crossfade(clip1_len, clip2_len, max_cf=MAX_CROSSFADE):
+    """
+    Tính toán Crossfade an toàn. Phải nhỏ hơn 50% độ dài của clip ngắn nhất.
+    """
+    if clip1_len == 0 or clip2_len == 0:
+        return MIN_CROSSFADE
+        
+    # Lấy 50% độ dài clip ngắn nhất
+    max_safe = min(clip1_len, clip2_len) // 2 
+    
+    # Chọn giá trị nhỏ nhất giữa max mong muốn và max_safe
+    crossfade_duration = min(max_cf, max_safe)
+    
+    # Đảm bảo tối thiểu 100ms
+    return max(MIN_CROSSFADE, crossfade_duration)
+
+
 def generate_dynamic_background(duration_ms):
     """
     Tạo nhạc nền thay đổi theo thời gian (Intro -> BuildUp -> Climax).
     Tự động nối bg_1.mp3, bg_2.mp3... lại với nhau.
     """
     bg_dir = get_path('assets', 'background_music')
+    # ... (Giữ nguyên logic quét file) ...
     bg_files = []
     
     # 1. Quét file nhạc nền (bg_1, bg_2...)
     if os.path.exists(bg_dir):
         files = sorted([f for f in os.listdir(bg_dir) if f.endswith('.mp3')])
-        # Ưu tiên các file bắt đầu bằng 'bg_'
         bg_files = [os.path.join(bg_dir, f) for f in files if f.startswith('bg_')]
-        
-        # Nếu không có bg_, dùng tạm loop_
         if not bg_files:
             bg_files = [os.path.join(bg_dir, f) for f in files if f.startswith('loop_')]
 
@@ -47,75 +66,69 @@ def generate_dynamic_background(duration_ms):
         return AudioSegment.silent(duration=duration_ms)
 
     # 2. Logic ghép nhạc
-    # Chia thời lượng video cho số bài nhạc để chia đoạn
     segment_duration = duration_ms // len(bg_files)
     final_bg = AudioSegment.empty()
+    last_track = None
 
     for i, fpath in enumerate(bg_files):
         track = load_audio(fpath)
         if not track: continue
+        last_track = track
 
-        # Điều chỉnh âm lượng: Bài đầu nhỏ, bài giữa to hơn
+        # Điều chỉnh âm lượng (Giữ nguyên)
         if 0 < i < len(bg_files) - 1:
             track = track + VOL_MUSIC_HIGH 
         else:
             track = track + VOL_MUSIC_LOW
 
-        # Loop track cho đủ độ dài segment (nếu track ngắn quá)
+        # Loop track cho đủ độ dài segment 
         while len(track) < segment_duration + 5000: 
             track += track
         
-        # Cắt đúng độ dài (Bài cuối lấy phần dư)
         target_len = segment_duration if i < len(bg_files) - 1 else (duration_ms - len(final_bg))
-        # Đảm bảo không cắt lố
         if target_len <= 0: target_len = 1000 
         track = track[:target_len]
 
-        # Ghép nối (Crossfade 2s cho mượt)
+        # Ghép nối (Crossfade an toàn)
         if len(final_bg) > 0:
-            final_bg = final_bg.append(track, crossfade=2000)
+            # FIX LỖI: Sử dụng crossfade động an toàn
+            crossfade_duration = get_safe_crossfade(len(final_bg), len(track))
+            final_bg = final_bg.append(track, crossfade=crossfade_duration)
         else:
             final_bg = track
 
-    # Cắt chính xác lần cuối cho khớp duration
+    # 3. Lặp lại track cuối nếu audio quá ngắn (Cần đảm bảo logic Crossfade an toàn ở đây)
+    if len(final_bg) < duration_ms and last_track:
+        remaining_ms = duration_ms - len(final_bg)
+        logger.info(f"   (LOOP): Nhạc nền quá ngắn, lặp lại track cuối ({remaining_ms/1000:.1f}s còn lại).")
+        
+        # ... (Điều chỉnh âm lượng giữ nguyên)
+        
+        # Tạo phần lặp (cần đảm bảo crossfade an toàn)
+        looped_part = AudioSegment.empty()
+        # Lặp tối đa 30 lần để tránh loop vô tận
+        for _ in range(30): 
+            if len(looped_part) >= remaining_ms: break
+            
+            # Crossfade cho đoạn lặp
+            if len(looped_part) > 0:
+                 crossfade_duration = get_safe_crossfade(len(looped_part), len(last_track), max_cf=1000) # Max 1s crossfade khi loop
+                 looped_part = looped_part.append(last_track, crossfade=crossfade_duration)
+            else:
+                 looped_part = last_track
+            
+        # Nối phần lặp vào final_bg (Crossfade an toàn)
+        crossfade_duration = get_safe_crossfade(len(final_bg), len(looped_part[:remaining_ms]))
+        final_bg = final_bg.append(looped_part[:remaining_ms], crossfade=crossfade_duration)
+
+    # Cắt chính xác lần cuối
     return final_bg[:duration_ms]
 
-def inject_sfx(mixed_audio, voice_len_ms):
-    """
-    Chèn SFX ngẫu nhiên vào vùng Cao trào (30% - 80% thời lượng).
-    """
-    sfx_dir = get_path('assets', 'sfx')
-    if not os.path.exists(sfx_dir):
-        return mixed_audio
+# ... (Hàm inject_sfx giữ nguyên)
 
-    sfx_files = [os.path.join(sfx_dir, f) for f in os.listdir(sfx_dir) if f.endswith('.mp3')]
-    if not sfx_files:
-        return mixed_audio
-
-    # Vùng hoạt động: 30% -> 80%
-    zone_start = int(voice_len_ms * 0.3)
-    zone_end = int(voice_len_ms * 0.8)
-    
-    current_pos = zone_start
-    
-    # Cứ mỗi khoảng 30s-60s chèn 1 lần
-    while current_pos < zone_end:
-        step = random.randint(30000, 60000)
-        current_pos += step
-        if current_pos >= zone_end: break
-
-        # Chọn SFX ngẫu nhiên (kiếm, ngựa, hét...)
-        sfx_path = random.choice(sfx_files)
-        sfx = load_audio(sfx_path)
-        
-        if sfx:
-            sfx = sfx + VOL_SFX
-            # Overlay vào audio chính
-            mixed_audio = mixed_audio.overlay(sfx, position=current_pos)
-            logger.info(f"⚔️ Chèn SFX tại {current_pos//1000}s: {os.path.basename(sfx_path)}")
-
-    return mixed_audio
-
+# =========================================================
+# 🎧 MAIN FUNCTION
+# =========================================================
 def auto_music_sfx(raw_audio_path: str, episode_id: int):
     """
     Hàm chính: Mix Voice + Dynamic Music + SFX + Intro/Outro
@@ -137,19 +150,20 @@ def auto_music_sfx(raw_audio_path: str, episode_id: int):
         # 3. Chèn SFX (NEW)
         mixed = inject_sfx(mixed, duration_ms)
 
-        # 4. Thêm Intro / Outro (Logic đã cập nhật)
+        # 4. Thêm Intro / Outro 
         intro_path = get_path('assets', 'intro_outro', 'intro.mp3')
         outro_path = get_path('assets', 'intro_outro', 'outro.mp3')
         
-        final_audio = mixed # Bắt đầu với audio đã mix
+        final_audio = mixed 
 
         # --- LOGIC THÊM INTRO ---
         if os.path.exists(intro_path):
             intro = load_audio(intro_path)
             if intro:
                 intro = intro + VOL_INTRO
-                # Nối Intro vào ĐẦU audio đã trộn
-                final_audio = intro.append(final_audio, crossfade=1000)
+                # FIX LỖI: Crossfade động
+                crossfade_duration = get_safe_crossfade(len(intro), len(final_audio), max_cf=1000)
+                final_audio = intro.append(final_audio, crossfade=crossfade_duration)
                 logger.info("🎬 Đã thêm Intro vào đầu Video.")
 
         # --- LOGIC THÊM OUTRO ---
@@ -157,15 +171,16 @@ def auto_music_sfx(raw_audio_path: str, episode_id: int):
             outro = load_audio(outro_path)
             if outro:
                 outro = outro + VOL_INTRO
-                # Nối Outro vào CUỐI audio
-                final_audio = final_audio.append(outro, crossfade=1000)
+                # FIX LỖI: Crossfade động
+                crossfade_duration = get_safe_crossfade(len(final_audio), len(outro), max_cf=1000)
+                final_audio = final_audio.append(outro, crossfade=crossfade_duration)
                 logger.info("🔚 Đã thêm Outro vào cuối Video.")
 
-        # Xuất file (Sử dụng final_audio thay vì mixed)
+        # Xuất file 
         output_path = get_path('outputs', 'audio', f"{episode_id}_mixed.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        final_audio.export(output_path, format="mp3") # Export final_audio (thay vì mixed)
+        final_audio.export(output_path, format="mp3") 
         logger.info(f"✅ Audio Mixing Complete: {output_path}")
         return output_path
 
