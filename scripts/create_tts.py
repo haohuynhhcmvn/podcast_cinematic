@@ -79,6 +79,10 @@ async def _run_edge_tts_with_retry(text, output_file):
                 last_error = e
                 logger.warning(f"   ⚠️ Thất bại giọng {voice} (Lần {attempt+1}): {e}")
                 
+                # THÊM DELAY NGẮN SAU KHI THẤT BẠI
+                if attempt < 2: 
+                    await asyncio.sleep(2) # Nghỉ 2 giây trước khi thử lại
+                
     # Nếu thử hết mọi cách mà vẫn lỗi
     logger.error(f"❌ Edge TTS thất bại hoàn toàn. Lỗi cuối: {last_error}")
     return False
@@ -147,8 +151,8 @@ def create_tts(script_path, episode_id, mode="long"):
             full_text = clean_and_validate_script(f.read().strip())
         if not full_text: return None
 
-        # Chia nhỏ text (Giảm xuống 1500 ký tự cho an toàn hơn)
-        chunk_size = 1500
+        # Chia nhỏ text (Giảm xuống 750 ký tự cho an toàn hơn)
+        chunk_size = 750 # <--- ĐÃ SỬA: 1500 -> 750
         chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
         
         # 1. Thử Edge (Miễn phí)
