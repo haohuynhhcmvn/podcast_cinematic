@@ -6,12 +6,16 @@ import os
 import numpy as np
 import math
 from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+import PIL.Image # Cần import đầy đủ để fix lỗi Pillow/MoviePy
 
-# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW PHIÊN BẢN MỚI ---
-# ĐÃ XÓA: Không cần thiết cho Python 3.12 và gây lỗi.
+# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY (ROBUST FIX) ---
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
+        PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    elif hasattr(PIL.Image, 'LANCZOS'):
+        PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 # ------------------------------------------------------
-
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
     CompositeVideoClip, VideoClip, TextClip, concatenate_videoclips,
