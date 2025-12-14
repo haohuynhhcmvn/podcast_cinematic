@@ -1,15 +1,16 @@
 # scripts/create_shorts.py
-
 import logging
 import os
 import math 
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+import PIL.Image # Cần import đầy đủ để fix lỗi Pillow/MoviePy
 
-# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW PHIÊN BẢN MỚI ---
-# Loại bỏ 3 dòng này:
-# import PIL.Image
-# if not hasattr(PIL.Image, 'ANTIALIAS'):
-#     PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY (ROBUST FIX) ---
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
+        PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    elif hasattr(PIL.Image, 'LANCZOS'):
+        PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 # ------------------------------------------------------
 
 from moviepy.editor import (
