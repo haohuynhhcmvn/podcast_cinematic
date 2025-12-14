@@ -11,7 +11,7 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Đã THÊM cleanup_temp_files
+# ĐÃ THÊM cleanup_temp_files VÀO IMPORT
 from utils import setup_environment, get_path, cleanup_temp_files 
 from fetch_content import fetch_content
 from generate_script import generate_long_script, generate_short_script
@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # =========================================================
 #  SAFE UPDATE STATUS
 # =========================================================
-# ... (Giữ nguyên các hàm safe_update_status và try_update_youtube_id) ...
 def safe_update_status(ws, row_idx, col_idx, status):
     try:
         if not ws: return
@@ -70,7 +69,8 @@ def process_long_video(data, task_meta):
     col_idx = task_meta.get('col_idx')
     ws = task_meta.get('worksheet')
 
-    eid = data.get('ID')
+    # Lấy ID và ép kiểu sang string (Phòng ngừa)
+    eid = str(data.get('ID'))
     name = data.get('Name')
 
     logger.info(f"=========================================================")
@@ -104,6 +104,7 @@ def process_long_video(data, task_meta):
              if generate_character_image:
                 try:
                     logger.info(f"   (CACHE MISS): Gọi DALL-E tạo mới: {name}...")
+                    # Truyền ID đã là string
                     dalle_char_path = generate_character_image(name, raw_img_path) 
                 except Exception as e:
                     logger.error(f"⚠️ Lỗi tạo ảnh AI: {e}")
@@ -178,7 +179,8 @@ def process_shorts(data, task_meta):
     col_idx = task_meta.get('col_idx')
     ws = task_meta.get('worksheet')
 
-    eid = data.get('ID')
+    # Lấy ID và ép kiểu sang string (Phòng ngừa)
+    eid = str(data.get('ID'))
     name = data.get('Name')
     
     logger.info(f"---------------------------------------------------------")
@@ -271,18 +273,20 @@ def main():
     data = task["data"]
     task_meta = {"row_idx": task["row_idx"], "col_idx": task["col_idx"], "worksheet": task["worksheet"]}
     
-    # Lấy text_hash để dọn dẹp
+    # FIX LỖI: ÉP KIỂU ID SANG CHUỖI VÀ DÙNG BIẾN NÀY CHO CLEANUP
+    episode_id = str(data.get('ID')) 
     text_hash = data.get("text_hash") 
 
-    logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={data.get('ID')} – {data.get('Name')}")
+    logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={episode_id} – {data.get('Name')}")
     
+    # Truyền dữ liệu (data) gốc vào hàm process
     long_ok = process_long_video(data, task_meta)
     sleep(10)
     short_ok = process_shorts(data, task_meta)
 
-    # ⚠️ BƯỚC MỚI: DỌN DẸP
-    if long_ok or short_ok: # Chỉ dọn dẹp nếu ít nhất 1 video được tạo thành công
-        cleanup_temp_files(data.get('ID'), text_hash)
+    # ⚠️ GỌI HÀM DỌN DẸP VỚI ID ĐÃ ÉP KIỂU
+    if long_ok or short_ok: 
+        cleanup_temp_files(episode_id, text_hash)
         
     if long_ok and short_ok: logger.info("🎉 FULL SUCCESS!")
 
