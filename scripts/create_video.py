@@ -6,23 +6,28 @@ import os
 import numpy as np
 import math
 from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
-import PIL.Image # Cần import đầy đủ để fix lỗi Pillow/MoviePy
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
+import PIL.Image # <-- PHẢI CÓ DÒNG NÀY ĐỂ FIX LỖI 
+# FIX LỖI ANTIALIAS
 
 # --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY (ROBUST FIX) ---
+# FIX Lỗi: AttributeError: module 'PIL.Image' has no attribute 'ANTIALIAS'
+# Lỗi này xuất hiện vì MoviePy 1.0.3 gọi Image.ANTIALIAS, đã bị loại bỏ trong Pillow mới.
 if not hasattr(PIL.Image, 'ANTIALIAS'):
+    # Kiểm tra Resampling.LANCZOS (Pillow 10+)
     if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
         PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    # Fallback cho các phiên bản cũ hơn
     elif hasattr(PIL.Image, 'LANCZOS'):
         PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 # ------------------------------------------------------
+
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip,
     CompositeVideoClip, VideoClip, TextClip, concatenate_videoclips,
     vfx
 )
 from utils import get_path
-
 logger = logging.getLogger(__name__)
 
 # --- CẤU HÌNH ĐỘ PHÂN GIẢI ---
