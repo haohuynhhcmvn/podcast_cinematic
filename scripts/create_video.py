@@ -30,13 +30,13 @@ OUTPUT_HEIGHT = 720
 
 
 # ============================================================
-# 🎨 HÀM 1: XỬ LÝ ẢNH NHÂN VẬT (BLEND MODE: SOFT MIX)
+# 🎨 HÀM 1: XỬ LÝ ẢNH NHÂN VẬT (BLEND MODE: DOUBLE EXPOSURE)
 # ============================================================
 def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Tạo ảnh nhân vật Full Size, nhưng giảm Opacity để hòa trộn (Mix) vào nền.
+    Tạo ảnh nhân vật Full Size, giảm Opacity mạnh (khoảng 70%) để hòa trộn (Mix) vào nền.
     """
-    logger.info("   (LOG-BG): Bắt đầu xử lý ảnh nhân vật (Blending Mix)...")
+    logger.info("   (LOG-BG): Bắt đầu xử lý ảnh nhân vật (Double Exposure Mix)...")
     final_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     
     if char_path and os.path.exists(char_path):
@@ -54,18 +54,17 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
             # 1. Lấy hình dáng gốc (Alpha channel)
             original_alpha = char_img.getchannel("A")
             
-            # 2. Co vùng hiển thị vào trong 20px (để viền không bị sắc)
-            shrink_radius = 20
+            # 2. Co vùng hiển thị vào trong (tăng từ 20px -> 25px)
+            shrink_radius = 25
             eroded_mask = original_alpha.filter(ImageFilter.MinFilter(shrink_radius))
             
-            # 3. Làm mềm biên cực mạnh (30px) để viền tan vào nền
-            blur_radius = 30
+            # 3. Làm mềm biên cực mạnh (tăng từ 30px -> 35px)
+            blur_radius = 35
             soft_edge_mask = eroded_mask.filter(ImageFilter.GaussianBlur(blur_radius))
             
-            # 4. [KEY] GIẢM ĐỘ ĐẬM TOÀN THÂN (GLOBAL OPACITY)
-            # Thay vì để nhân vật đặc 100% (255), ta giảm xuống còn 90% (230).
-            # Điều này giúp chi tiết của nền tĩnh (gạch, cây, vân giấy...) xuyên qua nhân vật.
-            blend_opacity = 230 
+            # 4. [KEY FIX] GIẢM ĐỘ ĐẬM TOÀN THÂN (GLOBAL OPACITY)
+            # Giảm từ 230 xuống 190 (tương đương 75% độ đậm) để nền TĨNH có thể xuyên qua rõ rệt.
+            blend_opacity = 190 
             opacity_layer = Image.new("L", soft_edge_mask.size, blend_opacity)
             
             # Kết hợp Soft Edge + Global Opacity
@@ -95,10 +94,7 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
 # ============================================================
 def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     """
-    Cấu trúc Layer:
-    1. Ảnh tĩnh (Rõ nét 100% - Texture nền).
-    2. Nhân vật (Rõ 90% - Để texture nền thấm qua).
-    3. Video Overlay (Mờ 35% - Sương khói phủ lên cả hai).
+    Cấu trúc Layer: Ảnh tĩnh (Rõ) -> Nhân vật (Blend) -> Video Overlay (Mờ).
     """
     logger.info("   (LOG-BG): Bắt đầu phối cảnh (Cinematic Layering)...")
     try:
@@ -109,22 +105,20 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             img_clip = ImageClip(static_bg_path).set_duration(duration)
             img_clip = img_clip.resize(height=height)
             img_clip = img_clip.crop(x_center=img_clip.w/2, y_center=img_clip.h/2, width=width, height=height)
-            
-            # Nền tĩnh phải rõ nhất để làm chỗ dựa cho nhân vật
-            img_clip = img_clip.set_opacity(1.0)
+            img_clip = img_clip.set_opacity(1.0) # Rõ 100%
             layers_to_composite.append(img_clip)
+            logger.info("   (LOG-BG): ✅ [Lớp 1] Ảnh nền tĩnh (Gốc).")
 
-        # --- LAYER 2: NHÂN VẬT (GIỮA) ---
+        # --- LAYER 2: NHÂN VẬT (GIỮA - ĐÃ BLEND) ---
         if os.path.exists(char_overlay_path):
             char_clip = ImageClip(char_overlay_path).set_duration(duration)
-            # (Đã được xử lý trong suốt 90% ở Hàm 1 nên ở đây để nguyên)
             layers_to_composite.append(char_clip)
+            logger.info("   (LOG-BG): ✅ [Lớp 2] Nhân vật (Đã Blend).")
 
         # --- LAYER 3: VIDEO CHUYỂN ĐỘNG (TRÊN CÙNG) ---
         try:
             temp_clip = VideoFileClip(video_path)
             
-            # Loop video
             if temp_clip.duration < duration:
                 num_loops = math.ceil(duration / temp_clip.duration)
                 looped_clips = [temp_clip] * num_loops
@@ -132,16 +126,15 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             else:
                 final_video = temp_clip
             
-            # Cắt & Resize
             video_layer = final_video.subclip(0, duration)
             video_layer = video_layer.resize(height=height) 
             video_layer = video_layer.crop(x_center=video_layer.w/2, y_center=video_layer.h/2, width=width, height=height)
             
-            # Opacity 35% + Tăng sáng 1.1 -> Hiệu ứng sương/bụi bay
+            # Opacity 35% + Tăng sáng 1.1 (Hiệu ứng sương/bụi bay bắt mắt)
             video_layer = video_layer.set_opacity(0.35).fx(vfx.colorx, factor=1.1)
 
             layers_to_composite.append(video_layer)
-            logger.info("   (LOG-BG): ✅ Video Overlay (Mờ ảo) đã phủ lên.")
+            logger.info("   (LOG-BG): ✅ [Lớp 3] Video Overlay (Mờ ảo).")
             
         except Exception as e:
             logger.error(f"   (LOG-BG): ❌ Lỗi video overlay: {e}")
@@ -197,7 +190,7 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
             amp = envelope[frame_idx]
             mask_frame = np.zeros((calc_h, calc_w), dtype=np.float32)
             
-            # Bán kính lớn hơn để bao quanh nhân vật
+            # Bán kính lớn hơn
             base_radius = 40 + amp * 60 
             
             for i in range(waves):
@@ -207,7 +200,7 @@ def make_circular_waveform(audio_path, duration, width=OUTPUT_WIDTH, height=OUTP
                 opacity = max(0.0, 1.0 - i * 0.12)
                 if opacity <= 0: continue
                 
-                # Nét rất mảnh (0.5) để tinh tế
+                # Nét rất mảnh (0.3)
                 ring_mask = (dist_matrix >= radius - 0.3) & (dist_matrix <= radius + 0.3)
                 mask_frame[ring_mask] = opacity
             return mask_frame
