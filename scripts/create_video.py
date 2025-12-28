@@ -1,16 +1,14 @@
 # === scripts/create_video.py ===
-# PHIÊN BẢN NÂNG CẤP – PHASE B + B2
-# - Waveform pre-render + cache
-# - Cache static background image
-# - Giảm CPU / RAM / CI timeout
-# - Giữ nguyên cinematic output
+# PHIÊN BẢN PRODUCTION – NO WAVEFORM
+# - Bỏ waveform (giảm CPU/RAM, tăng ổn định)
+# - Cache static background image (B2)
+# - Giữ cinematic output
+# - CI-safe, scale tốt
 
 import logging
 import os
-import math
 import hashlib
 import numpy as np
-from pydub import AudioSegment
 
 from PIL import Image, ImageFilter, ImageChops
 import PIL.Image
@@ -29,12 +27,11 @@ from moviepy.editor import (
     ImageClip,
     ColorClip,
     CompositeVideoClip,
-    VideoClip,
     TextClip,
     vfx
 )
 
-from utils import get_path, file_md5
+from utils import get_path
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +44,7 @@ OUTPUT_HEIGHT = 720
 def get_cached_background_image(bg_image_path, width, height):
     """
     Cache background image sau resize để tái sử dụng.
-    NON-BREAKING – không đổi output.
+    NON-BREAKING – không đổi cinematic output.
     """
     cache_dir = get_path("assets", "temp", "bg_cache")
     os.makedirs(cache_dir, exist_ok=True)
@@ -110,7 +107,7 @@ def make_hybrid_video_background(video_path, bg_image_path, char_overlay_path, d
     try:
         layers = []
 
-        # --- STATIC IMAGE BACKGROUND (B2 CACHE) ---
+        # --- STATIC IMAGE BACKGROUND (CACHED) ---
         if bg_image_path and os.path.exists(bg_image_path):
             cached_bg = get_cached_background_image(
                 bg_image_path,
@@ -154,82 +151,22 @@ def make_hybrid_video_background(video_path, bg_image_path, char_overlay_path, d
                 duration=duration
             )
 
-        return CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_duration(duration)
+        return CompositeVideoClip(
+            layers,
+            size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)
+        ).set_duration(duration)
 
     except Exception as e:
         logger.error(f"❌ Background error: {e}", exc_info=True)
-        return ColorClip((OUTPUT_WIDTH, OUTPUT_HEIGHT), (15, 15, 15), duration=duration)
+        return ColorClip(
+            (OUTPUT_WIDTH, OUTPUT_HEIGHT),
+            (15, 15, 15),
+            duration=duration
+        )
 
 
 # ============================================================
-# 🌊 3. PRE-RENDER WAVEFORM VIDEO (CACHEABLE)
-# ============================================================
-def render_waveform_video(audio_path, duration, output_path):
-    fps = 20
-    logger.info("   (WF): Rendering waveform (cached)...")
-
-    audio = AudioSegment.from_file(audio_path)
-    samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-
-    if audio.channels == 2:
-        samples = samples.reshape((-1, 2)).mean(axis=1)
-
-    frames = int(duration * fps) + 1
-    step = max(1, len(samples) // frames)
-
-    envelope = [
-        np.mean(np.abs(samples[i:i + step]))
-        for i in range(0, len(samples), step)
-    ][:frames]
-
-    envelope = np.array(envelope)
-    envelope /= np.max(envelope) if np.max(envelope) > 0 else 1
-
-    size = 500
-    waves = 8
-    center = size // 2
-    yy, xx = np.ogrid[:size, :size]
-    dist = np.sqrt((xx - center) ** 2 + (yy - center) ** 2)
-
-    def make_frame(t):
-        idx = min(int(t * fps), len(envelope) - 1)
-        amp = envelope[idx]
-
-        frame = np.zeros((size, size, 3), dtype=np.uint8)
-        base_radius = 40 + amp * 60
-
-        for i in range(waves):
-            r = base_radius + i * 25
-            opacity = max(0, 1 - i * 0.12)
-            if opacity <= 0:
-                continue
-            ring = (dist >= r - 0.3) & (dist <= r + 0.3)
-            frame[ring] = (255, 215, 0)
-
-        return frame
-
-    clip = (
-        VideoClip(make_frame, duration=duration)
-        .set_fps(fps)
-        .resize((OUTPUT_WIDTH, OUTPUT_HEIGHT))
-    )
-
-    clip.write_videofile(
-        output_path,
-        fps=fps,
-        codec="libx264",
-        preset="ultrafast",
-        threads=2,
-        audio=False,
-        logger=None
-    )
-
-    clip.close()
-    audio.close()
-
-
-# ============================================================
-# ✨ 4. GLOW LAYER
+# ✨ 3. GLOW LAYER (NHẸ – TẠO CHIỀU SÂU)
 # ============================================================
 def make_glow_layer(duration):
     low_w, low_h = 320, 180
@@ -255,7 +192,7 @@ def make_glow_layer(duration):
 
 
 # ============================================================
-# 🎬 5. MAIN PIPELINE
+# 🎬 4. MAIN PIPELINE
 # ============================================================
 def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
     try:
@@ -263,30 +200,22 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         duration = audio.duration
         logger.info(f"Audio duration: {duration:.2f}s")
 
+        # --- STATIC ASSETS ---
         char_overlay = create_static_overlay_image(custom_image_path)
 
         bg_video = get_path("assets", "video", "long_background.mp4")
         bg_image = get_path("assets", "images", "default_background.png")
 
         background = make_hybrid_video_background(
-            bg_video, bg_image, char_overlay, duration
+            bg_video,
+            bg_image,
+            char_overlay,
+            duration
         )
 
         glow = make_glow_layer(duration)
 
-        audio_hash = file_md5(audio_path)
-        waveform_path = get_path("assets", "temp", f"waveform_{audio_hash}.mp4")
-        os.makedirs(os.path.dirname(waveform_path), exist_ok=True)
-
-        if not os.path.exists(waveform_path):
-            render_waveform_video(audio_path, duration, waveform_path)
-
-        waveform = (
-            VideoFileClip(waveform_path)
-            .set_duration(duration)
-            .set_position(("center", 50))
-        )
-
+        # --- TITLE ---
         title_layer = None
         if title_text:
             try:
@@ -308,6 +237,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             except Exception as e:
                 logger.warning(f"Title error: {e}")
 
+        # --- LOGO ---
         logo_layer = None
         logo_path = get_path("assets", "images", "channel_logo.png")
         if os.path.exists(logo_path):
@@ -319,14 +249,17 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
                 .set_duration(duration)
             )
 
-        layers = [background, glow, waveform]
+        # --- COMPOSE ---
+        layers = [background, glow]
         if title_layer:
             layers.append(title_layer)
         if logo_layer:
             layers.append(logo_layer)
 
-        final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT))
-        final = final.set_audio(audio)
+        final = CompositeVideoClip(
+            layers,
+            size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)
+        ).set_audio(audio)
 
         out_path = get_path("outputs", "video", f"{episode_id}_video.mp4")
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -343,11 +276,10 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             logger="bar"
         )
 
-        # ===== CLEANUP =====
+        # --- CLEANUP ---
         final.close()
         audio.close()
         background.close()
-        waveform.close()
         glow.close()
         if title_layer:
             title_layer.close()
