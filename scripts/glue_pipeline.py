@@ -1,12 +1,11 @@
 # === scripts/glue_pipeline.py ===
-
 import logging
 import sys
 import os
 from time import sleep
 from datetime import datetime, timedelta, timezone
 
-# ensure project scripts folder is on path
+# Đảm bảo project root nằm trong path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
@@ -14,8 +13,7 @@ if project_root not in sys.path:
 
 from utils import setup_environment, get_path, cleanup_temp_files 
 from fetch_content import fetch_content
-# ĐỔI generate_short_script THÀNH generate_5_short_scripts (Cần cập nhật file generate_script.py tương ứng)
-from generate_script import generate_long_script, generate_5_short_scripts 
+from generate_script import generate_long_script, generate_5_short_scripts
 from auto_music_sfx import auto_music_sfx
 from create_tts import create_tts
 from create_video import create_video
@@ -33,135 +31,121 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ... (Giữ nguyên các hàm safe_update_status và try_update_youtube_id) ...
-
 # =========================================================
-#  SHORTS BATCH (TÁCH THÀNH 5 PHẦN)
+#  HÀM XỬ LÝ VIDEO DÀI (LONG VIDEO)
 # =========================================================
-def process_shorts_batch(data, task_meta, long_script_text, long_video_id):
-    """
-    Xử lý tạo 5 Shorts từ kịch bản dài và đặt lịch đăng cách nhau 4 giờ.
-    """
+def process_long_video(data, task_meta):
     row_idx = task_meta.get('row_idx')
     col_idx = task_meta.get('col_idx')
     ws = task_meta.get('worksheet')
     eid = str(data.get('ID'))
     name = data.get('Name')
 
-    logger.info(f"---------------------------------------------------------")
-    logger.info(f"🎬 BẮT ĐẦU [SHORTS BATCH]: Tách 5 phần cho ID={eid}")
-    logger.info(f"---------------------------------------------------------")
-
     try:
-        # 1. SCRIPT - Trích xuất 5 kịch bản
-        # Cần truyền long_script_text để AI cắt nhỏ chính xác
-        short_paths = generate_5_short_scripts(data, long_script_text)
-        if not short_paths or len(short_paths) == 0:
-            logger.error("❌ Lỗi tạo danh sách Shorts Script.")
-            return False
+        logger.info(f"🎬 BẮT ĐẦU XỬ LÝ VIDEO DÀI: {name}")
+        
+        # 1. Tạo Script & Meta
+        script_res = generate_long_script(data)
+        if not script_res: return None, None
 
-        # Đặt lịch bắt đầu sau 2h, mỗi clip cách nhau 4h
-        start_publish_time = datetime.now(timezone.utc) + timedelta(hours=2)
-        success_count = 0
+        script_path = script_res["script_path"]
+        long_text = script_res["content"]
+        meta = script_res["metadata"]
 
-        for i, s_path in enumerate(short_paths, 1):
-            logger.info(f"🚀 Đang xử lý Short {i}/5...")
-            
-            # 2. TTS cho từng phần (Thêm tham số short_index=i để tránh ghi đè file audio)
-            # create_tts cần được cập nhật để nhận tham số này
-            with open(s_path, "r", encoding="utf-8") as f:
-                current_script_text = f.read()
+        # 2. Ảnh AI & Thumbnail
+        raw_img = get_path("assets", "temp", f"{eid}_raw_ai.png")
+        if generate_character_image and not os.path.exists(raw_img):
+            generate_character_image(name, raw_img)
+        
+        thumb_path = None
+        if add_text_to_thumbnail and os.path.exists(raw_img):
+            thumb_out = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
+            thumb_path = add_text_to_thumbnail(raw_img, meta.get("Title", name), thumb_out)
 
-            tts = create_tts(s_path, eid, "short", short_index=i) 
-            if not tts: continue
+        # 3. TTS & Render
+        tts_path = create_tts(long_text, eid, mode="long")
+        # Giả định create_video sử dụng ảnh AI làm nền
+        video_path = create_video(tts_path, name, eid, script_path, custom_image_path=raw_img)
 
-            # 3. ẢNH AI (Dùng chung Cache từ video Long)
-            dalle_char_path = get_path("assets", "temp", f"{eid}_raw_ai.png")
-            base_bg_path = get_path('assets', 'images', 'default_background_shorts.png')
-
-            # 4. RENDER SHORTS
-            # Truyền thêm index i để tạo file ID_short_1.mp4, ID_short_2.mp4...
-            shorts_video_path = create_shorts(
-                tts, name, eid, 
-                name, 
-                s_path, 
-                custom_image_path=dalle_char_path,
-                base_bg_path=base_bg_path,
-                short_index=i 
-            )
-
-            if not shorts_video_path: continue
-
-            # 5. UPLOAD & SCHEDULE
-            # Tính toán giờ đăng ISO chuẩn YouTube
-            publish_at = (start_publish_time + timedelta(hours=(i-1)*4)).isoformat().replace('+00:00', 'Z')
-            
-            upload_data = {
-                "Title": f"{name} Secrets | Part {i} #Shorts",
-                "Summary": f"Watch full story: https://youtu.be/{long_video_id}",
-                "Tags": ["shorts", "history", "mystery"]
-            }
-            
-            # upload_video cần được cập nhật để nhận tham số publish_at
-            res = upload_video(shorts_video_path, upload_data, publish_at=publish_at)
-            
-            if res and res != 'FAILED':
-                success_count += 1
-                # Dọn dẹp ngay file video/audio ngắn để tránh đầy ổ cứng
-                if os.path.exists(shorts_video_path): os.remove(shorts_video_path)
-                if os.path.exists(tts): os.remove(tts)
-
-        if success_count > 0:
-            safe_update_status(ws, row_idx, col_idx, f'UPLOADED_{success_count}_SHORTS')
-            return True
-        return False
+        # 4. Upload
+        upload_res = upload_video(video_path, meta, thumbnail_path=thumb_path)
+        long_id = upload_res.get('video_id') if isinstance(upload_res, dict) else None
+        
+        return long_id, long_text
 
     except Exception as e:
-        logger.error(f"❌ ERROR SHORTS BATCH: {e}", exc_info=True)
-        return False
+        logger.error(f"❌ Lỗi process_long_video: {e}")
+        return None, None
 
 # =========================================================
-#  MAIN PIPELINE (ĐÃ CẬP NHẬT LUỒNG CHẠY)
+#  HÀM XỬ LÝ 5 SHORTS (BATCH)
+# =========================================================
+def process_shorts_batch(data, long_script_text, long_video_id):
+    eid = str(data.get('ID'))
+    name = data.get('Name')
+    
+    # 1. Tách 5 kịch bản
+    short_paths = generate_5_short_scripts(data, long_script_text)
+    if not short_paths: return False
+
+    # Hẹn giờ: bắt đầu sau 2h, mỗi clip cách nhau 4h
+    start_time = datetime.now(timezone.utc) + timedelta(hours=2)
+
+    for i, s_path in enumerate(short_paths, 1):
+        try:
+            logger.info(f"🎬 Xử lý Short {i}/5...")
+            with open(s_path, "r", encoding="utf-8") as f:
+                s_text = f.read()
+
+            s_audio = create_tts(s_text, eid, mode="short", short_index=i)
+            s_video = create_shorts(s_audio, name, eid, s_path, short_index=i)
+
+            publish_at = (start_time + timedelta(hours=(i-1)*4)).isoformat().replace('+00:00', 'Z')
+            
+            meta = {
+                "Title": f"{name} Secrets | Part {i} #Shorts",
+                "Description": f"Xem bản đầy đủ tại: https://youtu.be/{long_video_id}",
+                "Tags": ["history", "shorts"]
+            }
+            upload_video(s_video, meta, publish_at=publish_at)
+            
+            # Cleanup từng phần để tiết kiệm RAM/Disk
+            if os.path.exists(s_audio): os.remove(s_audio)
+            if os.path.exists(s_video): os.remove(s_video)
+        except Exception as e:
+            logger.error(f"❌ Lỗi tại Short {i}: {e}")
+    return True
+
+# =========================================================
+#  MAIN EXECUTION
 # =========================================================
 def main():
     setup_environment()
     task = fetch_content()
-    if not task:
-        logger.info("Không có task pending.")
-        return
+    if not task: return
 
     data = task["data"]
     task_meta = {"row_idx": task["row_idx"], "col_idx": task["col_idx"], "worksheet": task["worksheet"]}
-    episode_id = str(data.get('ID')) 
-    text_hash = data.get("text_hash") 
+    episode_id = str(data.get('ID'))
+    text_hash = data.get("text_hash")
 
     logger.info(f"▶️ ĐANG XỬ LÝ TASK ID={episode_id} – {data.get('Name')}")
-    
-    # 1. Chạy Video Long như bình thường (Giữ nguyên)
-    # Lấy thêm long_res để có text kịch bản dài
-    long_res = generate_long_script(data) 
-    if long_res:
-        long_ok = process_long_video(data, task_meta) # Hàm này bạn đã có sẵn
-        
-        # 2. Sau khi Long Video xong, lấy ID và Script để làm 5 Shorts
-        # Giả định upload_video trả về video_id trong dict
-        long_video_id = "CHECK_CHANNEL" # Default
-        
-        # Tách 5 Shorts
-        long_script_text = ""
-        with open(long_res["script_path"], "r", encoding="utf-8") as f:
-            long_script_text = f.read()
 
-        # Chạy batch shorts thay vì 1 short đơn lẻ
-        short_ok = process_shorts_batch(data, task_meta, long_script_text, long_video_id)
+    # 1. Xử lý Video Dài
+    long_video_id, long_text = process_long_video(data, task_meta)
 
-        # 3. Dọn dẹp
-        if long_ok or short_ok: 
-            cleanup_temp_files(episode_id, text_hash)
-            
-        if long_ok and short_ok: logger.info("🎉 FULL SUCCESS (1 LONG + 5 SHORTS)!")
+    # 2. Xử lý Shorts (Chỉ chạy nếu Video dài upload thành công)
+    if long_video_id and long_text:
+        process_shorts_batch(data, long_text, long_video_id)
+        # Cập nhật trạng thái thành công cuối cùng
+        if task_meta['worksheet']:
+            task_meta['worksheet'].update_cell(task_meta['row_idx'], task_meta['col_idx'], 'SUCCESS_ALL')
     else:
-        logger.error("❌ Không tạo được kịch bản gốc.")
+        if task_meta['worksheet']:
+            task_meta['worksheet'].update_cell(task_meta['row_idx'], task_meta['col_idx'], 'FAILED')
+
+    # 3. Dọn dẹp
+    cleanup_temp_files(episode_id, text_hash)
 
 if __name__ == "__main__":
     main()
