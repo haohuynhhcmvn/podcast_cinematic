@@ -12,7 +12,8 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip, 
-    TextClip, CompositeVideoClip, CompositeAudioClip, concatenate_audioclips
+    TextClip, CompositeVideoClip, CompositeAudioClip, 
+    concatenate_audioclips, vfx  # <--- ĐÃ THÊM vfx VÀO ĐÂY ĐỂ FIX LỖI
 )
 from utils import get_path
 
@@ -76,14 +77,14 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
                 draw_ov.line([(0,y), (width,y)], fill=(0,0,0,int(180 * ((y - height*0.7)/(height*0.3)))))
         
         final = Image.alpha_composite(base_img, overlay).convert("RGB")
-        final.save(output_path, quality=85) # Giảm nhẹ quality để lưu nhanh hơn
+        final.save(output_path, quality=85)
         return output_path
     except Exception as e:
         logger.error(f"❌ Shorts BG Error: {e}")
         return None
 
 # =========================================================
-# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES) - OPTIMIZED
+# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES)
 # =========================================================
 def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     if not text_content: return []
@@ -116,24 +117,32 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
         duration = min(voice.duration, MAX_DURATION) 
         voice = voice.subclip(0, duration) 
         
-        # Audio Mix
+        # Audio Mix với hiệu ứng Loop Music
         bg_music_path = get_path('assets', 'background_music', 'loop_1.mp3')
         if os.path.exists(bg_music_path):
             bg_music = AudioFileClip(bg_music_path).volumex(0.1) 
+            # Sử dụng vfx.loop (Đã fix lỗi import)
             bg_music_looped = bg_music.fx(vfx.loop, duration=duration)
             final_audio = CompositeAudioClip([bg_music_looped, voice])
         else:
             final_audio = voice
 
-        # Background
+        # Background xử lý
         hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
         final_bg = process_hybrid_shorts_bg(custom_image_path, base_bg_path, hybrid_bg_path)
-        clip = ImageClip(final_bg if final_bg else base_bg_path).set_duration(duration)
-        if clip.size != SHORTS_SIZE: clip = clip.resize(height=SHORTS_HEIGHT).crop(x_center=clip.w/2, width=SHORTS_WIDTH)
+        
+        bg_to_use = final_bg if final_bg else base_bg_path
+        if bg_to_use and os.path.exists(bg_to_use):
+            clip = ImageClip(bg_to_use).set_duration(duration)
+        else:
+            clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
+
+        if clip.size != SHORTS_SIZE: 
+            clip = clip.resize(height=SHORTS_HEIGHT).crop(x_center=clip.w/2, width=SHORTS_WIDTH)
 
         elements = [clip]
 
-        # Hook & Subtitles
+        # Hook Title
         if hook_title:
             try:
                 hook = TextClip(
@@ -143,6 +152,7 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
                 elements.append(hook)
             except: pass
 
+        # Subtitles
         if script_path:
             with open(script_path, "r", encoding="utf-8") as f:
                 subs = generate_subtitle_clips(f.read(), duration)
@@ -164,9 +174,11 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
             logger=None
         )
         
-        # Cleanup
+        # Cleanup giải phóng RAM
         final.close()
         voice.close()
+        if os.path.exists(bg_music_path): bg_music.close()
+        
         return out_path
     except Exception as e:
         logger.error(f"❌ Shorts Error: {e}")
