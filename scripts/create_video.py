@@ -1,12 +1,14 @@
 # === scripts/create_video.py ===
-# PHIÊN BẢN NÂNG CẤP – PHASE B
-# - Pre-render waveform → cache mp4
+# PHIÊN BẢN NÂNG CẤP – PHASE B + B2
+# - Waveform pre-render + cache
+# - Cache static background image
 # - Giảm CPU / RAM / CI timeout
 # - Giữ nguyên cinematic output
 
 import logging
 import os
 import math
+import hashlib
 import numpy as np
 from pydub import AudioSegment
 
@@ -38,6 +40,33 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_WIDTH = 1280
 OUTPUT_HEIGHT = 720
+
+# ============================================================
+# 🧠 B2. CACHE STATIC BACKGROUND IMAGE
+# ============================================================
+def get_cached_background_image(bg_image_path, width, height):
+    """
+    Cache background image sau resize để tái sử dụng.
+    NON-BREAKING – không đổi output.
+    """
+    cache_dir = get_path("assets", "temp", "bg_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    key_raw = f"{bg_image_path}_{width}x{height}"
+    cache_key = hashlib.md5(key_raw.encode()).hexdigest()
+    cache_path = os.path.join(cache_dir, f"bg_{cache_key}.png")
+
+    if os.path.exists(cache_path):
+        logger.info("🎯 BG cache hit")
+        return cache_path
+
+    logger.info("🆕 Creating BG cache")
+    img = Image.open(bg_image_path).convert("RGB")
+    img = img.resize((width, height), Image.LANCZOS)
+    img.save(cache_path, "PNG")
+
+    return cache_path
+
 
 # ============================================================
 # 🎨 1. CREATE CHARACTER OVERLAY (DOUBLE EXPOSURE)
@@ -81,25 +110,27 @@ def make_hybrid_video_background(video_path, bg_image_path, char_overlay_path, d
     try:
         layers = []
 
+        # --- STATIC IMAGE BACKGROUND (B2 CACHE) ---
         if bg_image_path and os.path.exists(bg_image_path):
+            cached_bg = get_cached_background_image(
+                bg_image_path,
+                OUTPUT_WIDTH,
+                OUTPUT_HEIGHT
+            )
+
             bg = (
-                ImageClip(bg_image_path)
+                ImageClip(cached_bg)
                 .set_duration(duration)
-                .resize(height=OUTPUT_HEIGHT)
-                .crop(
-                    x_center=OUTPUT_WIDTH / 2,
-                    y_center=OUTPUT_HEIGHT / 2,
-                    width=OUTPUT_WIDTH,
-                    height=OUTPUT_HEIGHT
-                )
                 .fx(vfx.colorx, 0.9)
                 .fx(vfx.lum_contrast, contrast=0.2)
             )
             layers.append(bg)
 
+        # --- CHARACTER OVERLAY ---
         if char_overlay_path and os.path.exists(char_overlay_path):
             layers.append(ImageClip(char_overlay_path).set_duration(duration))
 
+        # --- VIDEO OVERLAY ---
         if video_path and os.path.exists(video_path):
             overlay = VideoFileClip(video_path)
             overlay = (
