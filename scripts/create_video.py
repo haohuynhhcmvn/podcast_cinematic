@@ -121,7 +121,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             preset="ultrafast",     # Nhanh nhất
             threads=4,              # Tận dụng CPU đa nhân
             ffmpeg_params=["-crf", "32"], # Nén mạnh để giảm tải ổ đĩa và upload nhanh
-            logger=None
+            logger='bar'
         )
         
         final_video.close()
