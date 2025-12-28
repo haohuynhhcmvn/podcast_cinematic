@@ -314,7 +314,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
 
         # - Lớp Hiệu ứng (Glow & Waveform)
         glow_layer = make_glow_layer(duration)
-        waveform_layer = make_circular_waveform(audio_path, duration)
+        #waveform_layer = make_circular_waveform(audio_path, duration)
         
         # --- [FIX LỖI QUAN TRỌNG: i8 & AXES DON'T MATCH] ---
         
@@ -327,7 +327,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
             return frame
         
         # Áp dụng hàm ép kiểu cho waveform
-        waveform_layer = waveform_layer.fl(force_frame_uint8)
+        #waveform_layer = waveform_layer.fl(force_frame_uint8)
         
         # 2. VÔ HIỆU HÓA XOAY (DISABLED ROTATION)
         # Nguyên nhân lỗi "axes don't match array": Xoay layer chứa Mask 2D gây xung đột trục.
@@ -335,7 +335,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         # waveform_layer = waveform_layer.fx(vfx.rotate, angle=lambda t: t * 1) <--- ĐÃ TẮT
         
         # Đặt vị trí sóng nhạc ở giữa màn hình
-        waveform_layer = waveform_layer.set_position(("center", 50)) 
+        #waveform_layer = waveform_layer.set_position(("center", 50)) 
 
         # Bước 3: Thêm Tiêu đề (Text Overlay)
         title_layer = None
@@ -377,7 +377,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         # - threads=2: Dùng 2 nhân CPU (phù hợp máy ảo miễn phí).
         final_video.write_videofile(
             output_path, fps=20, codec="libx264", audio_codec="aac", 
-            preset="ultrafast", threads=2, ffmpeg_params=["-crf", "28"], logger='bar' 
+            preset="ultrafast", threads=4, ffmpeg_params=["-crf", "28"], logger='bar' 
         )
         logger.info(f"✅ RENDER SUCCESS!")
         return output_path
