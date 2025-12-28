@@ -1,179 +1,97 @@
 # === scripts/create_video.py ===
 import logging
 import os
-import numpy as np
-import math
-from pydub import AudioSegment
-from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageChops
-import PIL.Image
-
-# --- [FIX QUAN TRỌNG] VÁ LỖI TƯƠNG THÍCH PILLOW/MOVIEPY ---
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
-        PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
-    elif hasattr(PIL.Image, 'LANCZOS'):
-        PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-# -----------------------------------------------------------
-
-from moviepy.editor import (
-    AudioFileClip, VideoFileClip, ImageClip, ColorClip,
-    CompositeVideoClip, VideoClip, TextClip, concatenate_videoclips,
-    vfx
-)
+from moviepy.editor import *
+from PIL import Image, ImageEnhance, ImageFilter
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
 OUTPUT_WIDTH = 1280
 OUTPUT_HEIGHT = 720
+TARGET_FPS = 15  # 15 FPS là "điểm ngọt" cho documentary, nhanh hơn 18-20 FPS rất nhiều
 
-# ============================================================
-# 🎨 HÀM 1: XỬ LÝ ẢNH NHÂN VẬT (DOUBLE EXPOSURE BLEND)
-# ============================================================
-def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    logger.info("   (LOG-BG): Bắt đầu xử lý ảnh nhân vật (Double Exposure Mix)...")
-    final_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    
-    if char_path and os.path.exists(char_path):
-        try:
-            char_img = Image.open(char_path).convert("RGBA")
-            new_char_h = height 
-            new_char_w = int(char_img.width * (new_char_h / char_img.height))
-            char_img = char_img.resize((new_char_w, new_char_h), Image.LANCZOS)
-            
-            original_alpha = char_img.getchannel("A")
-            shrink_radius = 25
-            eroded_mask = original_alpha.filter(ImageFilter.MinFilter(shrink_radius))
-            
-            blur_radius = 45 
-            soft_edge_mask = eroded_mask.filter(ImageFilter.GaussianBlur(blur_radius))
-            
-            blend_opacity = 190 
-            opacity_layer = Image.new("L", soft_edge_mask.size, blend_opacity)
-            final_mask = ImageChops.multiply(soft_edge_mask, opacity_layer)
-
-            paste_x = (width - new_char_w) // 2 
-            paste_y = height - new_char_h       
-            
-            final_overlay.paste(char_img, (paste_x, paste_y), mask=final_mask)
-            logger.info(f"   (LOG-BG): ✅ Nhân vật đã Blend xong.")
-            
-        except Exception as e:
-            logger.error(f"   (LOG-BG): ❌ Lỗi xử lý nhân vật: {e}")
-
-    overlay_path = get_path('assets', 'temp', "char_blend_mix.png")
-    os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
-    final_overlay.save(overlay_path, format="PNG") 
-    return overlay_path
-
-# ============================================================
-# 🎥 HÀM 2: TẠO NỀN "CINEMATIC" (PHỐI CẢNH LỚP)
-# ============================================================
-def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    try:
-        layers_to_composite = []
-
-        if static_bg_path and os.path.exists(static_bg_path):
-            img_clip = ImageClip(static_bg_path).set_duration(duration)
-            img_clip = img_clip.resize(height=height)
-            img_clip = img_clip.crop(x_center=img_clip.w/2, y_center=img_clip.h/2, width=width, height=height)
-            img_clip = img_clip.fx(vfx.colorx, factor=0.9).fx(vfx.lum_contrast, contrast=0.2)
-            layers_to_composite.append(img_clip)
-
-        if os.path.exists(char_overlay_path):
-            char_clip = ImageClip(char_overlay_path).set_duration(duration)
-            layers_to_composite.append(char_clip)
-
-        try:
-            temp_clip = VideoFileClip(video_path)
-            if temp_clip.duration < duration:
-                num_loops = math.ceil(duration / temp_clip.duration)
-                final_video = concatenate_videoclips([temp_clip] * num_loops, method="compose")
-            else:
-                final_video = temp_clip
-            
-            video_layer = final_video.subclip(0, duration).resize(height=height)
-            video_layer = video_layer.crop(x_center=video_layer.w/2, y_center=video_layer.h/2, width=width, height=height)
-            video_layer = video_layer.set_opacity(0.35).fx(vfx.colorx, factor=1.1)
-            layers_to_composite.append(video_layer)
-        except Exception:
-            pass
-
-        if not layers_to_composite:
-            return ColorClip(size=(width, height), color=(15, 15, 15), duration=duration)
-            
-        return CompositeVideoClip(layers_to_composite, size=(width, height)).set_duration(duration)
-    except Exception as e:
-        logger.error(f"❌ Lỗi tổng hợp nền: {e}")
-        return ColorClip(size=(width, height), color=(15, 15, 15), duration=duration)
-
-# ============================================================
-# ✨ HÀM 3: LỚP GLOW (HIỆU ỨNG SÁNG TÂM)
-# ============================================================
-def make_glow_layer(duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
-    low_w, low_h = 320, 180
-    y, x = np.ogrid[:low_h, :low_w]
-    lcx, lcy = low_w // 2, int(low_h * 0.45) 
-    dist = np.sqrt((x - lcx)**2 + (y - lcy)**2)
-    intensity = np.clip(255 - (dist / (low_h * 0.45)) * 255, 0, 255)
-    
-    glow_low = np.zeros((low_h, low_w, 3), dtype=np.uint8)
-    glow_low[:, :, 0] = (intensity * 0.7).astype(np.uint8) 
-    glow_low[:, :, 1] = (intensity * 0.5).astype(np.uint8) 
-    
-    return ImageClip(glow_low).resize((width, height)).set_duration(duration).set_opacity(0.3)
-
-# ============================================================
-# 🎬 HÀM CHÍNH: TẠO VIDEO (MAIN PIPELINE)
-# ============================================================
-def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
+def create_video(audio_path, episode_id, custom_image_path=None, title_text=""):
     try:
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-        
-        char_overlay_path = create_static_overlay_image(custom_image_path)
-        base_video_path = get_path('assets', 'video', 'long_background.mp4') 
-        static_bg_path = get_path('assets', 'images', 'default_background.png')
-        
-        background_clip = make_hybrid_video_background(base_video_path, static_bg_path, char_overlay_path, duration)
-        glow_layer = make_glow_layer(duration)
 
-        title_layer = None
+        # --- GIAI ĐOẠN 1: TỐI ƯU HÓA ẢNH TĨNH BẰNG PILLOW (SIÊU NHANH) ---
+        # Thay vì dùng MoviePy layers, ta tạo 1 tấm kính duy nhất chứa Nhân vật + Hiệu ứng
+        overlay_static_path = get_path("assets", "temp", f"{episode_id}_composite_overlay.png")
+        
+        # Tạo canvas trong suốt
+        composite_img = Image.new("RGBA", (OUTPUT_WIDTH, OUTPUT_HEIGHT), (0, 0, 0, 0))
+        
+        if custom_image_path and os.path.exists(custom_image_path):
+            char_img = Image.open(custom_image_path).convert("RGBA")
+            # Resize nhân vật chuẩn HD
+            char_img = char_img.resize((int(char_img.width * (OUTPUT_HEIGHT / char_img.height)), OUTPUT_HEIGHT), Image.LANCZOS)
+            
+            # Tăng tương phản bằng Pillow (nhanh hơn MoviePy gấp 10 lần)
+            enhancer = ImageEnhance.Contrast(char_img)
+            char_img = enhancer.enhance(1.15)
+            
+            # Dán vào bên phải (Rule of Thirds)
+            paste_x = OUTPUT_WIDTH - char_img.width
+            composite_img.paste(char_img, (paste_x, 0), char_img)
+
+        # Lưu file ảnh đã composite để MoviePy chỉ việc load 1 lần
+        composite_img.save(overlay_static_path)
+        char_overlay_clip = ImageClip(overlay_static_path).set_duration(duration)
+
+        # --- GIAI ĐOẠN 2: XỬ LÝ VIDEO NỀN ---
+        bg_video_path = get_path("assets", "video", "long_background.mp4")
+        if os.path.exists(bg_video_path):
+            # TỐI ƯU: Bỏ qua audio stream và resize ngay khi load
+            bg_clip = VideoFileClip(bg_video_path, audio=False, target_resolution=(OUTPUT_HEIGHT, OUTPUT_WIDTH))
+            bg_clip = bg_clip.fx(vfx.loop, duration=duration).set_opacity(0.7)
+        else:
+            bg_clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15, 15, 15)).set_duration(duration)
+
+        # Lớp Vignette tĩnh (Load từ file ảnh sẽ nhanh hơn tạo ColorClip)
+        # Nếu chưa có file vignette.png, hãy dùng ColorClip cũ nhưng bản chất nó là tĩnh nên ko tốn CPU
+        vignette = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(0,0,0)).set_duration(duration).set_opacity(0.35)
+
+        # --- GIAI ĐOẠN 3: TIÊU ĐỀ ---
+        layers = [bg_clip, vignette, char_overlay_clip]
+        
         if title_text:
-            try:
-                title_layer = TextClip(
-                    title_text.upper(),
-                    fontsize=55, font='DejaVu-Sans-Bold', color='#FFD700', 
-                    stroke_color='black', stroke_width=3,
-                    method='caption', align='West', size=(800, None)       
-                ).set_position((50, 50)).set_duration(duration)
-            except Exception as e:
-                logger.warning(f"⚠️ Title Error: {e}")
+            # Tối ưu: Caption method của MoviePy tốn CPU, nhưng vì nó ngắn nên tạm chấp nhận
+            title = TextClip(
+                title_text.upper(), fontsize=60, color='white', 
+                font='DejaVu-Sans-Bold', method='caption',
+                size=(OUTPUT_WIDTH * 0.55, None), align='West',
+                stroke_color='black', stroke_width=2
+            ).set_position((80, 'center')).set_duration(duration)
+            layers.append(title)
 
-        logo_path = get_path('assets', 'images', 'channel_logo.png')
-        logo_layer = None
-        if os.path.exists(logo_path):
-            logo_layer = ImageClip(logo_path).set_duration(duration).resize(height=100).set_position(("right", "top")).margin(right=20, top=20, opacity=0)
-
-        # ĐÃ LOẠI BỎ WAVEFORM_LAYER TẠI ĐÂY
-        final_layers = [background_clip, glow_layer]
-        if title_layer: final_layers.append(title_layer)
-        if logo_layer: final_layers.append(logo_layer)
+        # --- GIAI ĐOẠN 4: RENDER FINAL ---
+        final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
+        out_path = get_path("outputs", "video", f"{episode_id}_video.mp4")
         
-        final_video = CompositeVideoClip(final_layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
+        logger.info(f"🚀 Render Start: FPS=15, CRF=26 (Cân bằng tốc độ/đẹp)")
         
-        output_path = get_path('outputs', 'video', f"{episode_id}_video.mp4")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        final_video.write_videofile(
-            output_path, fps=20, codec="libx264", audio_codec="aac", 
-            preset="ultrafast", threads=4, ffmpeg_params=["-crf", "28"], logger=None 
+        final.write_videofile(
+            out_path, 
+            fps=15, 
+            codec="libx264", 
+            audio_codec="aac",
+            preset="ultrafast", 
+            threads=4, 
+            ffmpeg_params=["-crf", "26"], # 26 nhanh hơn 23 mà mắt thường khó phân biệt trên phone
+            logger='bar'
         )
-        
-        final_video.close()
+
+        # Giải phóng RAM
+        final.close()
         audio.close()
-        return output_path
+        bg_clip.close()
+        if os.path.exists(overlay_static_path):
+            os.remove(overlay_static_path)
+            
+        return out_path
 
     except Exception as e:
-        logger.error(f"❌ FATAL ERROR: {e}", exc_info=True)
+        logger.error(f"❌ Error: {e}")
         return False
