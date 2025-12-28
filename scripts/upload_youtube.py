@@ -60,7 +60,7 @@ def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None
                 'categoryId': '22'
             },
             'status': {
-                'privacyStatus': 'public', # Để public để đăng luôn / private để chế độ riêng tư.
+                'privacyStatus': 'private', # Để public để đăng luôn / private để chế độ riêng tư.
                 'selfDeclaredMadeForKids': False
             }
         }
