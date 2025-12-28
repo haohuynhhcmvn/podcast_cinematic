@@ -1,12 +1,11 @@
-name: 🎙️ Podcast Generator - Full Pipeline (AI Background Removal Fix)
+name: 🎙️ Podcast Generator - AI Optimized Pipeline
 
 on:
-  workflow_dispatch: # Cho phép chạy thủ công
+  workflow_dispatch:
 
 jobs:
   build_and_upload_podcast:
     runs-on: ubuntu-latest
-
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -25,26 +24,24 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'requirements.txt'
 
-      # --- PHẦN CẬP NHẬT MỚI: CACHE AI MODELS ---
+      # CACHE ĐỂ KHÔNG PHẢI TẢI LẠI MODEL AI 176MB
       - name: 🧠 Cache AI Models (rembg)
         uses: actions/cache@v3
         with:
-          path: ~/.u2net # Thư mục chứa model AI của rembg
+          path: ~/.u2net
           key: ${{ runner.os }}-u2net
-          restore-keys: |
-            ${{ runner.os }}-u2net
 
-      - name: ⚙️ Cài đặt phần mềm hệ thống & AI dependencies
+      - name: ⚙️ Cài đặt hệ thống (CPU Optimized)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick libgl1 # Cần libgl1 cho rembg
+          sudo apt-get install -y ffmpeg imagemagick libgl1
           sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
-      - name: 📦 Cài đặt thư viện Python (Bao gồm rembg)
+      - name: 📦 Cài đặt thư viện AI & Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install rembg onnxruntime-gpu || pip install rembg onnxruntime # Ưu tiên GPU nếu có, không thì CPU
+          pip install rembg onnxruntime # Sử dụng bản CPU mặc định cho GitHub Actions
 
       - name: 🔑 Giải mã Khóa Xác thực
         run: |
@@ -53,7 +50,6 @@ jobs:
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
-          echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
-      - name: 🚀 Chạy Podcast Generator Pipeline
+      - name: 🚀 Chạy Pipeline
         run: python scripts/glue_pipeline.py
