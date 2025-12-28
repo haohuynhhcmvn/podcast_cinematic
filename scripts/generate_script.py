@@ -1,113 +1,286 @@
-# scripts/generate_script.py
 import os
 import logging
 import re
-import json
 from openai import OpenAI
 from utils import get_path
 
 logger = logging.getLogger(__name__)
-MODEL = "gpt-4o-mini" 
 
+# ============================================================
+#  MODEL CONFIG
+# ============================================================
+MODEL = "gpt-4o-mini"
+
+
+# ============================================================
+#  🛡️ SAFETY GUARDRAIL
+# ============================================================
 def check_safety_compliance(text):
     forbidden_keywords = [
         "overthrow the government", "regime change", "topple the regime",
         "incite rebellion", "destroy the state", "illegitimate government",
-        "phản động", "lật đổ", "chống phá", "xuyên tạc"
+        "dictatorship of", "oppressive regime",
+        "distort history", "reactionary", "incite violence",
+        "phản động", "lật đổ", "chống phá", "xuyên tạc",
+        "biểu tình bạo loạn", "bất mãn chế độ", "lật đổ chính quyền"
     ]
+
     text_lower = text.lower()
     for word in forbidden_keywords:
-        if word in text_lower: return False, word
+        if word in text_lower:
+            return False, word
+
     return True, None
 
-def clean_text_for_tts(text):
-    if not text: return ""
-    text = text.replace('**', '').replace('__', '')
-    text = re.sub(r'\[.*?\]', '', text)
-    return text.strip()
 
+# ============================================================
+#  CLEAN TEXT FOR TTS
+# ============================================================
+def clean_text_for_tts(text):
+    if not text:
+        return ""
+
+    text = text.replace("**", "").replace("__", "")
+    text = re.sub(r"\[.*?\]", "", text)
+    text = re.sub(
+        r"(?i)^\s*(SECTION|PART|SEGMENT)\s+\d+.*$",
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+    text = re.sub(
+        r"(?i)^\s*(Visual|Sound|Scene|Instruction|Voiceover|Narrator)\s*:",
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+    text = re.sub(r"\n\s*\n", "\n\n", text).strip()
+    return text
+
+
+# ============================================================
+#  LONG SCRIPT GENERATOR
+# ============================================================
 def generate_long_script(data):
-    """KHÔI PHỤC KỊCH BẢN 1800 CHỮ VÀ TẠO TITLE TỰ ĐỘNG"""
     try:
         api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.error("❌ Missing OPENAI_API_KEY.")
+            return None
+
         client = OpenAI(api_key=api_key)
+
         char_name = data.get("Name", "Historical Figure")
         core_theme = data.get("Core Theme", "Biography")
         input_notes = data.get("Content/Input", "")
 
-        # PROMPT GỐC 1800 CHỮ CỦA BẠN
         prompt = f"""
-ROLE: Head Scriptwriter for "Legendary Footsteps".
-OBJECTIVE: 1800-word script about {char_name}. 
-THEME: {core_theme} | NOTES: {input_notes}
+ROLE:
+You are the Head Scriptwriter for "Legendary Footsteps".
+
+OBJECTIVE:
+Hook viewers who do NOT know this person.
+Retention > education.
+
+INPUT:
+- Character: {char_name}
+- Theme: {core_theme}
+- Notes: {input_notes}
 
 RULES:
-1. START with a HIGH-STAKES CONSEQUENCE (Hook).
-2. STRUCTURE: [SECTION 1: THE CONSEQUENCE] to [SECTION 7: HUMAN LESSON].
-3. Minimum 1800 words. Gritty, cinematic tone.
-4. Use [Visual: description] tags.
+- Consequence before cause
+- No modern politics
+- Focus on decisions, mistakes, cost
+- Minimum 1800 words
+- Gritty, cinematic English
+- Use [Visual:] tags
+
+STRUCTURE:
+[1] Consequence
+[2] Pressure
+[3] First decision
+[4] Strategy or illusion
+[5] Climax
+[6] Betrayal / failure
+[7] Human lesson
+
+OUTPUT: English only.
 """
+
         response = client.chat.completions.create(
-            model=MODEL, 
+            model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4000,
-            temperature=0.85
+            temperature=0.85,
         )
+
         raw_script = response.choices[0].message.content.strip()
 
         is_safe, trigger = check_safety_compliance(raw_script)
-        if not is_safe: return None
+        if not is_safe:
+            logger.error(f"⛔ BLOCKED long script: {trigger}")
+            return None
 
         clean_script = clean_text_for_tts(raw_script)
+        safe_text = clean_script[:15000]
+
         out_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
         with open(out_path, "w", encoding="utf-8") as f:
-            f.write(clean_script)
+            f.write(safe_text)
 
-        # TỰ ĐỘNG TẠO TIÊU ĐỀ HẤP DẪN TỪ AI
-        title_res = client.chat.completions.create(
+        logger.info(f"📝 Long script created: {out_path}")
+
+        meta_prompt = f"Write a clean clickbait YouTube title and short description for {char_name}."
+        meta_res = client.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "user", "content": f"Write a 7-word CLICKBAIT title for a documentary about {char_name}. No quotes."}]
+            messages=[{"role": "user", "content": meta_prompt}],
+            max_tokens=200,
         )
-        yt_title = title_res.choices[0].message.content.strip().replace('"', '')
+        meta_text = meta_res.choices[0].message.content.strip()
 
-        # TRẢ VỀ DICT ĐỂ FIX LỖI TYPEERROR
+        yt_title = meta_text.split("\n")[0].replace('"', "").replace("#", "")
+        yt_desc = meta_text
+
         return {
             "script_path": out_path,
             "metadata": {
-                "Title": yt_title,
-                "Summary": f"Bản kịch bản đầy đủ về {char_name}. {core_theme}",
-                "Tags": ["history", "biography", char_name.lower()]
-            }
+                "youtube_title": yt_title,
+                "youtube_description": yt_desc,
+                "youtube_tags": ["history", "biography", char_name.lower()],
+            },
         }
+
     except Exception as e:
-        logger.error(f"❌ Lỗi tạo Long Script: {e}")
+        logger.error(f"❌ Error generating long script: {e}", exc_info=True)
         return None
 
-def generate_multi_short_scripts(data, long_script_path):
-    """XẺ KỊCH BẢN DÀI THÀNH 5 SHORTS"""
+
+# ============================================================
+#  SINGLE SHORT SCRIPT (LEGACY – GIỮ ĐỂ TƯƠNG THÍCH)
+# ============================================================
+def generate_short_script(data):
     try:
         api_key = os.getenv("OPENAI_API_KEY")
-        client = OpenAI(api_key=api_key)
-        with open(long_script_path, "r", encoding="utf-8") as f:
-            long_content = f.read()
+        if not api_key:
+            return None
 
-        prompt = f"Từ kịch bản này: {long_content[:2000]}. Tạo 5 Shorts JSON: {{'shorts': [{{'title': '...', 'script': '...'}}]}}"
-        response = client.chat.completions.create(
-            model=MODEL, 
+        client = OpenAI(api_key=api_key)
+
+        char_name = data.get("Name", "Legendary Figure")
+
+        prompt = f"""
+ROLE: Viral Shorts Scriptwriter.
+
+RULES:
+- 45–55 seconds
+- Consequence-first hook
+- Spoken English
+- End with:
+"The full story explains why this decision failed."
+
+Character: {char_name}
+"""
+
+        res = client.chat.completions.create(
+            model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            response_format={ "type": "json_object" }
+            max_tokens=300,
+            temperature=0.9,
         )
-        
-        shorts_data = json.loads(response.choices[0].message.content).get('shorts', [])
-        results = []
-        for i, item in enumerate(shorts_data[:5]):
-            idx = i + 1
-            p_script = get_path("data", "episodes", f"{data['ID']}_s{idx}.txt")
-            p_title = get_path("data", "episodes", f"{data['ID']}_t{idx}.txt")
-            with open(p_script, "w", encoding="utf-8") as f: f.write(clean_text_for_tts(item['script']))
-            with open(p_title, "w", encoding="utf-8") as f: f.write(item['title'])
-            results.append({"script_path": p_script, "title_path": p_title, "index": idx})
-        return results
+
+        script = clean_text_for_tts(res.choices[0].message.content.strip())
+
+        is_safe, trigger = check_safety_compliance(script)
+        if not is_safe:
+            return None
+
+        out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
+        with open(out_script, "w", encoding="utf-8") as f:
+            f.write(script)
+
+        return out_script, None
+
+    except Exception:
+        return None
+
+
+# ============================================================
+#  5 SHORTS FROM LONG SCRIPT (MAIN FEATURE)
+# ============================================================
+def generate_5_shorts_from_long(long_script_path: str, data: dict):
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or not os.path.exists(long_script_path):
+            return None
+
+        client = OpenAI(api_key=api_key)
+
+        with open(long_script_path, "r", encoding="utf-8") as f:
+            long_text = f.read()
+
+        eid = str(data.get("ID"))
+
+        prompt = f"""
+ROLE: Professional Viral Shorts Editor.
+
+TASK:
+Extract EXACTLY 5 YouTube Shorts from this long script.
+
+RULES:
+- 45–55 seconds each
+- Different moment each
+- Consequence-first hook
+- Spoken English
+- End with:
+"The full story explains why this decision failed."
+
+FORMAT:
+SHORT 1:
+...
+SHORT 2:
+...
+SHORT 3:
+...
+SHORT 4:
+...
+SHORT 5:
+...
+
+LONG SCRIPT:
+{long_text}
+"""
+
+        res = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1200,
+            temperature=0.9,
+        )
+
+        raw = res.choices[0].message.content.strip()
+
+        is_safe, trigger = check_safety_compliance(raw)
+        if not is_safe:
+            return None
+
+        shorts = []
+        for i in range(1, 6):
+            key = f"SHORT {i}:"
+            part = raw.split(key)[1]
+            if i < 5:
+                part = part.split(f"SHORT {i+1}:")[0]
+            shorts.append(clean_text_for_tts(part.strip()))
+
+        paths = []
+        for i, txt in enumerate(shorts, 1):
+            path = get_path("data", "episodes", f"{eid}_short_{i}.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(txt)
+            paths.append(path)
+
+        logger.info(f"✨ Generated 5 shorts from long script")
+        return paths
+
     except Exception as e:
-        logger.error(f"❌ Lỗi tạo Multi Shorts: {e}")
-        return []
+        logger.error(f"❌ Error generating shorts: {e}", exc_info=True)
+        return None
