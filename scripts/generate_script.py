@@ -27,19 +27,31 @@ def clean_text_for_tts(text):
     return text.strip()
 
 def generate_long_script(data):
-    """Khôi phục hàm gốc của bạn và sửa lỗi Return Type"""
+    """KHÔI PHỤC KỊCH BẢN 1800 CHỮ VÀ TẠO TITLE TỰ ĐỘNG"""
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         client = OpenAI(api_key=api_key)
         char_name = data.get("Name", "Historical Figure")
-        
-        # Sử dụng prompt chuyên nghiệp của bạn
-        prompt = f"Write a 1800-word historical documentary script about {char_name}. Consequence-first hook..."
-        
+        core_theme = data.get("Core Theme", "Biography")
+        input_notes = data.get("Content/Input", "")
+
+        # PROMPT GỐC 1800 CHỮ CỦA BẠN
+        prompt = f"""
+ROLE: Head Scriptwriter for "Legendary Footsteps".
+OBJECTIVE: 1800-word script about {char_name}. 
+THEME: {core_theme} | NOTES: {input_notes}
+
+RULES:
+1. START with a HIGH-STAKES CONSEQUENCE (Hook).
+2. STRUCTURE: [SECTION 1: THE CONSEQUENCE] to [SECTION 7: HUMAN LESSON].
+3. Minimum 1800 words. Gritty, cinematic tone.
+4. Use [Visual: description] tags.
+"""
         response = client.chat.completions.create(
             model=MODEL, 
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000
+            max_tokens=4000,
+            temperature=0.85
         )
         raw_script = response.choices[0].message.content.strip()
 
@@ -51,28 +63,35 @@ def generate_long_script(data):
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(clean_script)
 
-        # FIX: Trả về dict để glue_pipeline không bị lỗi 'string indices'
+        # TỰ ĐỘNG TẠO TIÊU ĐỀ HẤP DẪN TỪ AI
+        title_res = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": f"Write a 7-word CLICKBAIT title for a documentary about {char_name}. No quotes."}]
+        )
+        yt_title = title_res.choices[0].message.content.strip().replace('"', '')
+
+        # TRẢ VỀ DICT ĐỂ FIX LỖI TYPEERROR
         return {
             "script_path": out_path,
             "metadata": {
-                "youtube_title": f"The Secret Life of {char_name}",
-                "youtube_description": f"Full story of {char_name}.",
-                "youtube_tags": ["history", "biography"]
+                "Title": yt_title,
+                "Summary": f"Bản kịch bản đầy đủ về {char_name}. {core_theme}",
+                "Tags": ["history", "biography", char_name.lower()]
             }
         }
     except Exception as e:
-        logger.error(f"Error Long Script: {e}")
+        logger.error(f"❌ Lỗi tạo Long Script: {e}")
         return None
 
 def generate_multi_short_scripts(data, long_script_path):
-    """Hàm tạo 5 kịch bản Shorts từ kịch bản dài"""
+    """XẺ KỊCH BẢN DÀI THÀNH 5 SHORTS"""
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         client = OpenAI(api_key=api_key)
         with open(long_script_path, "r", encoding="utf-8") as f:
             long_content = f.read()
 
-        prompt = f"Tạo 5 kịch bản Shorts từ nội dung sau: {long_content[:2000]}. JSON: {{'shorts': [{{'title': '...', 'script': '...'}}]}}"
+        prompt = f"Từ kịch bản này: {long_content[:2000]}. Tạo 5 Shorts JSON: {{'shorts': [{{'title': '...', 'script': '...'}}]}}"
         response = client.chat.completions.create(
             model=MODEL, 
             messages=[{"role": "user", "content": prompt}],
@@ -82,12 +101,13 @@ def generate_multi_short_scripts(data, long_script_path):
         shorts_data = json.loads(response.choices[0].message.content).get('shorts', [])
         results = []
         for i, item in enumerate(shorts_data[:5]):
-            p_script = get_path("data", "episodes", f"{data['ID']}_s{i+1}.txt")
-            p_title = get_path("data", "episodes", f"{data['ID']}_t{i+1}.txt")
+            idx = i + 1
+            p_script = get_path("data", "episodes", f"{data['ID']}_s{idx}.txt")
+            p_title = get_path("data", "episodes", f"{data['ID']}_t{idx}.txt")
             with open(p_script, "w", encoding="utf-8") as f: f.write(clean_text_for_tts(item['script']))
             with open(p_title, "w", encoding="utf-8") as f: f.write(item['title'])
-            results.append({"script_path": p_script, "title_path": p_title, "index": i+1})
+            results.append({"script_path": p_script, "title_path": p_title, "index": idx})
         return results
     except Exception as e:
-        logger.error(f"Error Multi Shorts: {e}")
+        logger.error(f"❌ Lỗi tạo Multi Shorts: {e}")
         return []
