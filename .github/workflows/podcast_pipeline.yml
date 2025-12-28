@@ -1,67 +1,70 @@
-name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
+name: 🎙️ Podcast Generator - Ultra Optimized Pipeline
 
 on:
-  #schedule:
-    # Chạy vào các khung giờ vàng (UTC): 
-    # 11:40 (18:40 VN), 14:40, 21:40
-    #- cron: '40 11,22 * * *'
-  
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
+  workflow_dispatch: # Chạy thủ công để test
 
 jobs:
   build_and_upload_podcast:
     runs-on: ubuntu-latest
+    timeout-minutes: 60 # Giới hạn thời gian để tránh lãng phí nếu treo
 
-    # Khai báo biến môi trường từ Secrets
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       SERVICE_ACCOUNT_CONTENT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }} 
-      YOUTUBE_CLIENT_SECRET_B64: ${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}
-      YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
     steps:
-      # 1. Tải mã nguồn về máy ảo
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      # 2. Cài đặt Python (CÓ CACHE TỐI ƯU)
-      - name: 🐍 Thiết lập môi trường Python
+      # 1. TỐI ƯU CACHE CHO FFMPEG (Tiết kiệm ~2 phút)
+      - name: 💾 Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/ffmpeg
+          key: ${{ runner.os }}-ffmpeg
+
+      - name: ⚙️ Cài đặt FFmpeg & ImageMagick (Fast install)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg imagemagick -qq
+          # Sửa lỗi bảo mật ImageMagick ngay lập tức
+          sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
+
+      # 2. THIẾT LẬP PYTHON VỚI CACHE PIP (Tiết kiệm ~1 phút)
+      - name: 🐍 Thiết lập Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # Kích hoạt cache để không phải tải lại thư viện cũ
-          cache-dependency-path: 'requirements.txt'
+          cache: 'pip'
 
-      # 3. Cài đặt phần mềm hệ thống (FFmpeg + ImageMagick)
-      - name: ⚙️ Cài đặt FFmpeg & ImageMagick
+      - name: 📦 Cài đặt thư viện Python
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
-          # Sửa lỗi bảo mật ImageMagick để cho phép viết chữ lên ảnh
-          sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
-
-      # 4. Cài đặt thư viện Python
-      - name: 📦 Cài đặt các thư viện Python
-        run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt
-        
-      # 5. Giải mã các file bí mật (Credentials)
-      - name: 🔑 Giải mã Khóa Xác thực
+
+      # 3. GIẢI MÃ CREDENTIALS TRONG 1 BƯỚC (Gộp lệnh để nhanh hơn)
+      - name: 🔑 Thiết lập môi trường & Credentials
         run: |
-          # Tạo file service-account.json từ secret
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-          
-          # Giải mã file client_secret và token youtube từ base64
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
+          # Sử dụng tham số -d của base64 để giải mã nhanh token
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
           
-          # Tạo file .env để code Python đọc
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
-          echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
-          echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
+          # Tạo file .env nhanh
+          cat <<EOF > .env
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}
+          EOF
 
-      # 6. Chạy chương trình chính
-      - name: 🚀 Chạy Podcast Generator Pipeline
+      # 4. CHẠY PIPELINE CHÍNH
+      - name: 🚀 Chạy Glue Pipeline (Tối ưu Parallel)
         run: python scripts/glue_pipeline.py
+
+      # 5. DỌN DẸP CUỐI CÙNG (Phòng hờ nếu script python bị ngắt giữa chừng)
+      - name: 🧹 Dọn dẹp Workspace
+        if: always()
+        run: |
+          rm -f token.pickle client_secrets.json service-account.json .env
