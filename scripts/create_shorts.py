@@ -2,210 +2,236 @@
 import logging
 import os
 import math 
-from PIL import Image, ImageEnhance, ImageFilter
-import PIL.Image
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
+import PIL.Image # Cần import đầy đủ để fix lỗi Pillow/MoviePy
 
-# =======================================================
-# 🛠️ [QUAN TRỌNG] VÁ LỖI PILLOW 10 VÀ MOVIEPY
-# MoviePy cũ dùng ANTIALIAS, Pillow mới đã bỏ nó.
-# =======================================================
+# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY (ROBUST FIX) ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
-    if hasattr(PIL.Image, 'Resampling'):
+    if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
         PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
-    else:
+    elif hasattr(PIL.Image, 'LANCZOS'):
         PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-# =======================================================
+# ------------------------------------------------------
 
 from moviepy.editor import (
     AudioFileClip, VideoFileClip, ImageClip, ColorClip, 
-    TextClip, CompositeVideoClip
+    TextClip, CompositeVideoClip, CompositeAudioClip, concatenate_audioclips
 )
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# --- CẤU HÌNH SHORTS ---
 SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
 SHORTS_SIZE = (SHORTS_WIDTH, SHORTS_HEIGHT)
-FPS = 24 
+MAX_DURATION = 60 
 
 # =========================================================
-# 🎨 1. HÀM TẠO SUBTITLE KIỂU HORMOZI (WORD-BY-WORD)
+# 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16) - NHÂN VẬT Ở GIỮA
 # =========================================================
-def generate_subtitle_clips(text, total_duration, font_name="Impact.ttf"):
+def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
     """
-    Tạo phụ đề từng từ một, xuất hiện chính giữa màn hình.
-    Thời gian hiển thị được tính toán dựa trên độ dài từ.
+    Ghép ảnh: Nền phong cảnh dọc + Nhân vật DALL-E (Ở GIỮA).
     """
-    if not text: return []
-    
-    # Tìm font
-    font_path = get_path('assets', 'fonts', font_name)
-    if not os.path.exists(font_path):
-        logger.warning(f"⚠️ Không tìm thấy font {font_name}, dùng font mặc định.")
-        font_path = 'Arial-Bold' # Fallback
-        
-    words = text.split()
-    if not words: return []
-
-    # Tính toán thời gian (Weighted Duration)
-    total_chars = sum(len(w) for w in words)
-    if total_chars == 0: return []
-    
-    clips = []
-    current_start = 0.0
-
-    # Style cấu hình
-    FONT_SIZE = 110          
-    TEXT_COLOR = "#FFD700"   # Vàng Gold
-    STROKE_COLOR = "black"   
-    STROKE_WIDTH = 6         
-    
-    for word in words:
-        # Công thức: Từ càng dài thì hiện càng lâu
-        weight = len(word) + 1 
-        word_duration = (weight / (total_chars + len(words))) * total_duration
-        
-        try:
-            # method='label' tốt hơn cho từ đơn (auto-resize)
-            txt_clip = (TextClip(
-                            word.upper(), 
-                            font=font_path, 
-                            fontsize=FONT_SIZE, 
-                            color=TEXT_COLOR, 
-                            stroke_color=STROKE_COLOR, 
-                            stroke_width=STROKE_WIDTH,
-                            method='label' 
-                        )
-                        .set_position(('center', 'center')) # Giữa màn hình
-                        .set_start(current_start)
-                        .set_duration(word_duration))
-            
-            clips.append(txt_clip)
-        except Exception as e:
-            logger.error(f"⚠️ Lỗi render sub từ '{word}': {e}")
-            pass
-            
-        current_start += word_duration
-
-    return clips
-
-# =========================================================
-# 🖼️ 2. HÀM XỬ LÝ BACKGROUND (AUTO BLUR)
-# =========================================================
-def create_cinematic_background(image_path, duration):
-    """
-    Tạo nền 9:16 từ ảnh 16:9:
-    - Lớp dưới: Ảnh phóng to + làm mờ (Blur)
-    - Lớp trên: Ảnh gốc giữ nguyên tỉ lệ ở giữa
-    """
-    if not image_path or not os.path.exists(image_path):
-        return ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
-
     try:
-        # Lớp nền mờ (Background Blur)
-        bg_clip = (ImageClip(image_path)
-                   .resize(height=SHORTS_HEIGHT) # Resize cao bằng màn hình -> sẽ bị crop 2 bên
-                   .crop(x1=0, y1=0, width=SHORTS_WIDTH, height=SHORTS_HEIGHT, x_center=SHORTS_WIDTH/2, y_center=SHORTS_HEIGHT/2)
-                   .fl_image(lambda image: image.filter(ImageFilter.GaussianBlur(radius=20))) # Làm mờ
-                   .set_duration(duration))
-
-        # Lớp chính (Main Image) - nằm giữa
-        main_clip = (ImageClip(image_path)
-                     .resize(width=SHORTS_WIDTH) # Resize rộng bằng màn hình
-                     .set_position(('center', 'center'))
-                     .set_duration(duration))
+        width, height = SHORTS_SIZE
         
-        return [bg_clip, main_clip]
-    except Exception as e:
-        logger.error(f"❌ Lỗi xử lý background: {e}")
-        return [ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)]
+        # 1. LOAD & RESIZE BASE BG (Ảnh nền dọc)
+        if base_bg_path and os.path.exists(base_bg_path):
+            base_img = Image.open(base_bg_path).convert("RGBA")
+        else:
+            base_img = Image.new("RGBA", SHORTS_SIZE, (20,20,20,255))
+            
+        # Resize Aspect Fill
+        ratio = width / height
+        img_ratio = base_img.width / base_img.height
+        
+        if img_ratio > ratio:
+            new_h = height
+            new_w = int(new_h * img_ratio)
+        else:
+            new_w = width
+            new_h = int(new_w / img_ratio)
+            
+        base_img = base_img.resize((new_w, new_h), Image.LANCZOS)
+        left = (new_w - width) // 2
+        base_img = base_img.crop((left, 0, left + width, height))
+        
+        # Làm tối nền mạnh hơn để nhân vật nổi bật (40% độ sáng)
+        enhancer = ImageEnhance.Brightness(base_img)
+        base_img = enhancer.enhance(0.4) 
 
-# =========================================================
-# 🎬 3. HÀM CHÍNH: CREATE SHORTS
-# =========================================================
-def create_shorts(episode_id, audio_path, script_path=None, image_path=None, hook_title=None):
-    """
-    Quy trình dựng Shorts:
-    Audio -> Background (Blur+Main) -> Subtitle (Hormozi) -> Hook Title -> Render
-    """
-    if not audio_path or not os.path.exists(audio_path):
-        logger.error("❌ Thiếu file Audio input.")
+        # 2. XỬ LÝ NHÂN VẬT (Đặt ở Giữa)
+        if char_path and os.path.exists(char_path):
+            char_img = Image.open(char_path).convert("RGBA")
+            
+            # Resize nhân vật: Chiều rộng bằng 90% chiều rộng Shorts (để có lề)
+            target_char_w = int(width * 0.9)
+            char_w = target_char_w
+            char_h = int(char_img.height * (char_w / char_img.width))
+            char_img = char_img.resize((char_w, char_h), Image.LANCZOS)
+            
+            # Tạo Mask mờ 2 đầu (Trên và Dưới) để hòa vào nền
+            mask = Image.new("L", (char_w, char_h), 255) # Mặc định là hiện rõ (255)
+            draw = ImageDraw.Draw(mask)
+            fade_height = int(char_h * 0.2) # Vùng mờ là 20% chiều cao ở mỗi đầu
+
+            for y in range(char_h):
+                # Mờ phần trên
+                if y < fade_height:
+                    alpha = int(255 * (y / fade_height))
+                    draw.line([(0, y), (char_w, y)], fill=alpha)
+                # Mờ phần dưới
+                elif y > char_h - fade_height:
+                    alpha = int(255 * ((char_h - y) / fade_height))
+                    draw.line([(0, y), (char_w, y)], fill=alpha)
+            
+            # Tính vị trí dán vào GIỮA khung hình
+            paste_x = (width - char_w) // 2
+            paste_y = (height - char_h) // 2
+            
+            # Dán nhân vật vào
+            base_img.paste(char_img, (paste_x, paste_y), mask=mask)
+
+        # 3. TẠO VIGNETTE (Tối Đỉnh và Đáy cho Text)
+        overlay = Image.new('RGBA', SHORTS_SIZE, (0,0,0,0))
+        draw_ov = ImageDraw.Draw(overlay)
+        
+        for y in range(height):
+            # Tối ở Đỉnh (20% trên cùng) - Cho Hook Title
+            if y < height * 0.2: 
+                alpha = int(180 * (1 - y/(height*0.2)))
+                draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
+            # Tối ở Đáy (30% dưới cùng) - Cho Subtitles
+            elif y > height * 0.7: 
+                alpha = int(180 * ((y - height*0.7)/(height*0.3)))
+                draw_ov.line([(0,y), (width,y)], fill=(0,0,0,alpha))
+        
+        final = Image.alpha_composite(base_img, overlay)
+        final = final.convert("RGB")
+        final.save(output_path, quality=90)
+        return output_path
+
+    except Exception as e:
+        logger.error(f"❌ Shorts BG Error: {e}")
         return None
 
-    try:
-        # 1. Load Audio
-        final_audio = AudioFileClip(audio_path)
-        duration = final_audio.duration
+# =========================================================
+# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES) - CẦN THIẾT
+# =========================================================
+def generate_subtitle_clips(text_content, total_duration, fontsize=85):
+    if not text_content: return []
+    words = text_content.replace('\n', ' ').split()
+    if not words: return []
+
+    chunk_size = 4
+    chunks = []
+    for i in range(0, len(words), chunk_size):
+        chunk_text = " ".join(words[i:i + chunk_size])
+        chunks.append(chunk_text)
+
+    num_chunks = len(chunks)
+    time_per_chunk = total_duration / num_chunks
+    subtitle_clips = []
+    
+    for i, chunk in enumerate(chunks):
+        start_time = i * time_per_chunk
         
-        # 2. Tạo Background Layers
-        logger.info("🎨 Đang tạo Background...")
-        bg_layers = create_cinematic_background(image_path, duration)
-        elements = bg_layers # List chứa các clips
+        txt_clip = TextClip(
+            chunk.upper(),
+            fontsize=fontsize,
+            font='DejaVu-Sans-Bold',
+            color='#FFD700',      # Vàng Gold
+            stroke_color='black',
+            stroke_width=6,
+            size=(950, None),
+            method='caption',
+            align='center'
+        )
+        # Đặt ở vùng tối bên dưới (Y=1400)
+        txt_clip = txt_clip.set_position(('center', 1400)).set_start(start_time).set_duration(time_per_chunk)
+        subtitle_clips.append(txt_clip)
 
-        # 3. Tạo Subtitles (Hormozi Style)
-        if script_path and os.path.exists(script_path):
-            logger.info("📝 Đang tạo Subtitles...")
-            with open(script_path, "r", encoding="utf-8") as f:
-                full_text = f.read()
-            
-            subs = generate_subtitle_clips(full_text, duration, font_name="Impact.ttf")
-            if subs:
-                elements.extend(subs)
+    return subtitle_clips
 
-        # 4. Tạo Hook Title (Tiêu đề tĩnh ở trên cùng)
+# =========================================================
+# 🎬 HÀM CHÍNH (CREATE SHORTS)
+# =========================================================
+def create_shorts(audio_path, hook_title, episode_id, character_name, script_path, custom_image_path=None, base_bg_path=None): 
+    try:
+        # 1. Load Voice
+        if not os.path.exists(audio_path): return None
+        voice = AudioFileClip(audio_path).volumex(1.5) 
+        duration = min(voice.duration, MAX_DURATION) 
+        voice = voice.subclip(0, duration) 
+        
+        # 2. Audio Mix (Loop Bg Music)
+        bg_music_path = get_path('assets', 'background_music', 'loop_1.mp3')
+        if os.path.exists(bg_music_path):
+            bg_music = AudioFileClip(bg_music_path).volumex(0.1) 
+            num_loops = math.ceil(duration / bg_music.duration)
+            bg_music_looped = concatenate_audioclips([bg_music]*num_loops).subclip(0, duration)
+            final_audio = CompositeAudioClip([bg_music_looped, voice])
+        else:
+            final_audio = voice
+
+        # 3. Hybrid Background
+        clip = None
+        hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
+        os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
+        
+        # Luôn ưu tiên tạo nền Hybrid nếu có ảnh nhân vật
+        if custom_image_path:
+            # Ghép nền có sẵn + Nhân vật DALL-E
+            final_bg = process_hybrid_shorts_bg(custom_image_path, base_bg_path, hybrid_bg_path)
+            if final_bg:
+                clip = ImageClip(final_bg).set_duration(duration)
+
+        # Fallback - Chỉ dùng khi không tạo được hybrid bg
+        if clip is None:
+             if base_bg_path and os.path.exists(base_bg_path):
+                 # Resize ảnh nền có sẵn cho Shorts
+                 clip = ImageClip(base_bg_path).set_duration(duration)
+                 # Cần resize về chuẩn 1080x1920 nếu chưa đúng
+                 if clip.size != SHORTS_SIZE:
+                     clip = clip.resize(height=SHORTS_HEIGHT)
+                     if clip.w < SHORTS_WIDTH:
+                         clip = clip.resize(width=SHORTS_WIDTH)
+                     
+                     clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH, 
+                                      y1=clip.h/2 - SHORTS_HEIGHT/2, height=SHORTS_HEIGHT)
+             else:
+                 clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
+
+        elements = [clip]
+
+        # 4. Hook Title (Trên cùng)
         if hook_title:
             try:
-                # Tìm font Impact cho Hook luôn cho đồng bộ
-                font_path = get_path('assets', 'fonts', 'Impact.ttf')
-                if not os.path.exists(font_path): font_path = 'Arial-Bold'
-
-                hook_clip = (TextClip(
-                                hook_title.upper(), 
-                                fontsize=80, 
-                                color='white', 
-                                font=font_path,
-                                stroke_color='black', 
-                                stroke_width=4,
-                                method='label'
-                            )
-                            .set_position(('center', 200)) # Cách mép trên 200px
-                            .set_duration(duration))
+                hook_clip = TextClip(
+                    hook_title.upper(), fontsize=90, color='white', font='DejaVu-Sans-Bold', 
+                    method='caption', size=(1000, None), stroke_color='black', stroke_width=8, align='center'
+                ).set_pos(('center', 200)).set_duration(duration)
                 elements.append(hook_clip)
-            except Exception as e:
-                logger.warning(f"⚠️ Không tạo được Hook Title: {e}")
+            except Exception: pass
 
-        # 5. Render Video
-        # set_audio cho composite clip
+        # 5. Subtitles (Dưới cùng)
+        if script_path and os.path.exists(script_path):
+            try:
+                with open(script_path, "r", encoding="utf-8") as f: full_script = f.read()
+                subs = generate_subtitle_clips(full_script, duration)
+                if subs: elements.extend(subs)
+            except Exception: pass
+
+        # 6. Render
         final = CompositeVideoClip(elements, size=SHORTS_SIZE).set_audio(final_audio)
-
         out_path = get_path('outputs', 'shorts', f"{episode_id}_shorts.mp4")
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         
-        logger.info(f"🚀 Rendering Shorts: {out_path} ({duration:.1f}s)")
-        
-        # Preset ultrafast để tiết kiệm thời gian trên GitHub Actions
-        final.write_videofile(
-            out_path, 
-            fps=FPS, 
-            codec='libx264', 
-            audio_codec='aac',
-            preset='ultrafast', 
-            threads=2,
-            logger=None # Tắt log ffmpeg dài dòng
-        )
-
-        # Cleanup
-        final.close()
-        final_audio.close()
-        for clip in elements:
-            try: clip.close() 
-            except: pass
-            
-        logger.info("✅ Shorts render xong!")
+        logger.info("🚀 Rendering Shorts...")
+        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger=None)
         return out_path
 
     except Exception as e:
-        logger.error(f"❌ Lỗi nghiêm trọng khi tạo Shorts: {e}", exc_info=True)
+        logger.error(f"❌ Shorts Error: {e}", exc_info=True)
         return None
