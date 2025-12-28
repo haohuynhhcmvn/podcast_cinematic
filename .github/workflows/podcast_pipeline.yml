@@ -1,18 +1,12 @@
-name: 🎙️ Podcast Generator - Full Pipeline (Final Fix)
+name: 🎙️ Podcast Generator - Full Pipeline (AI Background Removal Fix)
 
 on:
-  #schedule:
-    # Chạy vào các khung giờ vàng (UTC): 
-    # 11:40 (18:40 VN), 14:40, 21:40
-    #- cron: '40 11,22 * * *'
-  
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
+  workflow_dispatch: # Cho phép chạy thủ công
 
 jobs:
   build_and_upload_podcast:
     runs-on: ubuntu-latest
 
-    # Khai báo biến môi trường từ Secrets
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -21,47 +15,45 @@ jobs:
       YOUTUBE_TOKEN_PICKLE_B64: ${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}
 
     steps:
-      # 1. Tải mã nguồn về máy ảo
       - name: ⬇️ Checkout mã nguồn
         uses: actions/checkout@v4
 
-      # 2. Cài đặt Python (CÓ CACHE TỐI ƯU)
       - name: 🐍 Thiết lập môi trường Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip' # Kích hoạt cache để không phải tải lại thư viện cũ
+          cache: 'pip'
           cache-dependency-path: 'requirements.txt'
 
-      # 3. Cài đặt phần mềm hệ thống (FFmpeg + ImageMagick)
-      - name: ⚙️ Cài đặt FFmpeg & ImageMagick
+      # --- PHẦN CẬP NHẬT MỚI: CACHE AI MODELS ---
+      - name: 🧠 Cache AI Models (rembg)
+        uses: actions/cache@v3
+        with:
+          path: ~/.u2net # Thư mục chứa model AI của rembg
+          key: ${{ runner.os }}-u2net
+          restore-keys: |
+            ${{ runner.os }}-u2net
+
+      - name: ⚙️ Cài đặt phần mềm hệ thống & AI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
-          # Sửa lỗi bảo mật ImageMagick để cho phép viết chữ lên ảnh
+          sudo apt-get install -y ffmpeg imagemagick libgl1 # Cần libgl1 cho rembg
           sudo sed -i 's/none/read,write/g' /etc/ImageMagick-6/policy.xml
 
-      # 4. Cài đặt thư viện Python
-      - name: 📦 Cài đặt các thư viện Python
+      - name: 📦 Cài đặt thư viện Python (Bao gồm rembg)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-        
-      # 5. Giải mã các file bí mật (Credentials)
+          pip install rembg onnxruntime-gpu || pip install rembg onnxruntime # Ưu tiên GPU nếu có, không thì CPU
+
       - name: 🔑 Giải mã Khóa Xác thực
         run: |
-          # Tạo file service-account.json từ secret
           echo "$SERVICE_ACCOUNT_CONTENT" > service-account.json
-          
-          # Giải mã file client_secret và token youtube từ base64
           echo "${{ secrets.YOUTUBE_CLIENT_SECRET_B64 }}" | base64 --decode > client_secrets.json
           echo "${{ secrets.YOUTUBE_TOKEN_PICKLE_B64 }}" | base64 --decode > token.pickle
-          
-          # Tạo file .env để code Python đọc
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
           echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
           echo "GOOGLE_SERVICE_ACCOUNT_JSON=service-account.json" >> .env
 
-      # 6. Chạy chương trình chính
       - name: 🚀 Chạy Podcast Generator Pipeline
         run: python scripts/glue_pipeline.py
