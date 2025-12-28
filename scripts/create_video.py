@@ -267,12 +267,12 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEG
         logger.info("🚀 Rendering video...")
         final.write_videofile(
             out_path,
-            fps=20,
+            fps=12,
             codec="libx264",
             audio_codec="aac",
             preset="ultrafast",
             threads=2,
-            ffmpeg_params=["-crf", "28"],
+            ffmpeg_params=["-crf", "32"],
             logger="bar"
         )
 
