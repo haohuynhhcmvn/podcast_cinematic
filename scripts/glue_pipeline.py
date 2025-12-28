@@ -1,10 +1,11 @@
 # scripts/glue_pipeline.py
 import logging
-import sys
 import os
+import sys
 from time import sleep
+from datetime import datetime, timedelta, timezone
 
-# Đảm bảo project root nằm trong sys.path
+# Project Path Setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
@@ -24,16 +25,6 @@ from create_thumbnail import add_text_to_thumbnail
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def safe_update_status(ws, row_idx, col_idx, status):
-    try:
-        if not ws: return
-        header = ws.row_values(1)
-        idx = header.index("Status") + 1 if "Status" in header else 6
-        ws.update_cell(row_idx, idx, status)
-        logger.info(f"STATUS_UPDATE: Row {row_idx} -> {status}")
-    except Exception as e:
-        logger.error(f"❌ Lỗi update status: {e}")
-
 def main():
     setup_environment()
     task = fetch_content()
@@ -42,87 +33,83 @@ def main():
         return
 
     data = task["data"]
-    task_meta = {"row_idx": task["row_idx"], "col_idx": task["col_idx"], "worksheet": task["worksheet"]}
-    ws, row_idx, col_idx = task["worksheet"], task["row_idx"], task["col_idx"]
+    ws, row_idx = task["worksheet"], task["row_idx"]
     episode_id = str(data.get('ID'))
     name = data.get('Name')
+    now = datetime.now(timezone.utc)
 
-    logger.info(f"▶️ BẮT ĐẦU PIPELINE CHO: {name} (ID: {episode_id})")
+    logger.info(f"▶️ BẮT ĐẦU PIPELINE: {name} (ID: {episode_id})")
 
-    # =========================================================
-    # PHASE 1: TẠO ẢNH NHÂN VẬT (CHỈ 1 LẦN - TIẾT KIỆM $)
-    # =========================================================
-    char_img_path = get_path("assets", "temp", f"{episode_id}_raw_ai.png")
-    if not os.path.exists(char_img_path):
-        logger.info(f"🎨 Đang tạo ảnh nhân vật cho {name}...")
-        char_img_path = generate_character_image(name, char_img_path)
+    # 1. TẠO ẢNH NHÂN VẬT (DÙNG CHUNG)
+    char_img = get_path("assets", "temp", f"{episode_id}_raw_ai.png")
+    if not os.path.exists(char_img):
+        char_img = generate_character_image(name, char_img)
 
-    # =========================================================
-    # PHASE 2: XỬ LÝ VIDEO DÀI (LONG-FORM)
-    # =========================================================
-    logger.info("📺 --- ĐANG XỬ LÝ VIDEO DÀI ---")
+    # 2. XỬ LÝ VIDEO DÀI (Công chiếu sau 2 giờ)
+    long_video_id = None
     long_res = generate_long_script(data)
-    long_ok = False
-    
     if long_res:
         script_path = long_res["script_path"]
-        meta = long_res.get("metadata", {})
-        yt_title = meta.get("youtube_title", f"{name} Untold Story")
+        yt_title = long_res["metadata"].get("youtube_title", f"{name} Story")
         
-        # Tạo Audio & Render
-        tts_path = create_tts(script_path, episode_id, mode="long")
-        if tts_path:
-            mixed_audio = auto_music_sfx(tts_path, episode_id)
-            video_path = create_video(mixed_audio, episode_id, custom_image_path=char_img_path, title_text=yt_title)
+        tts = create_tts(script_path, episode_id, mode="long")
+        if tts:
+            audio = auto_music_sfx(tts, episode_id)
+            video = create_video(audio, episode_id, custom_image_path=char_img, title_text=yt_title)
             
-            if video_path:
-                # Thumbnail & Upload
-                thumb_path = get_path("outputs", "thumbnails", f"{episode_id}_thumb.jpg")
-                add_text_to_thumbnail(char_img_path, yt_title.upper(), thumb_path)
+            if video:
+                thumb = get_path("outputs", "thumbnails", f"{episode_id}_thumb.jpg")
+                add_text_to_thumbnail(char_img, yt_title.upper(), thumb)
                 
-                upload_res = upload_video(video_path, {"Title": yt_title, "Summary": meta.get("youtube_description", "")}, thumbnail_path=thumb_path)
-                if upload_res != "FAILED":
-                    long_ok = True
-                    logger.info("✅ Upload Video Dài thành công!")
+                # Hẹn giờ T+2h
+                long_schedule = (now + timedelta(hours=2)).isoformat()
+                up_res = upload_video(video, long_res["metadata"], thumbnail_path=thumb, scheduled_time=long_schedule)
+                
+                if isinstance(up_res, dict):
+                    long_video_id = up_res.get('video_id')
 
-    # =========================================================
-    # PHASE 3: XỬ LÝ 05 VIDEO SHORTS (VÒNG LẶP)
-    # =========================================================
+    # 3. XỬ LÝ 5 SHORTS (T+2h, T+6h, T+10h, T+14h, T+18h)
+    shorts_count = 0
+    related_link = f"https://youtu.be/{long_video_id}" if long_video_id else ""
     
-    logger.info("🎬 --- ĐANG XỬ LÝ 05 VIDEO SHORTS ---")
-    long_script_file = get_path("data", "episodes", f"{episode_id}_long_en.txt")
-    short_tasks = generate_multi_short_scripts(data, long_script_file)
-    
-    shorts_success_count = 0
-    for t in short_tasks:
-        idx = t['index']
-        short_id = f"{episode_id}_s{idx}"
-        logger.info(f"🚀 Đang xử lý Shorts #{idx}/5 (ID: {short_id})")
+    # Lấy kịch bản từ file long vừa tạo
+    long_txt = get_path("data", "episodes", f"{episode_id}_long_en.txt")
+    short_tasks = generate_multi_short_scripts(data, long_txt)
 
-        # TTS cho từng Short
-        s_audio = create_tts(t['script_path'], short_id, mode="short")
+    for i, t in enumerate(short_tasks):
+        s_id = f"{episode_id}_s{t['index']}"
+        s_tts = create_tts(t['script_path'], s_id, mode="short")
         
-        if s_audio:
+        if s_tts:
             with open(t['title_path'], "r", encoding="utf-8") as f: s_title = f.read().strip()
             
-            # Render Shorts
-            s_video = create_shorts(short_id, char_img_path, t['script_path'], s_audio, hook_title=s_title)
+            s_video = create_shorts(s_id, char_img, t['script_path'], s_tts, hook_title=s_title)
             
             if s_video:
-                # Upload Shorts
-                s_meta = {"Title": f"{s_title} #Shorts", "Summary": f"Story of {name}"}
-                if upload_video(s_video, s_meta) != "FAILED":
-                    shorts_success_count += 1
-                    logger.info(f"✅ Đã upload Short {idx}")
+                # Tính giờ hẹn
+                delay = 2 + (i * 4)
+                s_schedule = (now + timedelta(hours=delay)).isoformat()
+                
+                # Metadata kèm link video liên quan
+                s_meta = {
+                    "Title": f"{s_title} #Shorts",
+                    "Summary": f"Watch full story: {related_link}\n\nHistorical tale of {name}.",
+                    "Tags": ["shorts", "history", "legend"]
+                }
+                
+                if upload_video(s_video, s_meta, scheduled_time=s_schedule) != "FAILED":
+                    shorts_count += 1
 
-    # =========================================================
-    # PHASE 4: DỌN DẸP & CẬP NHẬT
-    # =========================================================
-    final_status = f"DONE_LONG_{'OK' if long_ok else 'FAIL'}_SHORTS_{shorts_success_count}"
-    safe_update_status(ws, row_idx, col_idx, final_status)
+    # 4. HOÀN TẤT
+    status = f"DONE_LONG_{'OK' if long_video_id else 'FAIL'}_SHORTS_{shorts_count}"
+    try:
+        header = ws.row_values(1)
+        st_col = header.index("Status") + 1 if "Status" in header else 6
+        ws.update_cell(row_idx, st_col, status)
+    except: pass
     
     cleanup_temp_files(episode_id, data.get('text_hash'))
-    logger.info(f"🏁 PIPELINE HOÀN TẤT: {final_status}")
+    logger.info(f"🏁 KẾT THÚC: {status}")
 
 if __name__ == "__main__":
     main()
