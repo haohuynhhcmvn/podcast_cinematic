@@ -1,11 +1,12 @@
 # scripts/glue_pipeline.py
+# PHIÊN BẢN FIX: FALLBACK KHI LỖI ÂM THANH
 
 import logging
 import sys
 import os
 from time import sleep
 
-# Đảm bảo python tìm thấy các module trong thư mục scripts
+# ensure project scripts folder is on path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
@@ -86,7 +87,6 @@ def main():
             if not os.path.exists(image_path):
                 img_res = generate_character_image(data.get('Name'), image_path)
                 if not img_res:
-                    # Fallback: Nếu không tạo được ảnh, dùng ảnh mặc định hoặc báo lỗi
                     logger.warning("⚠️ Không tạo được ảnh AI. Sẽ dùng ảnh cũ nếu có.")
             else:
                 logger.info("✅ Ảnh nhân vật đã có sẵn.")
@@ -102,23 +102,25 @@ def main():
             
         # 2.2 Mix nhạc nền (Auto Ducking + Intro/Outro)
         audio_mixed_path = auto_music_sfx(episode_id, tts_long_path)
+        
+        # [SỬA LỖI] Nếu mix lỗi (do thiếu file nhạc), dùng luôn file TTS gốc để chạy tiếp
         if not audio_mixed_path:
-            safe_update_status(ws, row_idx, col_idx, 'FAILED_AUDIO_MIX')
-            return
+            logger.warning("⚠️ Mix nhạc thất bại (có thể thiếu file assets). Dùng audio gốc để tiếp tục.")
+            audio_mixed_path = tts_long_path 
+            # Không return lỗi ở đây nữa!
 
         # -------------------------------------------------------------------
         # BƯỚC 3: TẠO THUMBNAIL
         # -------------------------------------------------------------------
         thumb_path = get_path("outputs", "thumbnails", f"{episode_id}_thumb.jpg")
         if add_text_to_thumbnail and os.path.exists(image_path):
-            # Tạo text cho thumbnail (Lấy 4-5 từ đầu của tên hoặc Title ngắn gọn)
             thumb_text = data.get('Name', 'New Episode')
             add_text_to_thumbnail(image_path, thumb_text, thumb_path)
         
         # -------------------------------------------------------------------
         # BƯỚC 4: DỰNG VIDEO (LONG FORM)
         # -------------------------------------------------------------------
-        # [CẬP NHẬT] Lấy đường dẫn file script để tạo phụ đề
+        # Lấy đường dẫn file script để tạo phụ đề
         long_script_path = get_path("data", "episodes", f"{episode_id}_long_en.txt")
         
         video_path = create_video(
@@ -126,7 +128,7 @@ def main():
             audio_mixed_path, 
             image_path, 
             data.get('Name'),
-            script_path=long_script_path # <--- ĐÃ TRUYỀN SCRIPT VÀO ĐÂY
+            script_path=long_script_path # Truyền script để làm sub
         )
         
         if not video_path:
@@ -142,29 +144,23 @@ def main():
             "Tags": ["history", "biography", "documentary", data.get('Name')]
         }
         
-        # Upload kèm Thumbnail
         res = upload_video(video_path, upload_data, thumbnail_path=thumb_path)
         
         if not res or res == 'FAILED':
             safe_update_status(ws, row_idx, col_idx, 'FAILED_UPLOAD')
-            # Lưu ý: Vẫn tiếp tục chạy Shorts dù Long lỗi upload (tuỳ chọn)
         else:
             safe_update_status(ws, row_idx, col_idx, 'UPLOADED_LONG')
 
         # -------------------------------------------------------------------
         # BƯỚC 6: XỬ LÝ SHORTS (TÙY CHỌN)
         # -------------------------------------------------------------------
-        # Kiểm tra xem có script shorts không
         short_script_path = get_path("data", "episodes", f"{episode_id}_short_en.txt")
         if os.path.exists(short_script_path):
             logger.info("📱 Đang xử lý Shorts...")
             
-            # 6.1 TTS Shorts
             tts_short_path = create_tts(episode_id, data.get('Name'), mode="short")
             
             if tts_short_path:
-                # 6.2 Dựng Shorts (Kèm Subtitles Hormozi & Hook Title)
-                # Lấy Title ngắn cho Shorts (nếu có file riêng)
                 short_title_file = get_path("data", "episodes", f"{episode_id}_short_title.txt")
                 hook_title = data.get('Name')
                 if os.path.exists(short_title_file):
@@ -179,14 +175,13 @@ def main():
                     hook_title=hook_title
                 )
                 
-                # 6.3 Upload Shorts
                 if shorts_path:
                     shorts_meta = {
                         "Title": f"{hook_title} #Shorts",
                         "Summary": f"Shorts about {data.get('Name')}",
                         "Tags": ["shorts", "history", data.get('Name')]
                     }
-                    upload_video(shorts_path, shorts_meta) # Không cần thumbnail cho shorts
+                    upload_video(shorts_path, shorts_meta)
                     logger.info("✅ Shorts đã hoàn thành!")
 
         # -------------------------------------------------------------------
