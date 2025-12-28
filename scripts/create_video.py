@@ -156,7 +156,7 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text=""):
         # RENDER: FPS 15 / CRF 26 (Cân bằng Tốc độ & Vẻ đẹp cho GitHub Actions)
         final_video.write_videofile(
             output_path, fps=15, codec="libx264", audio_codec="aac", 
-            preset="ultrafast", threads=4, ffmpeg_params=["-crf", "26"], logger=None 
+            preset="ultrafast", threads=4, ffmpeg_params=["-crf", "26"], logger='bar' 
         )
         
         final_video.close()
