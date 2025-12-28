@@ -29,43 +29,49 @@ def get_authenticated_service():
             return None
     return build('youtube', 'v3', credentials=creds)
 
-# --- [FIXED] THÊM THAM SỐ THUMBNAIL_PATH ---
-def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None):
+# =========================================================
+# 🚀 HÀM UPLOAD CẬP NHẬT: HỖ TRỢ HẸN GIỜ (PUBLISH_AT)
+# =========================================================
+def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None, publish_at: str = None):
     """
-    Upload video và thumbnail (nếu có) lên YouTube.
+    Upload video lên YouTube. 
+    Nếu có publish_at (ISO 8601), video sẽ được đặt ở chế độ Private và lập lịch đăng.
     """
     if not video_path or not os.path.exists(video_path):
-        logging.error(f"File video không tồn tại: {video_path}")
+        logging.error(f"❌ File video không tồn tại: {video_path}")
         return 'FAILED'
 
     youtube = get_authenticated_service()
     if not youtube:
-        logging.error("Lỗi xác thực YouTube.")
+        logging.error("❌ Không thể xác thực YouTube API.")
         return 'FAILED'
 
     try:
-        title = episode_data.get('Title', 'New Episode')
-        description = episode_data.get('Summary', '')
+        title = episode_data.get('Title', 'Untitled Video')[:MAX_TITLE_LENGTH]
+        description = episode_data.get('Description', '')[:MAX_DESCRIPTION_LENGTH]
         tags = episode_data.get('Tags', [])
 
-        # Cắt ngắn Title/Description
-        if len(title) > MAX_TITLE_LENGTH: title = title[:MAX_TITLE_LENGTH-3] + "..."
-        if len(description) > MAX_DESCRIPTION_LENGTH: description = description[:MAX_DESCRIPTION_LENGTH]
-
+        # Cấu hình Body cho Request
         body = {
             'snippet': {
                 'title': title,
                 'description': description,
                 'tags': tags,
-                'categoryId': '22'
+                'categoryId': '22' # People & Blogs
             },
             'status': {
-                'privacyStatus': 'private', # Để public để đăng luôn / private để chế độ riêng tư.
+                # Nếu hẹn giờ, privacyStatus BẮT BUỘC phải là 'private'
+                'privacyStatus': 'private' if publish_at else 'public',
                 'selfDeclaredMadeForKids': False
             }
         }
 
-        # 1. Upload Video
+        # Thêm thời gian hẹn giờ nếu có (Định dạng: YYYY-MM-DDThh:mm:ssZ)
+        if publish_at:
+            body['status']['publishAt'] = publish_at
+            logging.info(f"📅 Đã thiết lập lịch đăng bài vào: {publish_at}")
+
+        # 1. Thực hiện Upload Video
         logging.info(f"🚀 Đang upload video: {title}")
         media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
         request = youtube.videos().insert(
@@ -78,25 +84,25 @@ def upload_video(video_path: str, episode_data: dict, thumbnail_path: str = None
         while response is None:
             status, response = request.next_chunk()
             if status:
-                logging.info(f"   Upload Video: {int(status.progress() * 100)}%")
+                logging.info(f"   Tiến độ upload: {int(status.progress() * 100)}%")
 
         video_id = response.get('id')
         logging.info(f"✅ Upload Video thành công! ID: {video_id}")
 
-        # 2. Upload Thumbnail (Logic Mới)
+        # 2. Upload Thumbnail (Nếu có)
         if thumbnail_path and os.path.exists(thumbnail_path):
-            logging.info(f"🖼️ Đang upload thumbnail: {thumbnail_path}")
+            logging.info(f"🖼️ Đang upload thumbnail cho video {video_id}")
             try:
                 youtube.thumbnails().set(
                     videoId=video_id,
                     media_body=MediaFileUpload(thumbnail_path)
                 ).execute()
-                logging.info("✅ Upload Thumbnail thành công!")
+                logging.info("✅ Cập nhật Thumbnail thành công!")
             except Exception as e:
-                logging.error(f"⚠️ Lỗi upload thumbnail: {e}")
+                logging.error(f"⚠️ Lỗi cập nhật thumbnail: {e}")
         
         return {'video_id': video_id}
 
     except Exception as e:
-        logging.error(f"❌ Lỗi Upload: {e}")
+        logging.error(f"❌ Lỗi Upload YouTube: {e}")
         return 'FAILED'
