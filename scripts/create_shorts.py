@@ -229,7 +229,7 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         
         logger.info("🚀 Rendering Shorts...")
-        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger=None)
+        final.write_videofile(out_path, fps=12, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger=None)
         return out_path
 
     except Exception as e:
