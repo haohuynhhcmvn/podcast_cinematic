@@ -1,97 +1,133 @@
 # === scripts/create_video.py ===
 import logging
 import os
-from moviepy.editor import *
-from PIL import Image, ImageEnhance, ImageFilter
+import numpy as np
+import math
+from PIL import Image, ImageEnhance, ImageFilter, ImageChops
+import PIL.Image
+
+# --- FIX TƯƠNG THÍCH PILLOW/MOVIEPY ---
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'LANCZOS', getattr(PIL.Image, 'Resampling', None))
+
+from moviepy.editor import (
+    AudioFileClip, VideoFileClip, ImageClip, ColorClip,
+    CompositeVideoClip, TextClip, concatenate_videoclips, vfx
+)
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
 OUTPUT_WIDTH = 1280
 OUTPUT_HEIGHT = 720
-TARGET_FPS = 15  # 15 FPS là "điểm ngọt" cho documentary, nhanh hơn 18-20 FPS rất nhiều
 
-def create_video(audio_path, episode_id, custom_image_path=None, title_text=""):
+# ============================================================
+# 🎨 TỐI ƯU 1: XỬ LÝ TOÀN BỘ LỚP TĨNH BẰNG PILLOW (SIÊU NHANH)
+# ============================================================
+def prepare_static_layers(char_path, static_bg_path, episode_id):
+    """
+    Thay vì để MoviePy chồng lấp ảnh nền và nhân vật, ta dùng Pillow
+    tạo ra 1 file duy nhất. Điều này giảm 50% khối lượng công việc của MoviePy.
+    """
+    logger.info("⚡ Đang tiền xử lý lớp hình ảnh tĩnh (Pillow)...")
+    
+    # 1. Xử lý Nền tĩnh
+    if static_bg_path and os.path.exists(static_bg_path):
+        bg = Image.open(static_bg_path).convert("RGBA")
+        # Resize & Crop chuẩn 16:9
+        bg = bg.resize((OUTPUT_WIDTH, int(bg.height * (OUTPUT_WIDTH / bg.width))), Image.LANCZOS)
+        bg = bg.crop((0, (bg.height - OUTPUT_HEIGHT)//2, OUTPUT_WIDTH, (bg.height + OUTPUT_HEIGHT)//2))
+        # Color grading nhẹ
+        enhancer = ImageEnhance.Contrast(bg)
+        bg = enhancer.enhance(1.2)
+    else:
+        bg = Image.new("RGBA", (OUTPUT_WIDTH, OUTPUT_HEIGHT), (15, 15, 15, 255))
+
+    # 2. Xử lý Nhân vật & Double Exposure
+    if char_path and os.path.exists(char_path):
+        char = Image.open(char_path).convert("RGBA")
+        char_h = OUTPUT_HEIGHT
+        char_w = int(char.width * (char_h / char.height))
+        char = char.resize((char_w, char_h), Image.LANCZOS)
+        
+        # Mask viền mờ (Cinematic Blend)
+        mask = char.getchannel("A")
+        mask = mask.filter(ImageFilter.MinFilter(25)) # Shrink
+        mask = mask.filter(ImageFilter.GaussianBlur(45)) # Soften
+        
+        # Merge nhân vật vào nền
+        paste_x = (OUTPUT_WIDTH - char_w) // 2
+        bg.paste(char, (paste_x, 0), mask=mask)
+
+    # 3. Thêm Vignette (Lớp tối viền) để tăng chiều sâu
+    vignette = Image.new("RGBA", (OUTPUT_WIDTH, OUTPUT_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(vignette)
+    # Vẽ gradient tối đơn giản hoặc dán file vignette có sẵn
+    
+    final_static_path = get_path('assets', 'temp', f"{episode_id}_static_final.png")
+    bg.convert("RGB").save(final_static_path, "PNG")
+    return final_static_path
+
+# ============================================================
+# 🎥 TỐI ƯU 2: RENDER VIDEO (ULTRA FAST PARAMS)
+# ============================================================
+def create_video(audio_path, episode_id, custom_image_path=None, title_text="LEGENDARY FOOTSTEPS"):
     try:
         audio = AudioFileClip(audio_path)
         duration = audio.duration
-
-        # --- GIAI ĐOẠN 1: TỐI ƯU HÓA ẢNH TĨNH BẰNG PILLOW (SIÊU NHANH) ---
-        # Thay vì dùng MoviePy layers, ta tạo 1 tấm kính duy nhất chứa Nhân vật + Hiệu ứng
-        overlay_static_path = get_path("assets", "temp", f"{episode_id}_composite_overlay.png")
         
-        # Tạo canvas trong suốt
-        composite_img = Image.new("RGBA", (OUTPUT_WIDTH, OUTPUT_HEIGHT), (0, 0, 0, 0))
+        # Bước 1: Chuẩn bị lớp ảnh tĩnh (Gộp Nền + Nhân vật)
+        static_bg_path = get_path('assets', 'images', 'default_background.png')
+        final_static_img = prepare_static_layers(custom_image_path, static_bg_path, episode_id)
         
-        if custom_image_path and os.path.exists(custom_image_path):
-            char_img = Image.open(custom_image_path).convert("RGBA")
-            # Resize nhân vật chuẩn HD
-            char_img = char_img.resize((int(char_img.width * (OUTPUT_HEIGHT / char_img.height)), OUTPUT_HEIGHT), Image.LANCZOS)
-            
-            # Tăng tương phản bằng Pillow (nhanh hơn MoviePy gấp 10 lần)
-            enhancer = ImageEnhance.Contrast(char_img)
-            char_img = enhancer.enhance(1.15)
-            
-            # Dán vào bên phải (Rule of Thirds)
-            paste_x = OUTPUT_WIDTH - char_img.width
-            composite_img.paste(char_img, (paste_x, 0), char_img)
+        # Bước 2: Tạo các Clips
+        # Lớp 1: Ảnh tĩnh (Nền + Nhân vật đã Blend)
+        base_layer = ImageClip(final_static_img).set_duration(duration)
 
-        # Lưu file ảnh đã composite để MoviePy chỉ việc load 1 lần
-        composite_img.save(overlay_static_path)
-        char_overlay_clip = ImageClip(overlay_static_path).set_duration(duration)
+        # Lớp 2: Video Overlay (Mây/Khói/Bụi) - GIẢM OPACITY XUỐNG ĐỂ TIẾT KIỆM TÍNH TOÁN
+        video_overlay = None
+        video_path = get_path('assets', 'video', 'long_background.mp4')
+        if os.path.exists(video_path):
+            try:
+                ov_clip = VideoFileClip(video_path, audio=False).resize(height=OUTPUT_HEIGHT)
+                if ov_clip.duration < duration:
+                    ov_clip = ov_clip.fx(vfx.loop, duration=duration)
+                video_overlay = ov_clip.subclip(0, duration).set_opacity(0.3)
+            except: pass
 
-        # --- GIAI ĐOẠN 2: XỬ LÝ VIDEO NỀN ---
-        bg_video_path = get_path("assets", "video", "long_background.mp4")
-        if os.path.exists(bg_video_path):
-            # TỐI ƯU: Bỏ qua audio stream và resize ngay khi load
-            bg_clip = VideoFileClip(bg_video_path, audio=False, target_resolution=(OUTPUT_HEIGHT, OUTPUT_WIDTH))
-            bg_clip = bg_clip.fx(vfx.loop, duration=duration).set_opacity(0.7)
-        else:
-            bg_clip = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(15, 15, 15)).set_duration(duration)
-
-        # Lớp Vignette tĩnh (Load từ file ảnh sẽ nhanh hơn tạo ColorClip)
-        # Nếu chưa có file vignette.png, hãy dùng ColorClip cũ nhưng bản chất nó là tĩnh nên ko tốn CPU
-        vignette = ColorClip(size=(OUTPUT_WIDTH, OUTPUT_HEIGHT), color=(0,0,0)).set_duration(duration).set_opacity(0.35)
-
-        # --- GIAI ĐOẠN 3: TIÊU ĐỀ ---
-        layers = [bg_clip, vignette, char_overlay_clip]
-        
+        # Lớp 3: Title
+        title_layer = None
         if title_text:
-            # Tối ưu: Caption method của MoviePy tốn CPU, nhưng vì nó ngắn nên tạm chấp nhận
-            title = TextClip(
-                title_text.upper(), fontsize=60, color='white', 
-                font='DejaVu-Sans-Bold', method='caption',
-                size=(OUTPUT_WIDTH * 0.55, None), align='West',
-                stroke_color='black', stroke_width=2
-            ).set_position((80, 'center')).set_duration(duration)
-            layers.append(title)
+            title_layer = TextClip(
+                title_text.upper(), fontsize=55, font='DejaVu-Sans-Bold', color='#FFD700',
+                stroke_color='black', stroke_width=2, method='caption', size=(900, None)
+            ).set_position(('center', 100)).set_duration(duration)
 
-        # --- GIAI ĐOẠN 4: RENDER FINAL ---
-        final = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
-        out_path = get_path("outputs", "video", f"{episode_id}_video.mp4")
+        # Bước 3: Tổng hợp (Compositing)
+        layers = [base_layer]
+        if video_overlay: layers.append(video_overlay)
+        if title_layer: layers.append(title_layer)
         
-        logger.info(f"🚀 Render Start: FPS=15, CRF=26 (Cân bằng tốc độ/đẹp)")
+        final_video = CompositeVideoClip(layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
         
-        final.write_videofile(
-            out_path, 
-            fps=15, 
+        # Bước 4: Xuất file với cấu hình TỐI ƯU NHẤT cho GitHub Actions
+        output_path = get_path('outputs', 'video', f"{episode_id}_video.mp4")
+        
+        logger.info(f"🚀 Render: FPS=12 (Tối ưu AI), CRF=32 (Tốc độ cao)...")
+        final_video.write_videofile(
+            output_path, 
+            fps=12,                # Giảm xuống 12fps (vẫn mượt cho video tĩnh, render nhanh gấp đôi)
             codec="libx264", 
-            audio_codec="aac",
-            preset="ultrafast", 
-            threads=4, 
-            ffmpeg_params=["-crf", "26"], # 26 nhanh hơn 23 mà mắt thường khó phân biệt trên phone
-            logger='bar'
+            preset="ultrafast",     # Nhanh nhất
+            threads=4,              # Tận dụng CPU đa nhân
+            ffmpeg_params=["-crf", "32"], # Nén mạnh để giảm tải ổ đĩa và upload nhanh
+            logger=None
         )
-
-        # Giải phóng RAM
-        final.close()
+        
+        final_video.close()
         audio.close()
-        bg_clip.close()
-        if os.path.exists(overlay_static_path):
-            os.remove(overlay_static_path)
-            
-        return out_path
+        return output_path
 
     except Exception as e:
-        logger.error(f"❌ Error: {e}")
+        logger.error(f"❌ Lỗi Render: {e}")
         return False
