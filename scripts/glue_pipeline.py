@@ -102,13 +102,21 @@ def main():
     # ...
     image_path = f"assets/temp/{eid}_raw_ai.png"
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for s in shorts:
-            pool.submit(process_one_short, s, data, image_path)
+    logger.info("📱 GENERATING 5 SHORTS (SEQUENTIAL MODE)...")
+    
+    for short_cfg in shorts:
+        try:
+            # Truyền thêm image_path từ long_video vào để làm background
+            # Nếu long_res không có image_path, hãy đảm bảo logic lấy ảnh đúng
+            bg_image = long_res.get("image_path") 
+            process_one_short(short_cfg, data, bg_image)
+            
+            # Nghỉ 2 giây giữa các video để giải phóng RAM
+            sleep(2) 
+        except Exception as e:
+            logger.error(f"❌ Lỗi khi tạo Short {short_cfg['index']}: {e}")
 
-    cleanup_temp_files(eid)
-    logger.info("🎉 PIPELINE FINISHED")
-
+    logger.info("✅ ALL SHORTS PROCESSED")
 
 if __name__ == "__main__":
     main()
