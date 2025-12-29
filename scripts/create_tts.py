@@ -1,9 +1,10 @@
-# scripts/create_tts.py
+# === scripts/create_tts.py (FINAL FIXED VERSION) ===
 import logging
 import os
 import asyncio
 import textwrap
 import random
+import re
 import time
 from openai import OpenAI
 from pydub import AudioSegment
@@ -13,177 +14,192 @@ from utils import get_path
 logger = logging.getLogger(__name__)
 
 # =========================================================
-# ⚙️ CẤU HÌNH TIẾT KIỆM TIỀN (QUAN TRỌNG)
+# ⚙️ CẤU HÌNH HỆ THỐNG
 # =========================================================
-# Danh sách giọng nam Edge-TTS để xoay vòng nếu bị chặn
+
+# Danh sách giọng nam Edge-TTS (Anh - Mỹ) để xoay vòng
 EDGE_VOICES = [
-    "en-US-ChristopherNeural", # Ưu tiên 1: Giọng trầm (Tài liệu)
-    "en-US-EricNeural",        # Ưu tiên 2: Giọng chắc (Tin tức)
-    "en-US-GuyNeural",         # Ưu tiên 3: Giọng thường
-    "en-US-RogerNeural"        # Ưu tiên 4
+    "en-US-ChristopherNeural", # Trầm, điện ảnh
+    "en-US-EricNeural",        # Mạnh mẽ, tin tức
+    "en-US-GuyNeural",         # Tự nhiên
+    "en-US-RogerNeural"        # Hơi máy móc chút nhưng rõ
 ]
 
-# 🚨 KILL SWITCH: Đặt là False để KHÔNG BAO GIỜ dùng OpenAI (Tiết kiệm tuyệt đối)
-# Nếu Edge lỗi, quy trình sẽ dừng lại (Failed) thay vì trừ tiền thẻ của bạn.
-# Đặt là True nếu bạn chấp nhận tốn tiền để cứu video bằng mọi giá. (False: Ngắt OpenAI)
-USE_OPENAI_BACKUP = True
+# 🚨 BACKUP PLAN: True = Dùng OpenAI nếu Edge lỗi (Tốn tiền)
+USE_OPENAI_BACKUP = True 
 
+# Tốc độ đọc (1.0 = chuẩn, 1.15 = nhanh hơn chút cho YouTube Shorts)
 SPEED_MULTIPLIER = 1.15
 
 # =========================================================
-# 🧹 HÀM LỌC KỊCH BẢN
+# 🧹 MODULE 1: LÀM SẠCH KỊCH BẢN (QUAN TRỌNG)
 # =========================================================
-def clean_and_validate_script(text):
+def clean_text_for_tts(text):
+    """Lọc bỏ ký tự đặc biệt khiến EdgeTTS bị lỗi."""
     if not text: return ""
-    lines = text.split('\n')
-    cleaned_lines = []
-    garbage_keywords = [
-        "script", "biography", "title:", "host:", "narrator:", 
-        "intro:", "outro:", "music:", "visual:", "scene:"
-    ]
-    for i, line in enumerate(lines):
-        clean_line = line.strip()
-        if not clean_line: continue
-        if i < 5:
-            lower = clean_line.lower()
-            if any(kw in lower for kw in garbage_keywords): continue
-            if len(clean_line.split()) < 6 and not clean_line.endswith(('.', '!', '?')): continue
-        cleaned_lines.append(clean_line)
-    return "\n".join(cleaned_lines)
+
+    # 1. Xóa Markdown của GPT (*bold*, # Title)
+    text = text.replace("*", "").replace("#", "").replace("`", "")
+
+    # 2. Xóa các chỉ dẫn trong ngoặc: [Music], (Sigh), [Applause]
+    text = re.sub(r"\[.*?\]", "", text)
+    text = re.sub(r"\(.*?\)", "", text)
+
+    # 3. Xóa các từ khóa kịch bản thừa ở đầu câu
+    # Ví dụ: "Narrator: Once upon a time..." -> "Once upon a time..."
+    text = re.sub(r"(?i)^(Narrator|Host|Speaker|Scene|Intro|Outro):", "", text)
+
+    # 4. Xóa khoảng trắng thừa
+    text = " ".join(text.split())
+    
+    return text.strip()
 
 # =========================================================
-# 🎙️ ENGINE 1: EDGE TTS (HARDCORE RETRY)
+# 🎙️ MODULE 2: EDGE TTS (ASYNC CORE)
 # =========================================================
-async def _run_edge_tts_with_retry(text, output_file):
+async def _generate_edge_one_chunk(text, output_path):
     """
-    Thử tạo TTS với cơ chế xoay vòng giọng và thử lại nhiều lần.
+    Sinh 1 đoạn audio ngắn. 
+    Tự động thử lại (Retry) và đổi giọng (Rotate Voice) nếu lỗi.
     """
-    last_error = None
-    
-    # Thử từng giọng trong danh sách
-    for voice in EDGE_VOICES:
-        # Với mỗi giọng, thử lại 3 lần (Retry)
-        for attempt in range(3):
-            try:
-                # Thêm delay ngẫu nhiên để tránh bị server chặn IP
-                await asyncio.sleep(random.uniform(0.5, 2.0))
-                
-                communicate = edge_tts.Communicate(text, voice)
-                await communicate.save(output_file)
-                
-                # Kiểm tra xem file có tạo ra thật không và có dung lượng > 0 không
-                if os.path.exists(output_file) and os.path.getsize(output_file) > 1024:
-                    return True # Thành công
-                
-            except Exception as e:
-                last_error = e
-                logger.warning(f"   ⚠️ Thất bại giọng {voice} (Lần {attempt+1}): {e}")
-                
-                # THÊM DELAY NGẮN SAU KHI THẤT BẠI
-                if attempt < 2: 
-                    await asyncio.sleep(2) # Nghỉ 2 giây trước khi thử lại
-                
-    # Nếu thử hết mọi cách mà vẫn lỗi
-    logger.error(f"❌ Edge TTS thất bại hoàn toàn. Lỗi cuối: {last_error}")
-    return False
-
-def generate_with_edge(chunks, episode_id):
-    """Quản lý việc tạo audio từng phần."""
-    combined_audio = AudioSegment.empty()
-    logger.info(f"🎙️ [Chiến thuật Tiết Kiệm] Đang chạy Edge-TTS ({len(chunks)} chunks)...")
-    
-    for i, chunk in enumerate(chunks):
-        temp_path = get_path("assets", "temp", f"{episode_id}_edge_{i}.mp3")
-        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+    # Thử tối đa 3 lần cho mỗi đoạn
+    for attempt in range(3):
+        # Chọn ngẫu nhiên 1 giọng để tránh bị server Microsoft chặn IP liên tục
+        voice = random.choice(EDGE_VOICES)
         
-        # Gọi hàm retry cứng đầu
-        success = asyncio.run(_run_edge_tts_with_retry(chunk, temp_path))
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(output_path)
+            
+            # [CHECK QUAN TRỌNG] File có tồn tại và có dữ liệu không?
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 100:
+                return True # Thành công!
+            
+        except Exception as e:
+            logger.warning(f"⚠️ EdgeTTS Lỗi (Lần {attempt+1}) - Giọng {voice}: {e}")
+            # Nghỉ 1 chút trước khi thử lại
+            await asyncio.sleep(1.5)
+            
+    return False # Thất bại sau 3 lần
+
+def run_edge_tts_batch(chunks, episode_id):
+    """Chạy vòng lặp xử lý từng chunk."""
+    combined = AudioSegment.empty()
+    logger.info(f"🎙️ [Edge-TTS] Đang xử lý {len(chunks)} đoạn...")
+
+    for i, chunk in enumerate(chunks):
+        # Lọc rác lần cuối
+        safe_text = clean_text_for_tts(chunk)
+        if len(safe_text) < 2: continue # Bỏ qua câu quá ngắn
+
+        temp_file = get_path("assets", "temp", f"{episode_id}_edge_{i}.mp3")
+        
+        # Gọi hàm async trong môi trường sync
+        success = asyncio.run(_generate_edge_one_chunk(safe_text, temp_file))
         
         if success:
             try:
-                segment = AudioSegment.from_file(temp_path)
-                combined_audio += segment
-                os.remove(temp_path)
-                logger.info(f"   ✅ Chunk {i+1} OK.")
+                # Đọc file vào RAM ngay lập tức
+                segment = AudioSegment.from_file(temp_file)
+                combined += segment
+                
+                # Xóa file tạm ngay để dọn rác
+                os.remove(temp_file)
             except Exception as e:
-                logger.error(f"   ❌ File lỗi định dạng chunk {i}: {e}")
+                logger.error(f"❌ Lỗi thư viện Pydub đọc file {temp_file}: {e}")
                 return None
         else:
-            logger.error(f"💀 Chunk {i} không thể tạo được bằng Edge TTS.")
-            return None # Thất bại để kích hoạt backup (hoặc dừng)
+            logger.error(f"💀 EdgeTTS thất bại ở đoạn {i}: '{safe_text[:30]}...'")
+            return None # Trả về None để kích hoạt OpenAI Backup
             
-    return combined_audio
+    return combined
 
 # =========================================================
-# 💎 ENGINE 2: OPENAI TTS (CHỈ KHI ĐƯỢC PHÉP)
+# 💎 MODULE 3: OPENAI TTS (FALLBACK)
 # =========================================================
-def generate_with_openai(chunks, episode_id):
-    if not USE_OPENAI_BACKUP:
-        logger.error("🛑 DỪNG LẠI: Edge TTS lỗi và bạn đã TẮT chế độ OpenAI Backup.")
-        return None
-
-    logger.warning("💸 Đang dùng OpenAI TTS (Tốn tiền) để cứu video...")
+def run_openai_tts(chunks, episode_id):
+    if not USE_OPENAI_BACKUP: return None
+    
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return None
+
+    logger.warning("💰 Đang dùng OpenAI TTS để cứu video...")
     client = OpenAI(api_key=api_key)
-    
-    combined_audio = AudioSegment.empty()
+    combined = AudioSegment.empty()
+
     for i, chunk in enumerate(chunks):
+        safe_text = clean_text_for_tts(chunk)
+        if len(safe_text) < 2: continue
+
         try:
             response = client.audio.speech.create(
-                model="tts-1", voice="onyx", input=chunk
+                model="tts-1", voice="onyx", input=safe_text
             )
-            temp_path = get_path("assets", "temp", f"{episode_id}_openai_{i}.mp3")
-            os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-            response.stream_to_file(temp_path)
-            combined_audio += AudioSegment.from_file(temp_path)
-            os.remove(temp_path)
-        except Exception: return None
-    return combined_audio
+            temp_file = get_path("assets", "temp", f"{episode_id}_openai_{i}.mp3")
+            response.stream_to_file(temp_file)
+            
+            combined += AudioSegment.from_file(temp_file)
+            os.remove(temp_file)
+        except Exception as e:
+            logger.error(f"❌ OpenAI TTS Error: {e}")
+            return None
+            
+    return combined
 
 # =========================================================
-# 🎧 MAIN FUNCTION
+# 🚀 MAIN FUNCTION (ĐƯỢC GỌI BỞI GLUE_PIPELINE)
 # =========================================================
 def create_tts(script_path, episode_id, mode="long"):
+    """
+    Hàm chính: Đọc script -> Text Clean -> Chunking -> TTS -> Speedup -> Save MP3
+    """
     try:
-        if not os.path.exists(script_path): return None
+        # 1. Đọc file Script
+        if not os.path.exists(script_path):
+            logger.error(f"❌ Không tìm thấy file script: {script_path}")
+            return None
+            
         with open(script_path, "r", encoding="utf-8") as f:
-            full_text = clean_and_validate_script(f.read().strip())
-        if not full_text: return None
+            raw_text = f.read()
 
-        # Chia nhỏ text (Giảm xuống 750 ký tự cho an toàn hơn)
-        chunk_size = 750 # <--- ĐÃ SỬA: 1500 -> 750
-        chunks = textwrap.wrap(full_text, width=chunk_size, break_long_words=False)
-        
-        # 1. Thử Edge (Miễn phí)
-        combined_audio = generate_with_edge(chunks, episode_id)
-        
-        # 2. Nếu thất bại, check xem có cho dùng OpenAI không
-        if combined_audio is None:
-            if USE_OPENAI_BACKUP:
-                combined_audio = generate_with_openai(chunks, episode_id)
-            else:
-                logger.error("❌ HỦY TASK: Không tạo được giọng đọc Free.")
-                return None
+        # 2. Chia nhỏ văn bản (Chunking)
+        # Giảm xuống 800 ký tự để an toàn cho EdgeTTS
+        chunks = textwrap.wrap(raw_text, width=800, break_long_words=False)
+        if not chunks: return None
 
-        if combined_audio is None or len(combined_audio) == 0: return None
+        # 3. Chạy Engine 1: Edge TTS (Free)
+        final_audio = run_edge_tts_batch(chunks, episode_id)
 
-        # 3. Tăng tốc
+        # 4. Chạy Engine 2: OpenAI (Nếu Engine 1 lỗi)
+        if final_audio is None:
+            final_audio = run_openai_tts(chunks, episode_id)
+
+        # Nếu cả 2 đều lỗi -> Hủy
+        if final_audio is None or len(final_audio) < 1000: # < 1 giây
+            logger.error("❌ HỦY TASK: Không thể tạo giọng đọc.")
+            return None
+
+        # 5. Xử lý hậu kỳ: Tăng tốc độ đọc (Speed Up)
         if SPEED_MULTIPLIER != 1.0:
-            rate = combined_audio.frame_rate
-            combined_audio = combined_audio._spawn(combined_audio.raw_data, overrides={
+            logger.info(f"⏩ Đang tăng tốc audio: x{SPEED_MULTIPLIER}")
+            rate = final_audio.frame_rate
+            final_audio = final_audio._spawn(final_audio.raw_data, overrides={
                 "frame_rate": int(rate * SPEED_MULTIPLIER)
             }).set_frame_rate(rate)
 
-        # Xuất file
+        # 6. Xuất file kết quả
         suffix = "long" if mode == "long" else "short"
-        output_path = get_path("data", "audio", f"{episode_id}_{suffix}.mp3")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        combined_audio.export(output_path, format="mp3")
+        # Đảm bảo thư mục tồn tại
+        output_dir = get_path("data", "audio")
+        os.makedirs(output_dir, exist_ok=True)
         
-        logger.info(f"✅ TTS Success: {output_path}")
+        output_path = os.path.join(output_dir, f"{episode_id}_{suffix}.mp3")
+        
+        final_audio.export(output_path, format="mp3")
+        logger.info(f"✅ TTS Hoàn tất: {output_path} (Độ dài: {len(final_audio)/1000:.1f}s)")
+        
         return output_path
 
     except Exception as e:
-        logger.error(f"❌ Lỗi Create TTS Tổng: {e}", exc_info=True)
+        logger.error(f"❌ Lỗi nghiêm trọng trong create_tts: {e}", exc_info=True)
         return None
