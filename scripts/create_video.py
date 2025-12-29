@@ -1,4 +1,4 @@
-# === scripts/create_video.py ===
+# === scripts/create_video.py (FIXED ARGUMENT NAME) ===
 import logging
 import os
 import numpy as np
@@ -117,7 +117,8 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
 # ============================================================
 # 🎬 HÀM CHÍNH: CREATE VIDEO
 # ============================================================
-def create_video(audio_path, episode_id, custom_image_path=None, title_text=""):
+# [FIXED] Đổi 'custom_image_path' thành 'image_path' để khớp với glue_pipeline
+def create_video(audio_path, episode_id, image_path=None, title_text=""):
     try:
         audio = AudioFileClip(audio_path)
         duration = audio.duration
@@ -126,7 +127,8 @@ def create_video(audio_path, episode_id, custom_image_path=None, title_text=""):
         custom_bg = get_path('assets', 'images', f"{episode_id}_bg.png")
         static_bg_path = custom_bg if os.path.exists(custom_bg) else get_path('assets', 'images', 'default_background.png')
         
-        char_overlay_path = create_static_overlay_image(custom_image_path)
+        # Sử dụng đúng tên biến image_path
+        char_overlay_path = create_static_overlay_image(image_path)
         base_video_path = get_path('assets', 'video', 'long_background.mp4') 
         
         background_clip = make_hybrid_video_background(base_video_path, static_bg_path, char_overlay_path, duration)
