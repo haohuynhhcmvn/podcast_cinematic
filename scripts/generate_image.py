@@ -1,5 +1,4 @@
-# scripts/generate_image.py (FINAL FIXED)
-
+# === scripts/generate_image.py ===
 import os
 import logging
 import requests
