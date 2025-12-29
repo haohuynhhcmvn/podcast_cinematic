@@ -1,4 +1,4 @@
-# === scripts/glue_pipeline.py (FINAL PERFECTED VERSION) ===
+# === scripts/glue_pipeline.py ===
 
 import logging
 import sys
@@ -61,20 +61,20 @@ def process_one_short_sequential(short_cfg, data, background_image_path):
         title_content = open(short_cfg["title"], encoding="utf-8").read().strip()
 
         # 2. Tạo giọng đọc (TTS)
-        # Lưu ý: Hàm create_tts đã được fix để retry nếu lỗi
         tts_audio = create_tts(short_cfg["script"], data["ID"], f"short_{idx}")
         if not tts_audio:
             logger.error(f"❌ Short {idx}: Lỗi tạo TTS.")
             return False
 
         # 3. Dựng Video (Dọc 9:16)
+        # Truyền custom_image_path để Shorts cũng có hình nhân vật
         video_path = create_shorts(
             audio_path=tts_audio,
-            text_script=script_content, # Truyền text để làm phụ đề
+            text_script=script_content, 
             episode_id=f"{data['ID']}_{idx}",
             character_name=data["Name"],
             hook_title=title_content,
-            custom_image_path=background_image_path # Dùng lại ảnh của Long Video
+            custom_image_path=background_image_path 
         )
 
         if not video_path:
@@ -82,7 +82,6 @@ def process_one_short_sequential(short_cfg, data, background_image_path):
             return False
 
         # 4. Upload lên YouTube
-        # Thẻ tag cố định cho Shorts
         upload_meta = {
             "Title": f"{title_content} #Shorts",
             "Summary": f"Subscribe for more history facts about {data['Name']}!\n\n#shorts #history #facts",
@@ -120,7 +119,7 @@ def main():
     col_idx = task["col_idx"]
     ws = task["worksheet"]
     
-    # Ép kiểu ID sang chuỗi để an toàn khi tạo tên file
+    # Ép kiểu ID sang chuỗi để an toàn
     eid = str(data.get('ID'))
     text_hash = data.get("text_hash")
 
@@ -133,9 +132,9 @@ def main():
         # =========================================================
         
         # 1.1 Tạo ảnh minh họa (DALL-E 3)
-        # Ảnh này sẽ dùng chung cho cả Long Video và Shorts
         img_path = None
         if generate_character_image:
+            # Gửi ID (eid) vào hàm thay vì đường dẫn
             img_path = generate_character_image(data.get("Name"), eid)
         else:
             logger.warning("⚠️ Bỏ qua bước tạo ảnh (Module thiếu).")
@@ -151,29 +150,29 @@ def main():
         # =========================================================
         logger.info("🎬 === BẮT ĐẦU XỬ LÝ VIDEO DÀI ===")
 
-        # 2.1 Tạo giọng đọc (TTS) - QUAN TRỌNG: Phải làm trước khi dựng video
+        # 2.1 Tạo giọng đọc (TTS)
         logger.info("🔊 Đang tạo giọng đọc (TTS)...")
         long_audio_path = create_tts(long_res["script_path"], eid, "long")
         
         if long_audio_path:
-            # 2.2 Ghép nhạc nền & Intro/Outro
+            # 2.2 Ghép nhạc nền
             logger.info("🎵 Đang phối nhạc nền...")
             final_audio_path = auto_music_sfx(long_audio_path, eid)
             
             # 2.3 Dựng Video
-            # Lưu ý: create_video nhận Audio + Ảnh -> Ra Video
+            # Lưu ý: create_video nhận tham số image_path chính xác
             logger.info("🎥 Đang Render Video...")
             long_video_path = create_video(
                 audio_path=final_audio_path, 
                 episode_id=eid,
-                image_path=img_path # Truyền ảnh DALL-E vào
+                image_path=img_path, # Truyền ảnh DALL-E vào đây
+                title_text=data.get("Name")
             )
 
             # 2.4 Tạo & Upload Thumbnail
             thumb_path = None
             if add_text_to_thumbnail and img_path:
                 thumb_path = get_path("outputs", "thumbnails", f"{eid}_thumb.jpg")
-                # Lấy tiêu đề ngắn gọn để viết lên ảnh
                 add_text_to_thumbnail(img_path, data.get("Name").upper(), thumb_path)
 
             # 2.5 Upload Video Dài
@@ -183,27 +182,24 @@ def main():
             else:
                 logger.error("❌ Lỗi: Không tìm thấy file video dài để upload.")
         else:
-            logger.error("❌ Lỗi: Không tạo được TTS cho video dài. Bỏ qua bước dựng video.")
+            logger.error("❌ Lỗi: Không tạo được TTS cho video dài.")
 
         # =========================================================
-        # GIAI ĐOẠN 3: XỬ LÝ SHORTS (TUẦN TỰ ĐỂ TRÁNH LỖI)
+        # GIAI ĐOẠN 3: XỬ LÝ SHORTS (TUẦN TỰ)
         # =========================================================
         logger.info("📱 === BẮT ĐẦU XỬ LÝ 5 SHORTS ===")
         
-        # 3.1 Cắt kịch bản dài thành 5 phần
         shorts_list = split_long_script_to_5_shorts(data, long_res["script_path"])
         
         if shorts_list:
             success_count = 0
-            # 3.2 Chạy vòng lặp tuần tự (Sequential Loop)
+            # Chạy vòng lặp tuần tự
             for short_cfg in shorts_list:
+                # Truyền ảnh nền vào cho Shorts
                 result = process_one_short_sequential(short_cfg, data, img_path)
                 if result: 
                     success_count += 1
                 
-                # 🛑 QUAN TRỌNG: Nghỉ 5 giây giữa các video để:
-                # 1. Giải phóng RAM
-                # 2. Tránh bị Microsoft EdgeTTS chặn vì spam request
                 logger.info("⏳ Nghỉ 5 giây để hồi phục tài nguyên...")
                 sleep(5)
             
@@ -212,17 +208,14 @@ def main():
             logger.error("❌ Không thể cắt kịch bản Shorts.")
 
         # =========================================================
-        # KẾT THÚC
+        # KẾT THÚC & DỌN DẸP
         # =========================================================
-        
-        # Cập nhật trạng thái DONE trên Sheet
         safe_update_status(ws, row_idx, col_idx, 'DONE')
         
-        # Dọn dẹp file rác
         logger.info("🧹 Đang dọn dẹp file tạm...")
         cleanup_temp_files(eid, text_hash)
         
-        logger.info("🎉🎉🎉 TOÀN BỘ QUY TRÌNH ĐÃ HOÀN TẤT! 🎉🎉🎉")
+        logger.info("🎉 QUY TRÌNH HOÀN TẤT! 🎉")
 
     except Exception as e:
         logger.error(f"❌ LỖI NGHIÊM TRỌNG TRONG PIPELINE: {e}", exc_info=True)
