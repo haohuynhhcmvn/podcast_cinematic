@@ -1,4 +1,4 @@
-# scripts/create_shorts.py
+# === scripts/create_shorts.py ===
 import logging
 import os
 import math 
@@ -137,27 +137,34 @@ def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     for i, chunk in enumerate(chunks):
         start_time = i * time_per_chunk
         
-        txt_clip = TextClip(
-            chunk.upper(),
-            fontsize=fontsize,
-            font='DejaVu-Sans-Bold',
-            color='#FFD700',      # Vàng Gold
-            stroke_color='black',
-            stroke_width=6,
-            size=(950, None),
-            method='caption',
-            align='center'
-        )
-        # Đặt ở vùng tối bên dưới (Y=1400)
-        txt_clip = txt_clip.set_position(('center', 1400)).set_start(start_time).set_duration(time_per_chunk)
-        subtitle_clips.append(txt_clip)
+        try:
+            txt_clip = TextClip(
+                chunk.upper(),
+                fontsize=fontsize,
+                font='DejaVu-Sans-Bold',
+                color='#FFD700',      # Vàng Gold
+                stroke_color='black',
+                stroke_width=6,
+                size=(950, None),
+                method='caption',
+                align='center'
+            )
+            # Đặt ở vùng tối bên dưới (Y=1400)
+            txt_clip = txt_clip.set_position(('center', 1400)).set_start(start_time).set_duration(time_per_chunk)
+            subtitle_clips.append(txt_clip)
+        except Exception:
+            pass # Bỏ qua nếu lỗi font/TextClip
 
     return subtitle_clips
 
 # =========================================================
-# 🎬 HÀM CHÍNH (CREATE SHORTS)
+# 🎬 HÀM CHÍNH (CREATE SHORTS) - ĐÃ ĐỒNG BỘ THAM SỐ
 # =========================================================
-def create_shorts(audio_path, hook_title, episode_id, character_name, script_path, custom_image_path=None, base_bg_path=None): 
+def create_shorts(audio_path, text_script, episode_id, character_name, hook_title, custom_image_path=None): 
+    """
+    Đã sửa tham số: text_script (nội dung) thay vì script_path (file path)
+    để khớp với glue_pipeline.py
+    """
     try:
         # 1. Load Voice
         if not os.path.exists(audio_path): return None
@@ -180,6 +187,9 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
         hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
         os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
         
+        # Tự động tìm nền base nếu có
+        base_bg_path = get_path('assets', 'images', f"{episode_id.split('_')[0]}_bg.png")
+
         # Luôn ưu tiên tạo nền Hybrid nếu có ảnh nhân vật
         if custom_image_path:
             # Ghép nền có sẵn + Nhân vật DALL-E
@@ -189,19 +199,7 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
 
         # Fallback - Chỉ dùng khi không tạo được hybrid bg
         if clip is None:
-             if base_bg_path and os.path.exists(base_bg_path):
-                 # Resize ảnh nền có sẵn cho Shorts
-                 clip = ImageClip(base_bg_path).set_duration(duration)
-                 # Cần resize về chuẩn 1080x1920 nếu chưa đúng
-                 if clip.size != SHORTS_SIZE:
-                     clip = clip.resize(height=SHORTS_HEIGHT)
-                     if clip.w < SHORTS_WIDTH:
-                         clip = clip.resize(width=SHORTS_WIDTH)
-                     
-                     clip = clip.crop(x1=clip.w/2 - SHORTS_WIDTH/2, width=SHORTS_WIDTH, 
-                                      y1=clip.h/2 - SHORTS_HEIGHT/2, height=SHORTS_HEIGHT)
-             else:
-                 clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
+             clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
 
         elements = [clip]
 
@@ -216,10 +214,10 @@ def create_shorts(audio_path, hook_title, episode_id, character_name, script_pat
             except Exception: pass
 
         # 5. Subtitles (Dưới cùng)
-        if script_path and os.path.exists(script_path):
+        # SỬA LỖI: Dùng trực tiếp text_script (string)
+        if text_script:
             try:
-                with open(script_path, "r", encoding="utf-8") as f: full_script = f.read()
-                subs = generate_subtitle_clips(full_script, duration)
+                subs = generate_subtitle_clips(text_script, duration)
                 if subs: elements.extend(subs)
             except Exception: pass
 
