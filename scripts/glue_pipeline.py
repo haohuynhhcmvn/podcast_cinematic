@@ -46,6 +46,8 @@ def process_one_short(short_cfg, data, image_path):
     logger.info(f"✅ SHORT {idx} DONE")
 
 
+# === FILE: scripts/glue_pipeline.py ===
+
 def main():
     setup_environment()
     task = fetch_content()
@@ -57,14 +59,47 @@ def main():
     eid = str(data["ID"])
 
     logger.info("🎬 START LONG VIDEO")
+    
+    # 1. Tạo Kịch bản
     long_res = generate_long_script(data)
-    video = create_video(long_res["script_path"], eid)
-    upload_video(video, long_res["metadata"])
+    
+    # --- [ĐOẠN CẦN SỬA Ở ĐÂY] ---
+    
+    # SAI (Cũ): Bạn truyền thẳng file text vào hàm tạo video
+    # video = create_video(long_res["script_path"], eid) 
+
+    # ĐÚNG (Mới): Phải tạo Audio từ Text trước!
+    
+    # B1: Đọc nội dung từ file text
+    with open(long_res["script_path"], "r", encoding="utf-8") as f:
+        script_content = f.read()
+
+    # B2: Tạo giọng đọc (TTS)
+    logger.info("🔊 Generating TTS for Long Video...")
+    audio_path = create_tts(script_content, eid, "long")
+
+    # B3: Kiểm tra nếu có Audio thì mới làm Video
+    if audio_path:
+        logger.info("🎥 Rendering Long Video...")
+        # Truyền đường dẫn AUDIO vào, không phải đường dẫn Text
+        video_path = create_video(audio_path, eid) 
+        
+        # B4: Upload (Chỉ upload nếu tạo video thành công)
+        if video_path and os.path.exists(video_path):
+            upload_video(video_path, long_res["metadata"])
+        else:
+            logger.error("❌ Lỗi: Không tạo được Video dài.")
+    else:
+        logger.error("❌ Lỗi: Không tạo được giọng đọc (TTS).")
+
+    # ----------------------------
+
     logger.info("✅ LONG VIDEO DONE")
 
     logger.info("📱 GENERATING 5 SHORTS FROM LONG SCRIPT")
+    # ... (Phần shorts giữ nguyên vì bạn đã làm đúng trong hàm process_one_short)
     shorts = split_long_script_to_5_shorts(data, long_res["script_path"])
-
+    # ...
     image_path = f"assets/temp/{eid}_raw_ai.png"
 
     with ThreadPoolExecutor(max_workers=4) as pool:
