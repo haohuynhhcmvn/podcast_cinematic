@@ -3,9 +3,9 @@ import logging
 import os
 import math 
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
-import PIL.Image # Cần import đầy đủ để fix lỗi Pillow/MoviePy
+import PIL.Image 
 
-# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY (ROBUST FIX) ---
+# --- [FIX QUAN TRỌNG] VÁ LỖI PILLOW/MOVIEPY ---
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     if hasattr(PIL.Image, 'Resampling') and hasattr(PIL.Image.Resampling, 'LANCZOS'):
         PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
@@ -28,6 +28,7 @@ MAX_DURATION = 60
 
 # =========================================================
 # 🎨 HÀM XỬ LÝ BACKGROUND HYBRID (9:16) - NHÂN VẬT Ở GIỮA
+# (GIỮ NGUYÊN CODE CŨ CỦA BẠN VÌ NÓ ĐẸP)
 # =========================================================
 def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
     """
@@ -117,10 +118,11 @@ def process_hybrid_shorts_bg(char_path, base_bg_path, output_path):
         return None
 
 # =========================================================
-# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES) - CẦN THIẾT
+# 🛠️ HÀM TẠO PHỤ ĐỀ (SUBTITLES)
 # =========================================================
 def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     if not text_content: return []
+    # Xử lý text từ string trực tiếp thay vì đọc file
     words = text_content.replace('\n', ' ').split()
     if not words: return []
 
@@ -136,7 +138,6 @@ def generate_subtitle_clips(text_content, total_duration, fontsize=85):
     
     for i, chunk in enumerate(chunks):
         start_time = i * time_per_chunk
-        
         try:
             txt_clip = TextClip(
                 chunk.upper(),
@@ -152,19 +153,15 @@ def generate_subtitle_clips(text_content, total_duration, fontsize=85):
             # Đặt ở vùng tối bên dưới (Y=1400)
             txt_clip = txt_clip.set_position(('center', 1400)).set_start(start_time).set_duration(time_per_chunk)
             subtitle_clips.append(txt_clip)
-        except Exception:
-            pass # Bỏ qua nếu lỗi font/TextClip
+        except Exception: pass
 
     return subtitle_clips
 
 # =========================================================
-# 🎬 HÀM CHÍNH (CREATE SHORTS) - ĐÃ ĐỒNG BỘ THAM SỐ
+# 🎬 HÀM CHÍNH (CREATE SHORTS) - LOGIC MỚI
 # =========================================================
 def create_shorts(audio_path, text_script, episode_id, character_name, hook_title, custom_image_path=None): 
-    """
-    Đã sửa tham số: text_script (nội dung) thay vì script_path (file path)
-    để khớp với glue_pipeline.py
-    """
+    # [THAY ĐỔI]: Tham số thứ 2 là text_script (string) thay vì script_path (file) để khớp Glue Pipeline
     try:
         # 1. Load Voice
         if not os.path.exists(audio_path): return None
@@ -187,17 +184,19 @@ def create_shorts(audio_path, text_script, episode_id, character_name, hook_titl
         hybrid_bg_path = get_path('assets', 'temp', f"{episode_id}_shorts_hybrid.jpg")
         os.makedirs(os.path.dirname(hybrid_bg_path), exist_ok=True)
         
-        # Tự động tìm nền base nếu có
+        # [THAY ĐỔI]: Tự động lấy ảnh DALL-E làm Base BG nếu không có BG riêng
+        # Điều này đảm bảo code cũ chạy được mà không cần tìm file base_bg_path thủ công
         base_bg_path = get_path('assets', 'images', f"{episode_id.split('_')[0]}_bg.png")
+        if not os.path.exists(base_bg_path) and custom_image_path:
+            base_bg_path = custom_image_path
 
-        # Luôn ưu tiên tạo nền Hybrid nếu có ảnh nhân vật
+        # Tạo nền Hybrid dùng hàm cũ của bạn
         if custom_image_path:
-            # Ghép nền có sẵn + Nhân vật DALL-E
             final_bg = process_hybrid_shorts_bg(custom_image_path, base_bg_path, hybrid_bg_path)
             if final_bg:
                 clip = ImageClip(final_bg).set_duration(duration)
 
-        # Fallback - Chỉ dùng khi không tạo được hybrid bg
+        # Fallback
         if clip is None:
              clip = ColorClip(SHORTS_SIZE, color=(20,20,20), duration=duration)
 
@@ -214,20 +213,18 @@ def create_shorts(audio_path, text_script, episode_id, character_name, hook_titl
             except Exception: pass
 
         # 5. Subtitles (Dưới cùng)
-        # SỬA LỖI: Dùng trực tiếp text_script (string)
         if text_script:
-            try:
-                subs = generate_subtitle_clips(text_script, duration)
-                if subs: elements.extend(subs)
-            except Exception: pass
+            # [THAY ĐỔI]: Truyền text trực tiếp vào hàm
+            subs = generate_subtitle_clips(text_script, duration)
+            if subs: elements.extend(subs)
 
         # 6. Render
         final = CompositeVideoClip(elements, size=SHORTS_SIZE).set_audio(final_audio)
         out_path = get_path('outputs', 'shorts', f"{episode_id}_shorts.mp4")
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         
-        logger.info("🚀 Rendering Shorts...")
-        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger='bar')
+        logger.info("🚀 Rendering Shorts (Old Style)...")
+        final.write_videofile(out_path, fps=24, codec='libx264', audio_codec='aac', preset='ultrafast', threads=4, logger=None)
         return out_path
 
     except Exception as e:
