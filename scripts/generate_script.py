@@ -1,21 +1,21 @@
 # === scripts/generate_script.py ===
 import os
 import logging
-import re
 import json
 from openai import OpenAI
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# Model AI (Nên dùng gpt-4o-mini hoặc gpt-4 để viết hay hơn)
+# Model AI
+# LƯU Ý: Để viết kịch bản dài >2000 từ mà không bị ngắt quãng,
+# gpt-4o-mini có thể hơi yếu. Nếu có thể, hãy dùng "gpt-4o".
 MODEL = "gpt-4o-mini" 
 
 # ============================================================
-#  🛡️ BỘ LỌC AN NINH (Giữ nguyên)
+#  🛡️ BỘ LỌC AN NINH
 # ============================================================
 def check_safety_compliance(text):
-    """Rà soát văn bản để tìm các từ khóa vi phạm."""
     forbidden_keywords = [
         "overthrow the government", "regime change", "topple the regime",
         "incite rebellion", "destroy the state", "illegitimate government",
@@ -28,13 +28,9 @@ def check_safety_compliance(text):
     return True, "Safe"
 
 # ============================================================
-#  📝 HÀM 1: TẠO KỊCH BẢN + METADATA CHO VIDEO DÀI
+#  📝 HÀM 1: TẠO KỊCH BẢN DÀI (ĐÃ TĂNG ĐỘ DÀI)
 # ============================================================
 def generate_long_script(data):
-    """
-    Input: Dữ liệu từ Google Sheet (Name, Core Theme...)
-    Output: Dictionary chứa đường dẫn script và METADATA (Title, Desc, Tags)
-    """
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key: return None
@@ -45,8 +41,9 @@ def generate_long_script(data):
         
         logger.info(f"🧠 Đang viết kịch bản dài về: {name}...")
 
-        # 1. Prompt tạo Script + Metadata (JSON Format)
-        # Yêu cầu AI trả về JSON để dễ tách Tiêu đề/Mô tả
+        # --- [CHỈNH SỬA ĐỘ DÀI TẠI ĐÂY] ---
+        # Cũ: Write a 5-minute engaging script (approx 800-1000 words).
+        # Mới: Write a detailed 12-minute documentary script (approx 2000 words).
         prompt = f"""
         You are a professional documentary scriptwriter and YouTube SEO expert.
         Target Audience: History enthusiasts. Tone: Cinematic, Mysterious, Engaging.
@@ -55,7 +52,9 @@ def generate_long_script(data):
         Theme: {theme}
         
         TASK:
-        1. Write a 5-minute engaging script (approx 800-1000 words). Do NOT use "Scene" or "Visual" cues, just the narration text.
+        1. Write a DEEP DIVE, detailed 12-15 minute documentary script (approx 2000-2500 words). 
+           Expand on details, historical context, and emotional depth.
+           Do NOT use "Scene" or "Visual" cues, just the narration text.
         2. Create a Clickbait YouTube Title (Under 100 chars).
         3. Write a Video Description (include a hook, summary, and call to action).
         4. Generate 10 relevant Tags (comma separated).
@@ -72,16 +71,19 @@ def generate_long_script(data):
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"} # Bắt buộc trả về JSON
+            response_format={"type": "json_object"} 
         )
 
-        # 2. Xử lý kết quả
         content_raw = response.choices[0].message.content
         try:
             result_json = json.loads(content_raw)
         except json.JSONDecodeError:
-            logger.error("❌ Lỗi: AI không trả về đúng định dạng JSON.")
-            return None
+            logger.error("❌ Lỗi: AI không trả về đúng định dạng JSON (Có thể do text quá dài).")
+            # Fallback: Nếu lỗi JSON, thử lấy raw text làm script (chấp nhận mất metadata)
+            return {
+                "script_path": save_raw_script(data, content_raw),
+                "metadata": {"Title": name, "Summary": "", "Tags": []}
+            }
 
         script_text = result_json.get("script", "")
         
@@ -91,39 +93,39 @@ def generate_long_script(data):
             logger.error(f"❌ Kịch bản bị từ chối: {reason}")
             return None
 
-        # 3. Lưu file Script
+        # Lưu file Script
         script_filename = f"{data['ID']}_long.txt"
         script_path = get_path("data", "episodes", script_filename)
         
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script_text)
             
-        logger.info(f"✅ Đã lưu kịch bản: {script_path}")
+        logger.info(f"✅ Đã lưu kịch bản (Dài): {script_path}")
 
-        # 4. Trả về kết quả kèm METADATA
-        # Đây là phần quan trọng để file upload_youtube.py đọc được
         return {
             "script_path": script_path,
             "metadata": {
                 "Title": result_json.get("title", f"Amazing Facts about {name}"),
                 "Summary": result_json.get("description", f"Learn about {name} in this documentary."),
                 "Tags": result_json.get("tags", ["history", "documentary", name])
-            },
-            # Lưu lại prompt ảnh nếu cần dùng lại
-            "image_prompt": f"Portrait of {name}, historical setting, cinematic lighting" 
+            }
         }
 
     except Exception as e:
         logger.error(f"❌ Lỗi generate_long_script: {e}", exc_info=True)
         return None
 
+def save_raw_script(data, text):
+    """Hàm phụ trợ để cứu dữ liệu nếu JSON lỗi"""
+    path = get_path("data", "episodes", f"{data['ID']}_long_raw.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
 # ============================================================
-#  ✂️ HÀM 2: CẮT KỊCH BẢN THÀNH 5 SHORTS
+#  ✂️ HÀM 2: CẮT KỊCH BẢN THÀNH 5 SHORTS (Giữ nguyên)
 # ============================================================
 def split_long_script_to_5_shorts(data, long_script_path):
-    """
-    Đọc kịch bản dài và nhờ AI tóm tắt/cắt thành 5 đoạn ngắn viral.
-    """
     try:
         api_key = os.getenv("OPENAI_API_KEY")
         client = OpenAI(api_key=api_key)
@@ -133,12 +135,13 @@ def split_long_script_to_5_shorts(data, long_script_path):
 
         logger.info("✂️ Đang chia nhỏ kịch bản thành 5 Shorts...")
 
+        # Lấy 4000 ký tự đầu để tóm tắt (vì script dài quá đưa vào hết sẽ tốn token)
         prompt = f"""
-        Source Text: "{full_text[:3000]}..." (truncated)
+        Source Text: "{full_text[:4000]}..."
 
         TASK:
         Extract 5 distinct, viral short segments from the text above. 
-        Each segment must be stand-alone, under 60 seconds (approx 120 words).
+        Each segment must be stand-alone, under 60 seconds (approx 130 words).
         Each segment must have a "Hook" title (under 5 words).
 
         OUTPUT FORMAT (Strict JSON):
@@ -169,12 +172,10 @@ def split_long_script_to_5_shorts(data, long_script_path):
         output_list = []
         for i, item in enumerate(shorts_data):
             idx = i + 1
-            # Lưu script short
             s_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}.txt")
             with open(s_path, "w", encoding="utf-8") as f:
                 f.write(item["content"])
             
-            # Lưu title short
             t_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}_title.txt")
             with open(t_path, "w", encoding="utf-8") as f:
                 f.write(item["title"])
