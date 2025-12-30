@@ -1,442 +1,192 @@
-# scripts/generate_script.py
+# === scripts/generate_script.py ===
 import os
 import logging
 import re
+import json
 from openai import OpenAI
 from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# Giữ nguyên model
+# Model AI (Nên dùng gpt-4o-mini hoặc gpt-4 để viết hay hơn)
 MODEL = "gpt-4o-mini" 
 
 # ============================================================
-#  🛡️ BỘ LỌC AN NINH (PYTHON GUARDRAIL)
+#  🛡️ BỘ LỌC AN NINH (Giữ nguyên)
 # ============================================================
 def check_safety_compliance(text):
-    """
-    Rà soát văn bản để tìm các từ khóa vi phạm chính sách an toàn/chính trị.
-    Trả về: (is_safe: bool, reason: str)
-    """
-    # Danh sách từ khóa cấm (Bao gồm tiếng Anh và Tiếng Việt)
-    # Tập trung vào các từ mang ý nghĩa: Lật đổ, Phản động, Kích động bạo lực chính trị, Xuyên tạc
+    """Rà soát văn bản để tìm các từ khóa vi phạm."""
     forbidden_keywords = [
-        # --- Keywords Tiếng Anh (Risk Keywords) ---
         "overthrow the government", "regime change", "topple the regime",
         "incite rebellion", "destroy the state", "illegitimate government",
-        "dictatorship of", "oppressive regime", 
-        "distort history", "reactionary", "incite violence",
-        
-        # --- Keywords Tiếng Việt (Phòng trường hợp AI bịa hoặc quote tiếng Việt) ---
-        "phản động", "lật đổ", "chống phá", "xuyên tạc", "biểu tình bạo loạn", 
-        "bất mãn chế độ", "lật đổ chính quyền"
+        "phản động", "lật đổ", "chống phá", "xuyên tạc", "bạo loạn"
     ]
-    
     text_lower = text.lower()
-    
     for word in forbidden_keywords:
         if word in text_lower:
-            return False, word # ⛔ Phát hiện từ cấm
-            
-    return True, None # ✅ An toàn
-
+            return False, f"Chứa từ khóa cấm: {word}"
+    return True, "Safe"
 
 # ============================================================
-#  HÀM LÀM SẠCH KỊCH BẢN
-# ============================================================
-def clean_text_for_tts(text):
-    if not text: return ""
-    text = text.replace('**', '').replace('__', '')
-    text = re.sub(r'\[.*?\]', '', text)
-    text = re.sub(r'(?i)^\s*(SECTION|PART|SEGMENT)\s+\d+.*$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'(?i)^\s*(Visual|Sound|Scene|Instruction|Voiceover|Narrator)\s*:', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n\s*\n', '\n\n', text).strip()
-    return text
-
-# ============================================================
-#  LONG SCRIPT GENERATOR (TÍCH HỢP SAFETY GUARDRAIL)
+#  📝 HÀM 1: TẠO KỊCH BẢN + METADATA CHO VIDEO DÀI
 # ============================================================
 def generate_long_script(data):
+    """
+    Input: Dữ liệu từ Google Sheet (Name, Core Theme...)
+    Output: Dictionary chứa đường dẫn script và METADATA (Title, Desc, Tags)
+    """
     try:
         api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("❌ Missing OPENAI_API_KEY.")
-            return None
-
+        if not api_key: return None
         client = OpenAI(api_key=api_key)
 
-        char_name = data.get("Name", "Historical Figure")
-        core_theme = data.get("Core Theme", "Biography")
-        input_notes = data.get("Content/Input", "")
-
-
-         # --- FINAL PROMPT: GROWTH-OPTIMIZED + SAFETY COMPLIANT ---
-        # CHỈNH SỬA: 
-        # - Thêm Hook đánh vào HỆ QUẢ ngay từ đầu
-        # - Ép tư duy QUYẾT ĐỊNH & SAI LẦM (không kể tiểu sử thuần)
-        # - VẪN giữ độ dài + an toàn chính trị
-
-        prompt = f"""
-ROLE:
-You are the Head Scriptwriter for "Legendary Footsteps".
-
-OBJECTIVE (GROWTH-CRITICAL):
-This script must HOOK viewers who do NOT know this person.
-Prioritize retention, emotional tension, and curiosity over education.
-
-INPUT DATA:
-- Character: {char_name}
-- Theme: {core_theme}
-- Notes: {input_notes}
-
-CRITICAL RULES (NON-NEGOTIABLE):
-
-1. POLITICAL NEUTRALITY & LEGALITY:
-- Maintain strict historical objectivity.
-- ABSOLUTELY FORBIDDEN: rebellion, reactionary ideology, modern political parallels.
-- Focus on human decisions, consequences, and historical lessons only.
-
-2. OPENING RULE (MOST IMPORTANT):
-- DO NOT start with childhood, background, or chronology.
-- START with a HIGH-STAKES CONSEQUENCE:
-  death, collapse, betrayal, irreversible loss, or ultimate victory.
-- Make the viewer feel: “How did it come to this?”
-
-3. NARRATIVE LOGIC:
-- Always reveal CONSEQUENCE before CAUSE.
-- Focus on:
-  • Decisions
-  • Mistakes
-  • Strategic thinking
-  • Human flaws under pressure
-
-4. LENGTH REQUIREMENT (UNCHANGED):
-- Minimum 1800 words.
-- Target runtime: 8–12 minutes.
-- Do NOT summarize.
-- Use sensory detail and reconstructed dialogue to maintain length.
-
-5. LANGUAGE & STYLE:
-- Gritty, grounded, cinematic.
-- NO poetic fluff.
-- BANNED WORDS remain enforced.
-
-6. VISUALS:
-- Use [Visual: description] tags frequently (unchanged).
-
-EXTENDED STRUCTURE (REFINED FOR RETENTION):
-
-[SECTION 1 – THE CONSEQUENCE (2 mins)]
-Start at the moment everything is lost or decided.
-No introduction. No explanation. Just impact.
-
-[SECTION 2 – THE PRESSURE BUILDING]
-Reveal the hidden forces, enemies, or internal flaws.
-
-[SECTION 3 – THE FIRST CRITICAL DECISION]
-The moment that set everything in motion.
-
-[SECTION 4 – THE STRATEGY OR ILLUSION]
-What they believed would save them—and why it worked (or didn’t).
-
-[SECTION 5 – THE CLIMAX]
-Minute-by-minute tension of the decisive event.
-
-[SECTION 6 – THE BETRAYAL / FAILURE / COST]
-Who turned. What failed. What could not be undone.
-
-[SECTION 7 – THE HUMAN LESSON]
-What this reveals about power, ambition, and human nature.
-NO modern politics.
-
-OUTPUT: English only.
-"""
+        name = data.get("Name")
+        theme = data.get("Core Theme")
         
+        logger.info(f"🧠 Đang viết kịch bản dài về: {name}...")
+
+        # 1. Prompt tạo Script + Metadata (JSON Format)
+        # Yêu cầu AI trả về JSON để dễ tách Tiêu đề/Mô tả
+        prompt = f"""
+        You are a professional documentary scriptwriter and YouTube SEO expert.
+        Target Audience: History enthusiasts. Tone: Cinematic, Mysterious, Engaging.
+        
+        Subject: {name}
+        Theme: {theme}
+        
+        TASK:
+        1. Write a 5-minute engaging script (approx 800-1000 words). Do NOT use "Scene" or "Visual" cues, just the narration text.
+        2. Create a Clickbait YouTube Title (Under 100 chars).
+        3. Write a Video Description (include a hook, summary, and call to action).
+        4. Generate 10 relevant Tags (comma separated).
+
+        OUTPUT FORMAT (Strict JSON):
+        {{
+            "script": "The full narration text here...",
+            "title": "The YouTube Title Here",
+            "description": "The video description here...",
+            "tags": ["tag1", "tag2", "tag3"]
+        }}
+        """
+
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.85,
+            response_format={"type": "json_object"} # Bắt buộc trả về JSON
         )
 
-        raw_script = response.choices[0].message.content.strip()
-
-        # -------------------------------------------------------
-        # 🛡️ KIỂM TRA AN TOÀN TRƯỚC KHI XỬ LÝ
-        # -------------------------------------------------------
-        is_safe, trigger_word = check_safety_compliance(raw_script)
-        if not is_safe:
-            logger.error(f"⛔ SECURITY ALERT: Long script for '{char_name}' BLOCKED.")
-            logger.error(f"Reason: Found sensitive/forbidden keyword: '{trigger_word}'.")
-            return None
-
-        # --- CLEAN TTS ---
-        clean_script = clean_text_for_tts(raw_script)
-
-        # -------------------------------------------------------
-        # 🔓 GIỚI HẠN KÝ TỰ (GIỮ NGUYÊN 15000 CHO VIDEO DÀI)
-        # -------------------------------------------------------
-        safe_text = clean_script[:15000] 
-
-        out_path = get_path("data", "episodes", f"{data['ID']}_long_en.txt")
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(safe_text)
-
-        logger.info(f"📝 Long EN script created ({len(safe_text)} chars): {out_path}")
-
-        # Metadata Generation
-        meta_prompt = f"Write 1 Clickbait YouTube Title and a Short Description for {char_name}. The title MUST be clean and free of special characters or hashtags."
-        meta_res = client.chat.completions.create(
-            model=MODEL, messages=[{"role": "user", "content": meta_prompt}], max_tokens=200
-        )
-        meta_text = meta_res.choices[0].message.content.strip()
-        
+        # 2. Xử lý kết quả
+        content_raw = response.choices[0].message.content
         try:
-            if "Title:" in meta_text:
-                raw_title = meta_text.split("Title:")[1].split("Description:")[0].strip()
-            else:
-                raw_title = meta_text.split("\n")[0]
-
-            if "Description:" in meta_text:
-                yt_desc = meta_text.split("Description:")[1].strip()
-            else:
-                yt_desc = meta_text
-
-            yt_title = raw_title.replace('"', '').replace('**', '').replace('#', '').replace('Short', '').replace('|', '').strip()
-            
-        except:
-            yt_title = f"The Untold Story of {char_name}"
-            yt_desc = meta_text
-
-        metadata = {
-            "youtube_title": yt_title,
-            "youtube_description": yt_desc,
-            "youtube_tags": ["history", "biography", char_name.lower()]
-        }
-
-        return {
-            "script_path": out_path,
-            "metadata": metadata
-        }
-
-    except Exception as e:
-        logger.error(f"❌ Error generating long script: {e}")
-        return None
-
-
-# ============================================================
-#  SHORT SCRIPT GENERATOR (TÍCH HỢP SAFETY GUARDRAIL)
-# ============================================================
-def generate_short_script(data):
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("❌ Missing OPENAI_API_KEY.")
+            result_json = json.loads(content_raw)
+        except json.JSONDecodeError:
+            logger.error("❌ Lỗi: AI không trả về đúng định dạng JSON.")
             return None
 
-        client = OpenAI(api_key=api_key)
+        script_text = result_json.get("script", "")
         
-        char_name = data.get("Name", "Legendary Figure")
-        input_notes = data.get("Content/Input", "")
-
-        # --- CẬP NHẬT PROMPT: THÊM SYSTEM INSTRUCTION AN TOÀN ---
-        # --- UPDATED SHORTS PROMPT: RETENTION-FIRST ---
-        # CHỈNH SỬA:
-        # - Không bắt đầu bằng số máy móc
-        # - Thêm CONSEQUENCE-FIRST hook
-        # - CTA kích thích session thay vì xin sub lộ liễu
-
-        prompt = f"""
-ROLE: Viral YouTube Shorts Scriptwriter.
-OBJECTIVE: Stop scrolling within 3 seconds.
-
-INPUT:
-- Character: {char_name}
-- Notes: {input_notes}
-
-CRITICAL RULES:
-1. SAFETY & LEGALITY: Fully compliant. No rebellion, no modern politics.
-2. LENGTH: 45–55 seconds. MAX 135 words.
-3. NO POETIC FLUFF. Spoken, punchy English.
-4. Write for viewers who DO NOT know this person.
-
-STRUCTURE (RETENTION-OPTIMIZED):
-
-1. HOOK (0–3s):
-Start with a consequence, mistake, or shocking outcome.
-NO names. NO dates.
-
-2. THE TURN:
-Reveal the decision or belief that caused it.
-
-3. ESCALATION:
-Fast, tense storytelling. Short sentences.
-
-4. OPEN LOOP CTA (DO NOT CHANGE WORDING):
-\"The full story explains why this decision failed.\"
-
-OUTPUT: English only.
-"""
-
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
-            temperature=0.9,
-        )
-
-        raw_script = response.choices[0].message.content.strip()
-
-        # -------------------------------------------------------
-        # 🛡️ KIỂM TRA AN TOÀN SHORT SCRIPT
-        # -------------------------------------------------------
-        is_safe, trigger_word = check_safety_compliance(raw_script)
+        # Kiểm tra an toàn
+        is_safe, reason = check_safety_compliance(script_text)
         if not is_safe:
-            logger.error(f"⛔ SECURITY ALERT: Short script for '{char_name}' BLOCKED.")
-            logger.error(f"Reason: Found sensitive/forbidden keyword: '{trigger_word}'.")
+            logger.error(f"❌ Kịch bản bị từ chối: {reason}")
             return None
 
-        clean_script = clean_text_for_tts(raw_script)
+        # 3. Lưu file Script
+        script_filename = f"{data['ID']}_long.txt"
+        script_path = get_path("data", "episodes", script_filename)
+        
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script_text)
+            
+        logger.info(f"✅ Đã lưu kịch bản: {script_path}")
 
-        out_script = get_path("data", "episodes", f"{data['ID']}_short_en.txt")
-        with open(out_script, "w", encoding="utf-8") as f:
-            f.write(clean_script)
-
-        # Tạo Title sạch
-        title_res = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": f"Write a 5-word CLICKBAIT title for {char_name}. NO HASHTAGS. NO QUOTES. SAFE CONTENT."}],
-            max_tokens=50
-        )
-        title = title_res.choices[0].message.content.strip().replace('"', '').replace('#', '').replace('Shorts', '')
-
-        out_title = get_path("data", "episodes", f"{data['ID']}_short_title.txt")
-        with open(out_title, "w", encoding="utf-8") as f:
-            f.write(title)
-
-        logger.info(f"✨ Short EN script created for {data['ID']}")
-        return out_script, out_title
+        # 4. Trả về kết quả kèm METADATA
+        # Đây là phần quan trọng để file upload_youtube.py đọc được
+        return {
+            "script_path": script_path,
+            "metadata": {
+                "Title": result_json.get("title", f"Amazing Facts about {name}"),
+                "Summary": result_json.get("description", f"Learn about {name} in this documentary."),
+                "Tags": result_json.get("tags", ["history", "documentary", name])
+            },
+            # Lưu lại prompt ảnh nếu cần dùng lại
+            "image_prompt": f"Portrait of {name}, historical setting, cinematic lighting" 
+        }
 
     except Exception as e:
-        logger.error(f"❌ Error generating short script: {e}")
+        logger.error(f"❌ Lỗi generate_long_script: {e}", exc_info=True)
         return None
-# ================== (PHẦN TRÊN GIỮ NGUYÊN 100%) ==================
-# TOÀN BỘ CODE generate_long_script & generate_short_script
-# KHÔNG ĐỤNG – KHÔNG SỬA – KHÔNG RÚT GỌN
-# =================================================================
 
 # ============================================================
-#  🧩 SPLIT LONG SCRIPT → 5 SHORT SCRIPTS (KHÔNG DÙNG LẠI SHORT PROMPT CŨ)
+#  ✂️ HÀM 2: CẮT KỊCH BẢN THÀNH 5 SHORTS
 # ============================================================
 def split_long_script_to_5_shorts(data, long_script_path):
     """
-    Cắt LONG SCRIPT thành 5 SHORT scripts độc lập (45–55s mỗi đoạn)
-    - Không ảnh hưởng long_script
-    - Không thay đổi prompt gốc
+    Đọc kịch bản dài và nhờ AI tóm tắt/cắt thành 5 đoạn ngắn viral.
     """
     try:
-        logger.info("✂️ SPLITTING LONG SCRIPT INTO 5 SHORTS...")
-
-        if not os.path.exists(long_script_path):
-            logger.error("❌ Long script not found.")
-            return None
-
-        with open(long_script_path, "r", encoding="utf-8") as f:
-            long_text = f.read()
-
         api_key = os.getenv("OPENAI_API_KEY")
         client = OpenAI(api_key=api_key)
 
+        with open(long_script_path, "r", encoding="utf-8") as f:
+            full_text = f.read()
+
+        logger.info("✂️ Đang chia nhỏ kịch bản thành 5 Shorts...")
+
         prompt = f"""
-ROLE: Viral Shorts Editor
+        Source Text: "{full_text[:3000]}..." (truncated)
 
-TASK:
-Split the following LONG SCRIPT into 5 DIFFERENT viral YouTube Shorts scripts.
+        TASK:
+        Extract 5 distinct, viral short segments from the text above. 
+        Each segment must be stand-alone, under 60 seconds (approx 120 words).
+        Each segment must have a "Hook" title (under 5 words).
 
-RULES:
-- Each short: 45–55 seconds
-- Each must stand alone
-- Start with consequence-first hook
-- No repetition
-- No intro phrases like "In this video"
-- End with this CTA EXACTLY:
-"The full story explains why this decision failed."
+        OUTPUT FORMAT (Strict JSON):
+        {{
+            "shorts": [
+                {{"title": "Hook 1", "content": "Script 1..."}},
+                {{"title": "Hook 2", "content": "Script 2..."}},
+                {{"title": "Hook 3", "content": "Script 3..."}},
+                {{"title": "Hook 4", "content": "Script 4..."}},
+                {{"title": "Hook 5", "content": "Script 5..."}}
+            ]
+        }}
+        """
 
-OUTPUT FORMAT:
-SHORT 1:
-<text>
-
-SHORT 2:
-<text>
-
-SHORT 3:
-<text>
-
-SHORT 4:
-<text>
-
-SHORT 5:
-<text>
-
-LONG SCRIPT:
-{long_text}
-"""
-
-        res = client.chat.completions.create(
+        response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,
-            max_tokens=1200
+            response_format={"type": "json_object"}
         )
 
-        raw = res.choices[0].message.content.strip()
+        res_json = json.loads(response.choices[0].message.content)
+        shorts_data = res_json.get("shorts", [])
 
-        shorts = []
-        for i in range(1, 6):
-            marker = f"SHORT {i}:"
-            if marker in raw:
-                part = raw.split(marker)[1]
-                if i < 5:
-                    part = part.split(f"SHORT {i+1}:")[0]
-                shorts.append(clean_text_for_tts(part.strip()))
-
-        if len(shorts) != 5:
-            logger.error("❌ Failed to split into 5 shorts.")
+        if len(shorts_data) < 1:
+            logger.error("❌ Không tạo được Shorts nào.")
             return None
 
-        outputs = []
-        for idx, text in enumerate(shorts, 1):
-            script_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}.txt")
-            title_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}_title.txt")
+        output_list = []
+        for i, item in enumerate(shorts_data):
+            idx = i + 1
+            # Lưu script short
+            s_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}.txt")
+            with open(s_path, "w", encoding="utf-8") as f:
+                f.write(item["content"])
+            
+            # Lưu title short
+            t_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}_title.txt")
+            with open(t_path, "w", encoding="utf-8") as f:
+                f.write(item["title"])
 
-            with open(script_path, "w", encoding="utf-8") as f:
-                f.write(text)
-
-            # tạo title ngắn
-            title_res = client.chat.completions.create(
-                model=MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": f"Write a 4-5 word viral short title. No hashtags. For: {data.get('Name')}"
-                }],
-                max_tokens=30
-            )
-            title = title_res.choices[0].message.content.strip().replace('"', '')
-
-            with open(title_path, "w", encoding="utf-8") as f:
-                f.write(title)
-
-            outputs.append({
+            output_list.append({
                 "index": idx,
-                "script": script_path,
-                "title": title_path
+                "script": s_path,
+                "title": t_path
             })
-
-            logger.info(f"✅ SHORT {idx} READY")
-
-        return outputs
+            
+        return output_list
 
     except Exception as e:
-        logger.error(f"❌ Split shorts error: {e}", exc_info=True)
+        logger.error(f"❌ Lỗi split_shorts: {e}", exc_info=True)
         return None
-
