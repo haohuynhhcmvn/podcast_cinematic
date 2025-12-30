@@ -1,110 +1,192 @@
-# scripts/upload_youtube.py
+# === scripts/generate_script.py ===
 import os
-import pickle
 import logging
-from datetime import datetime, timezone
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
+import re
+import json
+from openai import OpenAI
+from utils import get_path
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-MAX_TITLE_LENGTH = 100
-MAX_DESCRIPTION_LENGTH = 5000
+# Model AI (Nên dùng gpt-4o-mini hoặc gpt-4 để viết hay hơn)
+MODEL = "gpt-4o-mini" 
 
+# ============================================================
+#  🛡️ BỘ LỌC AN NINH (Giữ nguyên)
+# ============================================================
+def check_safety_compliance(text):
+    """Rà soát văn bản để tìm các từ khóa vi phạm."""
+    forbidden_keywords = [
+        "overthrow the government", "regime change", "topple the regime",
+        "incite rebellion", "destroy the state", "illegitimate government",
+        "phản động", "lật đổ", "chống phá", "xuyên tạc", "bạo loạn"
+    ]
+    text_lower = text.lower()
+    for word in forbidden_keywords:
+        if word in text_lower:
+            return False, f"Chứa từ khóa cấm: {word}"
+    return True, "Safe"
 
-def get_authenticated_service():
-    logging.info("🔐 YouTube Auth: loading token.pickle")
-    creds = None
+# ============================================================
+#  📝 HÀM 1: TẠO KỊCH BẢN + METADATA CHO VIDEO DÀI
+# ============================================================
+def generate_long_script(data):
+    """
+    Input: Dữ liệu từ Google Sheet (Name, Core Theme...)
+    Output: Dictionary chứa đường dẫn script và METADATA (Title, Desc, Tags)
+    """
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key: return None
+        client = OpenAI(api_key=api_key)
 
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as f:
-            creds = pickle.load(f)
+        name = data.get("Name")
+        theme = data.get("Core Theme")
+        
+        logger.info(f"🧠 Đang viết kịch bản dài về: {name}...")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            logging.info("🔄 Refreshing YouTube token")
-            creds.refresh(Request())
-        else:
-            logging.error("❌ YouTube authentication failed")
+        # 1. Prompt tạo Script + Metadata (JSON Format)
+        # Yêu cầu AI trả về JSON để dễ tách Tiêu đề/Mô tả
+        prompt = f"""
+        You are a professional documentary scriptwriter and YouTube SEO expert.
+        Target Audience: History enthusiasts. Tone: Cinematic, Mysterious, Engaging.
+        
+        Subject: {name}
+        Theme: {theme}
+        
+        TASK:
+        1. Write a 5-minute engaging script (approx 800-1000 words). Do NOT use "Scene" or "Visual" cues, just the narration text.
+        2. Create a Clickbait YouTube Title (Under 100 chars).
+        3. Write a Video Description (include a hook, summary, and call to action).
+        4. Generate 10 relevant Tags (comma separated).
+
+        OUTPUT FORMAT (Strict JSON):
+        {{
+            "script": "The full narration text here...",
+            "title": "The YouTube Title Here",
+            "description": "The video description here...",
+            "tags": ["tag1", "tag2", "tag3"]
+        }}
+        """
+
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"} # Bắt buộc trả về JSON
+        )
+
+        # 2. Xử lý kết quả
+        content_raw = response.choices[0].message.content
+        try:
+            result_json = json.loads(content_raw)
+        except json.JSONDecodeError:
+            logger.error("❌ Lỗi: AI không trả về đúng định dạng JSON.")
             return None
 
-    return build("youtube", "v3", credentials=creds)
+        script_text = result_json.get("script", "")
+        
+        # Kiểm tra an toàn
+        is_safe, reason = check_safety_compliance(script_text)
+        if not is_safe:
+            logger.error(f"❌ Kịch bản bị từ chối: {reason}")
+            return None
 
+        # 3. Lưu file Script
+        script_filename = f"{data['ID']}_long.txt"
+        script_path = get_path("data", "episodes", script_filename)
+        
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(script_text)
+            
+        logger.info(f"✅ Đã lưu kịch bản: {script_path}")
 
-def upload_video(
-    video_path: str,
-    episode_data: dict,
-    thumbnail_path: str | None = None,
-    publish_at: datetime | None = None
-):
-    logging.info("======================================")
-    logging.info("📤 START YOUTUBE UPLOAD")
-    logging.info(f"📁 Video: {video_path}")
+        # 4. Trả về kết quả kèm METADATA
+        # Đây là phần quan trọng để file upload_youtube.py đọc được
+        return {
+            "script_path": script_path,
+            "metadata": {
+                "Title": result_json.get("title", f"Amazing Facts about {name}"),
+                "Summary": result_json.get("description", f"Learn about {name} in this documentary."),
+                "Tags": result_json.get("tags", ["history", "documentary", name])
+            },
+            # Lưu lại prompt ảnh nếu cần dùng lại
+            "image_prompt": f"Portrait of {name}, historical setting, cinematic lighting" 
+        }
 
-    if not os.path.exists(video_path):
-        logging.error("❌ Video file not found")
-        return "FAILED"
+    except Exception as e:
+        logger.error(f"❌ Lỗi generate_long_script: {e}", exc_info=True)
+        return None
 
-    youtube = get_authenticated_service()
-    if not youtube:
-        return "FAILED"
+# ============================================================
+#  ✂️ HÀM 2: CẮT KỊCH BẢN THÀNH 5 SHORTS
+# ============================================================
+def split_long_script_to_5_shorts(data, long_script_path):
+    """
+    Đọc kịch bản dài và nhờ AI tóm tắt/cắt thành 5 đoạn ngắn viral.
+    """
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        client = OpenAI(api_key=api_key)
 
-    title = episode_data.get("Title", "New Video")
-    description = episode_data.get("Summary", "")
-    tags = episode_data.get("Tags", [])
+        with open(long_script_path, "r", encoding="utf-8") as f:
+            full_text = f.read()
 
-    if len(title) > MAX_TITLE_LENGTH:
-        title = title[:MAX_TITLE_LENGTH - 3] + "..."
-    if len(description) > MAX_DESCRIPTION_LENGTH:
-        description = description[:MAX_DESCRIPTION_LENGTH]
+        logger.info("✂️ Đang chia nhỏ kịch bản thành 5 Shorts...")
 
-    status = {
-        "privacyStatus": "private",
-        "selfDeclaredMadeForKids": False
-    }
+        prompt = f"""
+        Source Text: "{full_text[:3000]}..." (truncated)
 
-    if publish_at:
-        utc_time = publish_at.astimezone(timezone.utc).isoformat()
-        status["publishAt"] = utc_time
-        logging.info(f"📅 Scheduled publish at (UTC): {utc_time}")
+        TASK:
+        Extract 5 distinct, viral short segments from the text above. 
+        Each segment must be stand-alone, under 60 seconds (approx 120 words).
+        Each segment must have a "Hook" title (under 5 words).
 
-    body = {
-        "snippet": {
-            "title": title,
-            "description": description,
-            "tags": tags,
-            "categoryId": "22"
-        },
-        "status": status
-    }
+        OUTPUT FORMAT (Strict JSON):
+        {{
+            "shorts": [
+                {{"title": "Hook 1", "content": "Script 1..."}},
+                {{"title": "Hook 2", "content": "Script 2..."}},
+                {{"title": "Hook 3", "content": "Script 3..."}},
+                {{"title": "Hook 4", "content": "Script 4..."}},
+                {{"title": "Hook 5", "content": "Script 5..."}}
+            ]
+        }}
+        """
 
-    logging.info(f"🚀 Uploading video: {title}")
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body=body,
-        media_body=media
-    )
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
 
-    response = None
-    while response is None:
-        status_progress, response = request.next_chunk()
-        if status_progress:
-            logging.info(f"   Upload progress: {int(status_progress.progress() * 100)}%")
+        res_json = json.loads(response.choices[0].message.content)
+        shorts_data = res_json.get("shorts", [])
 
-    video_id = response.get("id")
-    logging.info(f"✅ VIDEO UPLOADED: {video_id}")
+        if len(shorts_data) < 1:
+            logger.error("❌ Không tạo được Shorts nào.")
+            return None
 
-    if thumbnail_path and os.path.exists(thumbnail_path):
-        logging.info(f"🖼️ Uploading thumbnail: {thumbnail_path}")
-        youtube.thumbnails().set(
-            videoId=video_id,
-            media_body=MediaFileUpload(thumbnail_path)
-        ).execute()
-        logging.info("✅ Thumbnail uploaded")
+        output_list = []
+        for i, item in enumerate(shorts_data):
+            idx = i + 1
+            # Lưu script short
+            s_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}.txt")
+            with open(s_path, "w", encoding="utf-8") as f:
+                f.write(item["content"])
+            
+            # Lưu title short
+            t_path = get_path("data", "episodes", f"{data['ID']}_short_{idx}_title.txt")
+            with open(t_path, "w", encoding="utf-8") as f:
+                f.write(item["title"])
 
-    logging.info("📤 END YOUTUBE UPLOAD")
-    logging.info("======================================")
+            output_list.append({
+                "index": idx,
+                "script": s_path,
+                "title": t_path
+            })
+            
+        return output_list
 
-    return {"video_id": video_id}
+    except Exception as e:
+        logger.error(f"❌ Lỗi split_shorts: {e}", exc_info=True)
+        return None
