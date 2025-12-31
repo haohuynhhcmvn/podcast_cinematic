@@ -160,13 +160,12 @@ def split_long_script_to_5_shorts(data, long_script_path):
             ... (lặp lại đủ 5 đoạn)
           ]
         }}
-
+        """
         
         ##Source Text: "{full_text[:5000]}..."
         ##TASK: Extract 5 distinct, viral short segments (under 60s each).
         ##OUTPUT JSON: {{ "shorts": [ {{"title": "Hook", "content": "..."}}, ... ] }}
         
-        """
 
         response = client.chat.completions.create(
             model=MODEL, # Vẫn dùng mini
