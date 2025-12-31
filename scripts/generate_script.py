@@ -7,7 +7,7 @@ from utils import get_path
 
 logger = logging.getLogger(__name__)
 
-# ✅ Đã chuyển về gpt-4o-mini theo yêu cầu
+# ✅ Sử dụng gpt-4o-mini để tối ưu chi phí và hiệu suất
 MODEL = "gpt-4o-mini"
 
 # ============================================================
@@ -26,7 +26,7 @@ def check_safety_compliance(text):
     return True, "Safe"
 
 # ============================================================
-#  📝 HÀM 1: TẠO KỊCH BẢN DÀI (TỐI ƯU CHO MINI)
+#  📝 HÀM 1: TẠO KỊCH BẢN DÀI (CHUYÊN NGHIỆP & SEO)
 # ============================================================
 def generate_long_script(data):
     try:
@@ -37,34 +37,36 @@ def generate_long_script(data):
         name = data.get("Name")
         theme = data.get("Core Theme")
         
-        logger.info(f"🧠 Đang viết kịch bản (GPT-4o-mini) về: {name}...")
+        logger.info(f"🧠 Đang viết kịch bản quốc tế về: {name}...")
 
-        # 💡 CHIẾN THUẬT CHO MINI:
-        # 1. Giảm yêu cầu xuống 1500 từ (khoảng 8-10 phút) để tránh lỗi JSON.
-        # 2. Ép cấu trúc chương hồi rõ ràng để AI không viết lười.
         prompt = f"""
-        You are a professional documentary scriptwriter.
+        You are a world-class documentary scriptwriter for a high-end history channel.
         Subject: {name}
         Theme: {theme}
         
-        TASK: Write a detailed 10-minute documentary script (approx 1500 words).
-        Tone: Cinematic, Engaging, Educational.
-        
-        CRITICAL: You MUST follow this structure to ensure length:
-        1. INTRO (1 min): Hook the audience immediately.
-        2. PART 1: BACKGROUND (2 mins): Early history/context.
-        3. PART 2: MAIN EVENTS (3 mins): The core story, conflict, or discovery.
-        4. PART 3: ANALYSIS (2 mins): Why this matters, hidden details.
-        5. OUTRO (2 mins): Legacy and conclusion.
+        TASK 1: Write a 10-minute documentary script (approx 1500 words).
+        Tone: Cinematic, Epic, and Deeply Engaging. 
+        Structure Requirements:
+        1. INTRO (1 min): Start with a shocking scene or a deep philosophical question.
+        2. PART 1: ORIGINS (2 mins): Early life and the environment that shaped them.
+        3. PART 2: THE CLIMAX (3 mins): The most significant conflict or achievement.
+        4. PART 3: THE UNTOLD (2 mins): Hidden facts or psychological depth.
+        5. OUTRO (2 mins): Their lasting legacy and a final thought-provoking closing.
 
-        Do NOT use "Scene" cues (like [Visuals]). Write ONLY the narration text.
+        TASK 2: Create SEO Metadata.
+        - Title: High-CTR, Clickbait but professional.
+        - Description: Must include: 
+            - A powerful opening hook.
+            - Timestamps: 0:00 Intro, 1:30 Origins, 3:45 The Turning Point, 6:15 The Secret Truth, 8:30 Legacy, 10:00 Final Thought.
+            - SEO-rich paragraph (200 words) using keywords related to {name} and history.
+        - Tags: 15 relevant SEO tags.
 
         OUTPUT FORMAT (Strict JSON):
         {{
             "script": "The full narration text...",
-            "title": "Clickbait YouTube Title",
-            "description": "YouTube Description with hashtags...",
-            "tags": ["tag1", "tag2", "tag3"]
+            "title": "...",
+            "description": "...",
+            "tags": ["...", "..."]
         }}
         """
 
@@ -72,7 +74,7 @@ def generate_long_script(data):
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            max_tokens=16000, # Mini hỗ trợ output token lớn, cứ để max
+            max_tokens=16000,
             temperature=0.7
         )
 
@@ -80,22 +82,18 @@ def generate_long_script(data):
         try:
             result_json = json.loads(content_raw)
         except json.JSONDecodeError:
-            logger.error("❌ Lỗi JSON (gpt-4o-mini bị quá tải). Đang cứu dữ liệu...")
+            logger.error("❌ Lỗi JSON. Đang thực hiện cứu dữ liệu raw...")
             return {
                 "script_path": save_raw_script(data, content_raw),
-                "metadata": {"Title": name, "Summary": "Documentary", "Tags": ["history"]}
+                "metadata": {"Title": name, "Summary": "Historical Documentary", "Tags": ["history"]}
             }
 
         script_text = result_json.get("script", "")
         
-        # Log độ dài để bạn kiểm tra
-        word_count = len(script_text.split())
-        logger.info(f"📊 Độ dài kịch bản: {word_count} từ (~{word_count/150:.1f} phút)")
-
         # Kiểm tra an toàn
         is_safe, reason = check_safety_compliance(script_text)
         if not is_safe:
-            logger.error(f"❌ Kịch bản bị từ chối: {reason}")
+            logger.error(f"❌ Kịch bản vi phạm chính sách: {reason}")
             return None
 
         script_filename = f"{data['ID']}_long.txt"
@@ -107,9 +105,9 @@ def generate_long_script(data):
         return {
             "script_path": script_path,
             "metadata": {
-                "Title": result_json.get("title", f"Amazing Facts about {name}"),
-                "Summary": result_json.get("description", f"Learn about {name}."),
-                "Tags": result_json.get("tags", ["history", name])
+                "Title": result_json.get("title", f"The Legend of {name}"),
+                "Summary": result_json.get("description", ""),
+                "Tags": result_json.get("tags", ["history"])
             }
         }
 
@@ -118,14 +116,13 @@ def generate_long_script(data):
         return None
 
 def save_raw_script(data, text):
-    """Hàm cứu dữ liệu khi JSON bị lỗi"""
     path = get_path("data", "episodes", f"{data['ID']}_long_raw.txt")
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     return path
 
 # ============================================================
-#  ✂️ HÀM 2: CẮT KỊCH BẢN THÀNH 5 SHORTS
+#  ✂️ HÀM 2: CHIA 5 SHORTS (5 GÓC ĐỘ TÂM LÝ)
 # ============================================================
 def split_long_script_to_5_shorts(data, long_script_path):
     try:
@@ -135,55 +132,34 @@ def split_long_script_to_5_shorts(data, long_script_path):
         with open(long_script_path, "r", encoding="utf-8") as f:
             full_text = f.read()
 
-        logger.info("✂️ Đang chia nhỏ kịch bản thành 5 Shorts...")
+        logger.info("✂️ Đang phân tích và cắt 5 phân đoạn Shorts chiến lược...")
 
-        # Prompt chuẩn Tiếng Anh 100% để giữ tệp khán giả Global
         prompt = f"""
         Source Text: "{full_text[:6000]}"
 
-        TASK: Extract exactly 5 distinct, viral Short segments (each under 60s) from the text above. 
-        Each Short must target a different psychological angle to ensure variety:
+        TASK: Extract exactly 5 distinct, viral Short segments (each under 60s) from the text. 
+        Each Short must target a different psychological angle:
 
-        1. Short 1 (The Hook): A shocking fact or a common misconception about the subject.
-        2. Short 2 (The Lesson): A piece of wisdom or a strategy that the audience can apply today.
-        3. Short 3 (The Dark Side): A hidden truth, tragedy, or controversial action of the subject.
-        4. Short 4 (The Quote): A powerful, timeless quote placed in a dramatic context.
-        5. Short 5 (The Legacy): The massive impact the subject still has on the modern world.
+        1. Short 1 (The Hook): A shocking fact or misconception.
+        2. Short 2 (The Lesson): A piece of wisdom for the audience.
+        3. Short 3 (The Dark Side): A tragedy or controversy.
+        4. Short 4 (The Quote): A powerful, dramatic quote from the subject.
+        5. Short 5 (The Legacy): How they still impact the world today.
 
         OUTPUT FORMAT (Strict JSON):
         {{
           "shorts": [
             {{
               "title": "CATCHY HOOK TITLE (IN UPPERCASE)",
-              "content": "Dramatic narration, fast-paced, with a clear beginning and a strong ending."
+              "content": "Dramatic, fast-paced narration."
             }},
-            {{
-              "title": "...",
-              "content": "..."
-            }},
-            {{
-              "title": "...",
-              "content": "..."
-            }},
-            {{
-              "title": "...",
-              "content": "..."
-            }},
-            {{
-              "title": "...",
-              "content": "..."
-            }}
+            ... (exactly 5 items)
           ]
         }}
         """
 
-        ##Source Text: "{full_text[:5000]}..."
-        ##TASK: Extract 5 distinct, viral short segments (under 60s each).
-        ##OUTPUT JSON: {{ "shorts": [ {{"title": "Hook", "content": "..."}}, ... ] }}
-        
-
         response = client.chat.completions.create(
-            model=MODEL, # Vẫn dùng mini
+            model=MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
