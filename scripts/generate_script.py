@@ -139,10 +139,33 @@ def split_long_script_to_5_shorts(data, long_script_path):
 
         # Giảm context gửi vào để tiết kiệm token cho mini
         prompt = f"""
-        Source Text: "{full_text[:5000]}..."
+        Source Text: "{full_text[:6000]}"
 
-        TASK: Extract 5 distinct, viral short segments (under 60s each).
-        OUTPUT JSON: {{ "shorts": [ {{"title": "Hook", "content": "..."}}, ... ] }}
+        TASK: Từ nội dung trên, trích xuất chính xác 5 đoạn kịch bản Shorts (mỗi đoạn < 60s). 
+        Yêu cầu mỗi Short phải đánh vào một góc nhìn tâm lý khác nhau để không trùng lặp:
+
+        1. Short 1 (The Hook): Sự thật gây sốc nhất hoặc một lầm tưởng phổ biến về nhân vật.
+        2. Short 2 (The Lesson): Một bài học trí tuệ hoặc chiến thuật mà khán giả có thể áp dụng ngay.
+        3. Short 3 (The Dark Side): Một góc khuất, bi kịch hoặc hành động gây tranh cãi của nhân vật.
+        4. Short 4 (The Quote): Một câu nói bất hủ được đặt trong hoàn cảnh cực kỳ kịch tính.
+        5. Short 5 (The Legacy): Tầm ảnh hưởng khủng khiếp của nhân vật đến thế giới hiện đại.
+
+        OUTPUT FORMAT (Strict JSON):
+        {{
+          "shorts": [
+            {{
+              "title": "TIÊU ĐỀ HOOK NGẮN (VIẾT HOA)",
+              "content": "Lời dẫn truyện đầy kịch tính, nhịp điệu nhanh, có mở đầu và kết thúc trọn vẹn."
+            }},
+            ... (lặp lại đủ 5 đoạn)
+          ]
+        }}
+
+        
+        ##Source Text: "{full_text[:5000]}..."
+        ##TASK: Extract 5 distinct, viral short segments (under 60s each).
+        ##OUTPUT JSON: {{ "shorts": [ {{"title": "Hook", "content": "..."}}, ... ] }}
+        
         """
 
         response = client.chat.completions.create(
