@@ -137,31 +137,46 @@ def split_long_script_to_5_shorts(data, long_script_path):
 
         logger.info("✂️ Đang chia nhỏ kịch bản thành 5 Shorts...")
 
-        # Giảm context gửi vào để tiết kiệm token cho mini
+        # Prompt chuẩn Tiếng Anh 100% để giữ tệp khán giả Global
         prompt = f"""
         Source Text: "{full_text[:6000]}"
 
-        TASK: Từ nội dung trên, trích xuất chính xác 5 đoạn kịch bản Shorts (mỗi đoạn < 60s). 
-        Yêu cầu mỗi Short phải đánh vào một góc nhìn tâm lý khác nhau để không trùng lặp:
+        TASK: Extract exactly 5 distinct, viral Short segments (each under 60s) from the text above. 
+        Each Short must target a different psychological angle to ensure variety:
 
-        1. Short 1 (The Hook): Sự thật gây sốc nhất hoặc một lầm tưởng phổ biến về nhân vật.
-        2. Short 2 (The Lesson): Một bài học trí tuệ hoặc chiến thuật mà khán giả có thể áp dụng ngay.
-        3. Short 3 (The Dark Side): Một góc khuất, bi kịch hoặc hành động gây tranh cãi của nhân vật.
-        4. Short 4 (The Quote): Một câu nói bất hủ được đặt trong hoàn cảnh cực kỳ kịch tính.
-        5. Short 5 (The Legacy): Tầm ảnh hưởng khủng khiếp của nhân vật đến thế giới hiện đại.
+        1. Short 1 (The Hook): A shocking fact or a common misconception about the subject.
+        2. Short 2 (The Lesson): A piece of wisdom or a strategy that the audience can apply today.
+        3. Short 3 (The Dark Side): A hidden truth, tragedy, or controversial action of the subject.
+        4. Short 4 (The Quote): A powerful, timeless quote placed in a dramatic context.
+        5. Short 5 (The Legacy): The massive impact the subject still has on the modern world.
 
         OUTPUT FORMAT (Strict JSON):
         {{
           "shorts": [
             {{
-              "title": "TIÊU ĐỀ HOOK NGẮN (VIẾT HOA)",
-              "content": "Lời dẫn truyện đầy kịch tính, nhịp điệu nhanh, có mở đầu và kết thúc trọn vẹn."
+              "title": "CATCHY HOOK TITLE (IN UPPERCASE)",
+              "content": "Dramatic narration, fast-paced, with a clear beginning and a strong ending."
             }},
-            ... (lặp lại đủ 5 đoạn)
+            {{
+              "title": "...",
+              "content": "..."
+            }},
+            {{
+              "title": "...",
+              "content": "..."
+            }},
+            {{
+              "title": "...",
+              "content": "..."
+            }},
+            {{
+              "title": "...",
+              "content": "..."
+            }}
           ]
         }}
         """
-        
+
         ##Source Text: "{full_text[:5000]}..."
         ##TASK: Extract 5 distinct, viral short segments (under 60s each).
         ##OUTPUT JSON: {{ "shorts": [ {{"title": "Hook", "content": "..."}}, ... ] }}
