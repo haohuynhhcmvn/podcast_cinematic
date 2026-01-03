@@ -36,10 +36,6 @@ def mic_vibration(t):
     base_y = OUTPUT_HEIGHT - 170
     return base_y + 3 * math.sin(2 * math.pi * 0.5 * t)
 
-def logo_breathing(t):
-    # Dao động opacity từ 0.6 đến 1.0
-    return 0.8 + 0.2 * math.sin(math.pi * 0.3 * t)
-
 def pick_video_background(theme_text):
     theme_text = str(theme_text).lower()
     mapping = {
@@ -59,7 +55,7 @@ def pick_video_background(theme_text):
     return get_path('assets', 'video', selected_file)
 
 # ============================================================
-# 🎨 HÀM 1: XỬ LÝ ẢNH NHÂN VẬT (FIXED BLUR)
+# 🎨 HÀM 1: XỬ LÝ ẢNH NHÂN VẬT
 # ============================================================
 def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     logger.info(f"   (LOG-BG): Xử lý nhân vật AI từ nguồn: {char_path}")
@@ -68,21 +64,16 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
     if char_path and os.path.exists(char_path):
         try:
             char_img = Image.open(char_path).convert("RGBA")
-            
-            # Resize fit khung hình (chiếm 90% chiều cao)
             target_h = int(height * 0.9)
             char_img.thumbnail((width, target_h), Image.LANCZOS)
             
             offset_x = (width - char_img.width) // 2
             offset_y = (height - char_img.height) // 2
 
-            # --- FIX: GIẢM BLUR ĐỂ TRÁNH NHÂN VẬT BỊ TRONG SUỐT ---
             alpha = char_img.getchannel("A")
             eroded_mask = alpha.filter(ImageFilter.MinFilter(5)) 
-            # Giảm từ 60 xuống 25 để nhân vật hiện rõ biên
             soft_edge_mask = eroded_mask.filter(ImageFilter.GaussianBlur(25))
             
-            # Tăng độ đậm lớp phủ để nhân vật sắc nét hơn
             opacity_layer = Image.new("L", soft_edge_mask.size, 220) 
             final_mask = ImageChops.multiply(soft_edge_mask, opacity_layer)
 
@@ -91,7 +82,7 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
         except Exception as e:
             logger.error(f"❌ Lỗi Pillow xử lý nhân vật: {e}")
     else:
-        logger.warning("⚠️ Không tìm thấy ảnh nhân vật, bỏ qua lớp Overlay.")
+        logger.warning("⚠️ Không tìm thấy ảnh nhân vật.")
 
     overlay_path = get_path('assets', 'temp', "char_blend_full.png")
     os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
@@ -104,7 +95,6 @@ def create_static_overlay_image(char_path, width=OUTPUT_WIDTH, height=OUTPUT_HEI
 def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, duration, width=OUTPUT_WIDTH, height=OUTPUT_HEIGHT):
     try:
         layers = []
-        # Lớp 1: Ảnh nền tĩnh
         if static_bg_path and os.path.exists(static_bg_path):
             img_clip = ImageClip(static_bg_path).set_duration(duration)
             img_clip = img_clip.resize(width=width, height=height)
@@ -113,21 +103,17 @@ def make_hybrid_video_background(video_path, static_bg_path, char_overlay_path, 
             img_clip = img_clip.fx(vfx.colorx, factor=0.85).fx(vfx.lum_contrast, contrast=0.35)
             layers.append(img_clip)
 
-        # Lớp 2: Nhân vật Overlay (Đã được xử lý Blur vừa phải)
         if os.path.exists(char_overlay_path):
             char_clip = ImageClip(char_overlay_path).set_duration(duration)
-            # Đồng bộ zoom với nền
             char_clip = char_clip.resize(lambda t: zoom_in_effect(t, duration))
             char_clip = char_clip.set_position(('center', 'center'))
             layers.append(char_clip)
 
-        # Lớp 3: Video hạt bụi/khói
         try:
             if os.path.exists(video_path):
                 temp_clip = VideoFileClip(video_path, audio=False, target_resolution=(height, width))
                 if temp_clip.duration < duration:
                     temp_clip = temp_clip.fx(vfx.loop, duration=duration)
-                
                 video_layer = temp_clip.subclip(0, duration).set_opacity(0.30).fx(vfx.colorx, factor=1.1)
                 layers.append(video_layer)
         except: pass
@@ -145,7 +131,6 @@ def create_video(audio_path, episode_id, image_path=None, title_text="", theme="
         audio = AudioFileClip(audio_path)
         duration = audio.duration
         
-        # 1. Chuẩn bị ảnh và video nền
         custom_bg = get_path('assets', 'images', f"{episode_id}_bg.png")
         static_bg_path = custom_bg if os.path.exists(custom_bg) else get_path('assets', 'images', 'default_background.png')
         
@@ -153,10 +138,8 @@ def create_video(audio_path, episode_id, image_path=None, title_text="", theme="
         base_video_path = pick_video_background(theme) 
         
         background_clip = make_hybrid_video_background(base_video_path, static_bg_path, char_overlay_path, duration)
-
         final_layers = [background_clip]
 
-        # 2. Lớp Tiêu đề
         if title_text:
             try:
                 title_layer = TextClip(
@@ -168,7 +151,6 @@ def create_video(audio_path, episode_id, image_path=None, title_text="", theme="
                 final_layers.append(title_layer)
             except: pass
 
-        # 3. 🎙️ LỚP MICROPHONE (ÉP HIỆN TRÊN CÙNG)
         mic_path = get_path('assets', 'images', 'microphone.png')
         if os.path.exists(mic_path):
             mic_clip = ImageClip(mic_path).set_duration(duration)
@@ -176,23 +158,22 @@ def create_video(audio_path, episode_id, image_path=None, title_text="", theme="
             mic_clip = mic_clip.set_position(lambda t: ('center', mic_vibration(t)))
             final_layers.append(mic_clip)
 
-        # 4. 🏷️ LỚP LOGO (FIX LOGIC HIỂN THỊ)
         logo_path = get_path('assets', 'images', 'logo.png')
         if os.path.exists(logo_path):
             logo_clip = ImageClip(logo_path).set_duration(duration)
             logo_clip = logo_clip.resize(height=90)
-            
-            # Tọa độ cố định phía dưới bên phải
             l_pos_x = OUTPUT_WIDTH - logo_clip.w - 40
             l_pos_y = OUTPUT_HEIGHT - logo_clip.h - 40
             
-            # --- FIX: ĐẢM BẢO OPACITY KHÔNG BỊ LỖI ---
-            logo_clip = logo_clip.set_position((l_pos_x, l_pos_y)).set_opacity(lambda t: logo_breathing(t))
+            # --- FIX LỖI: Sử dụng .fl để thay đổi opacity theo thời gian thay vì .set_opacity ---
+            # Công thức nhịp thở: 0.7 + 0.3 * sin(...)
+            logo_clip = logo_clip.set_position((l_pos_x, l_pos_y))
+            logo_clip = logo_clip.fl(lambda gf, t: gf(t) * (0.7 + 0.3 * math.sin(math.pi * 0.3 * t)))
+            
             final_layers.append(logo_clip)
-            logger.info("✅ Đã thêm Logo vào danh sách render.")
+            logger.info("✅ Đã thêm Logo với hiệu ứng Breathing (Fixed).")
         
-        # 5. Render Video
-        logger.info(f"🚀 Bắt đầu Render video thời lượng: {duration}s...")
+        logger.info(f"🚀 Bắt đầu Render video {episode_id}...")
         final_video = CompositeVideoClip(final_layers, size=(OUTPUT_WIDTH, OUTPUT_HEIGHT)).set_audio(audio)
         
         output_path = get_path('outputs', 'video', f"{episode_id}_video.mp4")
@@ -203,7 +184,6 @@ def create_video(audio_path, episode_id, image_path=None, title_text="", theme="
             preset="ultrafast", threads=4, ffmpeg_params=["-crf", "26"], logger='bar' 
         )
         
-        # Giải phóng bộ nhớ
         final_video.close()
         audio.close()
         return output_path
