@@ -220,7 +220,7 @@ def main():
                 # Short 2 (i=1): start_time + 4h
                 # Short 3 (i=2): start_time + 8h
                 # ...
-                hours_offset = i * 4
+                hours_offset = i * 22
                 short_publish_time = start_schedule_time + timedelta(hours=hours_offset)
                 
                 # Gọi hàm xử lý (truyền thêm tham số thời gian)
